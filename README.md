@@ -21,6 +21,9 @@ Read the Bible, highlight passages, write notes, and see the notes your friends 
   word used in the Bible text: `node scripts/build-dict.mjs ecdict.csv` regenerates `public/dict/`.
   Tap the phonetic or the **UK** / **US** speaker buttons to hear recorded British or American pronunciation
   (Youdao audio, fetched by the server once per word and kept in the data folder).
+- **Bible dictionary** — when a word's dictionary entry is shown, the server also looks it (or its base form) up in
+  Easton's Bible Dictionary (1897, public domain, 3,963 entries in `server/data/eastons.json`) and adds the entry
+  below. `node scripts/build-bible-dict.mjs eastons.jsonl` regenerates the data file.
 - **Grammar** — in the Translate panel, tap **Grammar** after the selected text: every word gets its part of speech in Chinese
   (colour-coded), each verb its tense and voice (e.g. 一般过去时 · 被动语态), plus subject/verb and prepositional and
   noun phrases. It runs on the phone with [compromise](https://github.com/spencermountain/compromise) 14.19.0 (MIT),

@@ -72,7 +72,7 @@ export function seedTestUsers(db, users) {
   return created;
 }
 
-export function createApp(db, { publicDir, trustProxy = false, commentary = null, pronounce = null, phonetics = null, translate = null } = {}) {
+export function createApp(db, { publicDir, trustProxy = false, commentary = null, pronounce = null, phonetics = null, translate = null, bibleDict = null } = {}) {
   const q = (sql) => db.prepare(sql);
   const stmt = {
     userByName: q('SELECT * FROM users WHERE username = ?'),
@@ -193,6 +193,11 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
         if (e instanceof PronounceError) throw new HttpError(e.status, e.message);
         throw e;
       }
+    }, true],
+    ['GET', /^\/api\/bible-dictionary\/([a-z' -]{1,40})$/, ({ params: [word] }) => {
+      const found = bibleDict?.(decodeURIComponent(word));
+      if (!found) throw new HttpError(404, 'Not in the Bible dictionary');
+      return found;
     }, true],
     ['POST', /^\/api\/translate$/, async ({ body }) => {
       if (!translate) throw new HttpError(503, 'Translation is not set up on this server');

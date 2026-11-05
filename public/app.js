@@ -990,6 +990,37 @@ async function analyzeGrammar(text) {
   return [...sections, h('p', { class: 'g-note' }, 'Tap a part to see what it does. Automatic analysis (compromise) · may be wrong for unusual word order')];
 }
 
+// Easton's Bible Dictionary (on the server): the entry for a word, or null. Remembered for the visit.
+const bibleCache = new Map();
+function bibleEntryFor(word) {
+  const w = String(word || '').toLowerCase();
+  if (!w) return Promise.resolve(null);
+  if (!bibleCache.has(w)) {
+    bibleCache.set(w, api('GET', `/api/bible-dictionary/${encodeURIComponent(w)}`).catch((err) => {
+      if (err?.status !== 404) bibleCache.delete(w); // try again next time unless it's simply not there
+      return null;
+    }));
+  }
+  return bibleCache.get(w);
+}
+function bibleSection(found) {
+  const LIMIT = 420;
+  return h('section', { class: 'bd', lang: 'en' },
+    h('div', { class: 'bd-head' }, 'Bible dictionary', h('span', { class: 'bd-src' }, ` · ${found.source}`)),
+    ...found.entries.map((entry) => {
+      const full = entry.definitions.join('\n\n');
+      const long = full.length > LIMIT;
+      const text = h('p', { class: 'bd-text' }, long ? `${full.slice(0, LIMIT).replace(/\s+\S*$/, '')}…` : full);
+      const more = long ? h('button', { class: 'text-btn bd-more', type: 'button', onclick: () => {
+        const open = more.textContent === 'More';
+        text.textContent = open ? full : `${full.slice(0, LIMIT).replace(/\s+\S*$/, '')}…`;
+        more.textContent = open ? 'Less' : 'More';
+        positionToolbar();
+      } }, 'More') : null;
+      return h('div', { class: 'bd-entry' }, h('div', { class: 'bd-term' }, entry.term), text, more);
+    }));
+}
+
 // Double tap: select the word and open its dictionary entry in the bubble.
 function openDictionaryFor(word) {
   navigator.vibrate?.(8);
@@ -1046,12 +1077,18 @@ function toggleDictionary(bar, btn) {
       x.t ? h('p', { class: 'dict-zh', lang: 'zh-Hans' }, x.t) : null,
       x.d && main ? h('p', { class: 'dict-en' }, x.d) : null,
     ];
-    if (!e || (!e.t && !e.d && !e.base)) body.replaceChildren(h('p', { class: 'dict-muted' }, `“${w}” isn't in the dictionary. Names of people and places usually aren't.`));
-    else body.replaceChildren(...[...block(e, !e.base), ...(e.base ? [h('div', { class: 'dict-base' }, `Base form: ${e.base.word}`), ...block(e.base, true)] : [])].filter(Boolean));
+    const bibleSlot = h('div', { class: 'bd-slot' });
+    if (!e || (!e.t && !e.d && !e.base)) body.replaceChildren(h('p', { class: 'dict-muted' }, `“${w}” isn't in the English dictionary.`), bibleSlot);
+    else body.replaceChildren(...[...block(e, !e.base), ...(e.base ? [h('div', { class: 'dict-base' }, `Base form: ${e.base.word}`), ...block(e.base, true)] : []), bibleSlot].filter(Boolean));
+    positionToolbar();
+    // Also look the word (or its base form) up in the Bible dictionary, and add the entry if there is one.
+    const found = (await bibleEntryFor(w)) || (e?.base ? await bibleEntryFor(e.base.word) : null);
+    if (!found || !bibleSlot.isConnected) return; // another word was tapped meanwhile
+    bibleSlot.replaceChildren(bibleSection(found));
     positionToolbar();
   };
   bar.append(h('div', { class: 'dict' }, trans, body,
-    h('p', { class: 'dict-credit' }, multi ? 'Translation, phonetics & audio: Youdao · Dictionary: ECDICT' : 'ECDICT English–Chinese dictionary · Phonetics & audio: Youdao')));
+    h('p', { class: 'dict-credit' }, multi ? 'Translation, phonetics & audio: Youdao · Dictionary: ECDICT · Bible dictionary: Easton' : 'ECDICT English–Chinese dictionary · Phonetics & audio: Youdao · Bible dictionary: Easton')));
   if (multi) body.replaceChildren(h('p', { class: 'dict-muted' }, 'Tap any word above for its definition, or Grammar to analyse the passage.'));
   else show(words[0]);
 }

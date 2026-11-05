@@ -383,3 +383,11 @@ body.bars-hidden .bottom-nav { transform: translateY(100%); }
 .g-word[aria-expanded="true"] { border-color: var(--primary); }
 .g-word:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
 .g-count { color: var(--muted); font-size: 12px; }
+
+/* Easton's Bible Dictionary entry, below the normal dictionary entry */
+.bd { margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--divider); }
+.bd-head { font-size: 12px; font-weight: 600; color: var(--primary); letter-spacing: .02em; margin-bottom: 4px; }
+.bd-src { font-weight: 400; color: var(--muted); }
+.bd-term { font: 600 16px "Noto Serif", Georgia, serif; margin-top: 4px; }
+.bd-text { margin: 4px 0 2px; font: 14px/1.6 "Noto Serif", Georgia, serif; white-space: pre-line; }
+.bd-more { padding: 2px 0; font-size: 14px; }
