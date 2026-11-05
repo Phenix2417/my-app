@@ -339,7 +339,7 @@ async function renderReader() {
   // Reading further down slides the bars away; a tap brings them back.
   let lastTop = 0;
   scroller.addEventListener('scroll', () => {
-    if (state.selection) positionHandles();
+    if (state.selection) { positionHandles(); positionToolbar(); }
     const top = scroller.scrollTop;
     if (top > lastTop + 6 && top > 60 && !state.selection) setBars(false);
     lastTop = top;
@@ -666,6 +666,31 @@ function showToolbar() {
       } }, 'Copy')));
   reader.toolbar = bar;
   document.body.append(bar);
+  positionToolbar();
+}
+
+// Place the selection bubble just above the selected words (or below them if there's no room),
+// centred on the selection and kept on screen. Hidden while the selection is scrolled out of view.
+function positionToolbar() {
+  const bar = reader.toolbar;
+  if (!bar || !state.selection) return;
+  const startEl = wordEl(state.selection.start), endEl = wordEl(state.selection.end);
+  const area = visibleTextArea();
+  if (!startEl || !endEl || !area) return;
+  const a = startEl.getClientRects()[0], z = [...endEl.getClientRects()].pop();
+  const offscreen = z.bottom < area.top || a.top > area.bottom;
+  bar.style.visibility = offscreen ? 'hidden' : '';
+  if (offscreen) return;
+  const knob = 26, gap = 10, w = bar.offsetWidth, hgt = bar.offsetHeight, vw = document.documentElement.clientWidth;
+  let top = a.top - knob - gap - hgt, below = false;
+  if (top < area.top + 4) { top = z.bottom + knob + gap; below = true; }
+  top = Math.max(area.top + 4, Math.min(top, area.bottom - hgt - 4));
+  // Centre on the selection when it's on one line; otherwise on the start of it.
+  const anchorX = Math.abs(a.top - z.top) < 4 ? (a.left + z.right) / 2 : a.left + Math.min(60, a.width / 2);
+  const left = Math.max(8, Math.min(anchorX - w / 2, vw - w - 8));
+  Object.assign(bar.style, { top: `${top}px`, left: `${left}px` });
+  bar.classList.toggle('below', below);
+  bar.style.setProperty('--arrow-x', `${Math.max(20, Math.min(anchorX - left, w - 20))}px`);
 }
 
 function showNotesAt(p) {
@@ -737,7 +762,7 @@ function textSizeControl() {
     store.set('fontSize', state.fontSize);
     label.textContent = `${state.fontSize}`;
     reader.body?.style.setProperty('--verse-size', `${state.fontSize}px`);
-    positionHandles();
+    positionHandles(); positionToolbar();
   };
   return [
     h('button', { class: 'size-btn', 'aria-label': 'Smaller text', onclick: () => change(-2) }, h('span', { class: 'size-a small' }, 'A'), '−'),
@@ -1384,7 +1409,7 @@ setInterval(async () => {
   if (document.visibilityState !== 'visible' || !state.auth || state.tab !== 'read' || !state.showFriends || state.selection) return;
   await refreshChapterFriendNotes(); paint();
 }, 60000);
-window.addEventListener('resize', () => positionHandles());
+window.addEventListener('resize', () => { positionHandles(); positionToolbar(); });
 
 if ('serviceWorker' in navigator && window.isSecureContext) {
   // When a new version of the app is deployed, its service worker takes over; reload to show it,
