@@ -39,6 +39,7 @@ const ICONS = {
   personAdd: 'M15 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm-9-2V7H4v3H1v2h3v3h2v-3h3v-2H6zm9 4c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z',
   account: 'M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z',
   textSize: 'M9 4v3h5v12h3V7h5V4H9zm-6 8h3v7h3v-7h3V9H3v3z',
+  speaker: 'M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 7.97v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z',
   chevronRight: 'M10 6 8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z',
   chevronLeft: 'M15.41 7.41 14 6l-6 6 6 6 1.41-1.41L10.83 12z',
   friends: 'M9 13.75c-2.34 0-7 1.17-7 3.5V19h14v-1.75c0-2.33-4.66-3.5-7-3.5zM4.34 17c.84-.58 2.87-1.25 4.66-1.25s3.82.67 4.66 1.25H4.34zM9 12c1.93 0 3.5-1.57 3.5-3.5S10.93 5 9 5 5.5 6.57 5.5 8.5 7.07 12 9 12zm0-5c.83 0 1.5.67 1.5 1.5S9.83 10 9 10s-1.5-.67-1.5-1.5S8.17 7 9 7zm7.04 6.81c1.16.84 1.96 1.96 1.96 3.44V19h4v-1.75c0-2.02-3.5-3.17-5.96-3.44zM15 12c1.93 0 3.5-1.57 3.5-3.5S16.93 5 15 5c-.54 0-1.04.13-1.5.35.63.89 1 1.98 1 3.15s-.37 2.26-1 3.15c.46.22.96.35 1.5.35z',
@@ -691,6 +692,24 @@ async function lookUp(word) {
   return { word: w, ...e, base };
 }
 
+// Recorded pronunciations (fetched and kept by the server). One plays at a time.
+let wordAudio = null;
+function playWord(word, accent, btn) {
+  wordAudio?.pause();
+  document.querySelectorAll('.speaker.playing, .dict-ph.playing').forEach((b) => b.classList.remove('playing'));
+  const a = new Audio(`/api/pronounce/${accent}/${encodeURIComponent(word)}`);
+  wordAudio = a;
+  btn?.classList.add('playing');
+  const done = () => btn?.classList.remove('playing');
+  a.addEventListener('ended', done);
+  a.addEventListener('error', () => { done(); if (wordAudio === a) toast(navigator.onLine === false ? 'Pronunciation needs a connection.' : `No ${accent === 'uk' ? 'British' : 'American'} recording for “${word}”.`); });
+  a.play().catch(() => {}); // errors are reported by the 'error' event above
+}
+function speakerButton(word, accent, label) {
+  return h('button', { class: 'speaker', 'aria-label': `Play ${accent === 'uk' ? 'British' : 'American'} pronunciation of ${word}`,
+    onclick: (e) => playWord(word, accent, e.currentTarget) }, svg(ICONS.speaker), label);
+}
+
 function toggleDictionary(bar, btn) {
   const open = bar.querySelector('.dict');
   if (open) { open.remove(); btn.setAttribute('aria-expanded', 'false'); positionToolbar(); return; }
@@ -709,7 +728,10 @@ function toggleDictionary(bar, btn) {
     let e;
     try { e = await lookUp(w); } catch { body.replaceChildren(h('p', { class: 'dict-muted' }, "Couldn't load the dictionary. Check your connection.")); positionToolbar(); return; }
     const block = (x, main) => [
-      h('div', { class: 'dict-head' }, h('span', { class: 'dict-word' }, x.word), x.p ? h('span', { class: 'dict-ph' }, `/${x.p}/`) : null),
+      h('div', { class: 'dict-head' }, h('span', { class: 'dict-word' }, x.word),
+        // Tapping the phonetic plays the British recording; the speaker buttons play British or American.
+        x.p ? h('button', { class: 'dict-ph', 'aria-label': `Play British pronunciation of ${x.word}`, onclick: (e) => playWord(x.word, 'uk', e.currentTarget) }, `/${x.p}/`) : null,
+        speakerButton(x.word, 'uk', 'UK'), speakerButton(x.word, 'us', 'US')),
       x.t ? h('p', { class: 'dict-zh', lang: 'zh-Hans' }, x.t) : null,
       x.d && main ? h('p', { class: 'dict-en' }, x.d) : null,
     ];
@@ -718,7 +740,7 @@ function toggleDictionary(bar, btn) {
     positionToolbar();
   };
   if (tabs) tabs.append(...words.map((w) => h('button', { class: 'chip', dataset: { w }, onclick: () => show(w) }, w)));
-  bar.append(h('div', { class: 'dict' }, tabs, body, h('p', { class: 'dict-credit' }, 'ECDICT English–Chinese dictionary')));
+  bar.append(h('div', { class: 'dict' }, tabs, body, h('p', { class: 'dict-credit' }, 'ECDICT English–Chinese dictionary · Audio: Youdao')));
   show(words[0]);
 }
 

@@ -4,6 +4,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { BOOKS, BOOK_IDS } from './books.js';
 import { commentaryList, CommentaryError, COMMENTARY_IDS } from './commentary.js';
+import { PronounceError } from './pronounce.js';
 
 const COLORS = new Set(['yellow', 'green', 'blue', 'pink', 'purple']);
 const USERNAME_RE = /^[a-z0-9_]{3,20}$/i;
@@ -70,7 +71,7 @@ export function seedTestUsers(db, users) {
   return created;
 }
 
-export function createApp(db, { publicDir, trustProxy = false, commentary = null } = {}) {
+export function createApp(db, { publicDir, trustProxy = false, commentary = null, pronounce = null } = {}) {
   const q = (sql) => db.prepare(sql);
   const stmt = {
     userByName: q('SELECT * FROM users WHERE username = ?'),
@@ -185,6 +186,17 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
     ['GET', /^\/api\/health$/, () => ({ ok: true })],
     ['GET', /^\/api\/books$/, () => ({ books: BOOKS })],
     ['GET', /^\/api\/commentaries$/, () => ({ commentaries: commentaryList() })],
+    // Audio for <audio> elements, which can't send a sign-in header; limited to dictionary words.
+    ['GET', /^\/api\/pronounce\/(uk|us)\/([a-z-]{1,40})$/, async ({ params: [accent, word] }) => {
+      if (!pronounce) throw new HttpError(503, 'Pronunciation is not set up on this server');
+      try {
+        const { buf, type } = await pronounce(accent, word);
+        return { status: 200, body: buf, headers: { 'Content-Type': type, 'Cache-Control': 'public, max-age=2592000' } };
+      } catch (e) {
+        if (e instanceof PronounceError) throw new HttpError(e.status, e.message);
+        throw e;
+      }
+    }],
     ['GET', /^\/api\/commentaries\/([a-z-]{1,40})\/([a-z0-9]{1,20})\/(\d{1,3})$/, async ({ params: [id, book, chapter] }) => {
       if (!commentary) throw new HttpError(503, 'Commentaries are not set up on this server');
       try { return await commentary(id, book, Number(chapter)); } catch (e) {
@@ -360,7 +372,7 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
         // The proxy appends the real client address last; earlier entries can be forged by the client.
         ip: (trustProxy && String(req.headers['x-forwarded-for'] || '').split(',').pop().trim()) || req.socket.remoteAddress,
       });
-      if (result && result.status && result.body) return send(res, result.status, result.body);
+      if (result && result.status && result.body) return send(res, result.status, result.body, result.headers);
       return send(res, 200, result);
     } catch (e) {
       if (e instanceof HttpError) return send(res, e.status, { error: e.message });
