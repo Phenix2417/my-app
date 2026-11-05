@@ -718,11 +718,7 @@ function drawCommentaryChips() {
   if (!cm.chips || !cm.list) return;
   const { book } = state.pos;
   const ids = myCommentaryIds(cm.list);
-  // "Edit list" comes first so it's always on screen, even when the row scrolls sideways.
-  const editLabel = cm.manageOpen ? 'Done editing' : 'Edit list';
-  cm.chips.replaceChildren(h('button', { class: 'chip edit-chip', 'aria-expanded': String(cm.manageOpen), 'aria-label': editLabel, title: editLabel,
-    onclick: () => setManageOpen(!cm.manageOpen) }, svg(cm.manageOpen ? ICONS.check : ICONS.edit)),
-  ...ids.map((id) => cm.list.find((c) => c.id === id)).map((c) => h('button', {
+  cm.chips.replaceChildren(...ids.map((id) => cm.list.find((c) => c.id === id)).map((c) => h('button', {
     class: 'chip' + (c.missingBooks.includes(book) ? ' unavailable' : ''), 'aria-pressed': String(c.id === cm.current), lang: c.lang,
     title: c.missingBooks.includes(book) ? `${c.name} doesn't cover ${bookName(book)}` : c.about,
     onclick: () => { cm.current = c.id; store.set('commentary', c.id); loadCommentaryPage(); },
@@ -884,7 +880,7 @@ async function loadCommentaryPage() {
   cm.current = ids.includes(cm.current) ? cm.current : ids.includes(store.get('commentary', null)) ? store.get('commentary', null) : ids[0] || null;
   drawCommentaryChips(); drawManage();
   cm.listEl.replaceChildren();
-  if (!cm.current) return setStatus(h('p', { class: 'empty-inline' }, 'Your commentary list is empty. Tap “Edit list” to add some.'));
+  if (!cm.current) return setStatus(h('p', { class: 'empty-inline' }, 'Your commentary list is empty. Open the side bar and tap the pencil to add some.'));
   const meta = cm.list.find((c) => c.id === cm.current);
   const credit = h('p', { class: 'credit' }, meta.licenseUrl ? h('a', { href: meta.licenseUrl, target: '_blank', rel: 'noopener' }, meta.license) : meta.license);
   if (meta.missingBooks.includes(book)) return setStatus(h('p', { class: 'empty-inline' }, `${meta.name} doesn't cover ${bookName(book)}. Pick another commentary above.`));

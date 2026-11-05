@@ -206,7 +206,6 @@ h1 { font-size: 28px; font-weight: 500; margin: 18px 0 24px; }
 .credit a { color: var(--muted); }
 
 
-.edit-chip { color: var(--primary); border-style: dashed; }
 .manage-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--divider); }
 .manage-info { flex: 1; min-width: 0; }
 .manage-name { font-weight: 500; font-size: 16px; overflow-wrap: anywhere; }
@@ -276,9 +275,6 @@ button.c-label:focus-visible { outline: 2px solid var(--primary); outline-offset
 @keyframes slide-r { from { transform: translateX(40px); opacity: .3; } }
 @keyframes slide-l { from { transform: translateX(-40px); opacity: .3; } }
 
-.chip.edit-chip { display: grid; place-items: center; width: 40px; height: 36px; padding: 0; }
-.chip.edit-chip svg { width: 18px; height: 18px; }
-.chip.edit-chip[aria-expanded="true"] { background: var(--primary); color: var(--on-primary); border-style: solid; border-color: var(--primary); }
 
 .side-btn { width: 52px; height: 52px; border-radius: 26px; border: 0; display: grid; place-items: center;
   background: var(--surface-2); color: var(--muted); }
