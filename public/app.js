@@ -307,11 +307,10 @@ async function renderReader() {
       h('button', { class: 'chapter-pill', onclick: openPicker, 'aria-label': 'Choose book and chapter' }, `${meta.name} ${chapter}`),
       h('button', { class: 'text-btn', disabled: !next, onclick: () => goTo(next) }, 'Next')),
     h('p', { class: 'hint' }, 'Hold a word or tap a verse number to select. Drag the handles to adjust.'),
-    h('div', { class: 'reader-controls' }, commentaryControls()),
     body,
     sideDock([
       { id: 'show-friends', label: "Friends' notes", icon: ICONS.friends, input: sw },
-      { id: 'show-commentary', label: 'Commentary', icon: ICONS.commentary, input: commentarySwitch() },
+      { id: 'open-commentary', label: 'Commentary', icon: ICONS.commentary, action: () => openCommentaryPage(topVisibleVerse()) },
     ]));
   mount(screen);
   reader.body = body;
@@ -324,8 +323,6 @@ async function renderReader() {
   if (state.pos.book !== book || state.pos.chapter !== chapter || state.tab !== 'read') return;
   buildVerses(data[chapter - 1] || []);
   paint();
-  if (state.showCommentary) loadInlineCommentary(reader.pendingCommentaryVerse);
-  reader.pendingCommentaryVerse = null;
   refreshChapterFriendNotes().then(() => { if (reader.body === body) paint(); });
 }
 
@@ -596,7 +593,7 @@ function showToolbar() {
     } }))),
     h('div', { class: 'row' },
       h('button', { class: 'text-btn', onclick: () => noteEditor(draft('yellow'), { isNew: true }) }, 'Note'),
-      h('button', { class: 'text-btn', onclick: () => { const v = start.v; clearSelection(); focusCommentary(v); } }, 'Commentary'),
+      h('button', { class: 'text-btn', onclick: () => { const v = start.v; clearSelection(); openCommentaryPage(v); } }, 'Commentary'),
       h('button', { class: 'text-btn', onclick: async () => {
         const text = `${selectedQuote()} — ${ref(draft('yellow'))} (WEB)`;
         try { await navigator.clipboard.writeText(text); toast('Copied'); } catch { toast("Couldn't copy"); }
@@ -655,22 +652,16 @@ function saveMyCommentaryIds(ids) {
 }
 const LANG_LABEL = { en: 'English', 'zh-Hans': '简体中文', 'zh-Hant': '繁體中文' };
 
-/* Commentary lives on the Read page: a switch, a row of commentary buttons, an inline "Edit list"
-   panel, and each comment placed right after the verses it covers. */
-const cm = { panel: null, chips: null, manage: null, status: null, list: null, current: null, manageOpen: false, token: 0 };
-state.showCommentary = store.get('showCommentary', false);
+/* Commentary has its own page, opened from the side bar or the selection toolbar. */
+const cm = { chips: null, manage: null, status: null, listEl: null, list: null, current: null, manageOpen: false, token: 0,
+  focusVerse: null, returnVerse: null };
 
-function commentarySwitch() {
-  return h('input', { type: 'checkbox', class: 'switch', id: 'show-commentary', checked: state.showCommentary,
-    onchange: (e) => setShowCommentary(e.target.checked) });
-}
-
-function commentaryControls() {
-  cm.chips = h('div', { class: 'chips', role: 'group', 'aria-label': 'Commentary' });
-  cm.manage = h('div', { class: 'manage-panel', hidden: !cm.manageOpen });
-  cm.status = h('div', { class: 'commentary-status', 'aria-live': 'polite' });
-  cm.panel = h('div', { class: 'commentary-panel', hidden: !state.showCommentary }, cm.chips, cm.manage, cm.status);
-  return cm.panel;
+function topVisibleVerse() {
+  for (let v = 1; v < reader.verseEls.length; v++) {
+    const el = reader.verseEls[v];
+    if (el && el.getBoundingClientRect().bottom > 80) return v;
+  }
+  return 1;
 }
 
 /* Side bar: a tab fixed to the middle of the right edge; tapping it slides out a vertical bar of switches. */
@@ -678,9 +669,11 @@ let closeSideDock = () => {};
 document.addEventListener('pointerdown', (e) => { if (!e.target.closest?.('.side-dock')) closeSideDock(); }, true);
 function sideDock(items) {
   const panel = h('div', { class: 'side-panel', id: 'side-panel', role: 'group', 'aria-label': 'Reading options' },
-    ...items.map(({ id, label, icon, input }) => h('div', { class: 'side-item' },
-      h('label', { for: id, class: 'side-label' }, h('span', { class: 'side-icon' }, svg(icon)), label),
-      input)));
+    ...items.map(({ id, label, icon, input, action }) => h('div', { class: 'side-item' },
+      action
+        ? h('button', { id, class: 'side-label side-action', onclick: () => { closeSideDock(); action(); } },
+          h('span', { class: 'side-icon' }, svg(icon)), label, h('span', { class: 'side-go', 'aria-hidden': 'true' }, 'Open ›'))
+        : [h('label', { for: id, class: 'side-label' }, h('span', { class: 'side-icon' }, svg(icon)), label), input])));
   const tab = h('button', { class: 'side-tab', 'aria-controls': 'side-panel', 'aria-expanded': 'false', 'aria-label': 'Show reading options' },
     svg(ICONS.chevronLeft));
   const dock = h('div', { class: 'side-dock' }, tab, panel);
@@ -697,18 +690,6 @@ function sideDock(items) {
   return dock;
 }
 
-function setShowCommentary(on, focusVerse) {
-  state.showCommentary = on;
-  store.set('showCommentary', on);
-  const sw = document.getElementById('show-commentary');
-  if (sw) sw.checked = on;
-  if (cm.panel) cm.panel.hidden = !on;
-  if (on) loadInlineCommentary(focusVerse);
-  else { cm.token++; removeInlineCommentary(); }
-}
-
-function removeInlineCommentary() { reader.body?.querySelectorAll('.inline-commentary').forEach((el) => el.remove()); }
-
 function setStatus(...kids) { cm.status?.replaceChildren(...kids.filter(Boolean)); }
 
 function drawCommentaryChips() {
@@ -718,7 +699,7 @@ function drawCommentaryChips() {
   cm.chips.replaceChildren(...ids.map((id) => cm.list.find((c) => c.id === id)).map((c) => h('button', {
     class: 'chip' + (c.missingBooks.includes(book) ? ' unavailable' : ''), 'aria-pressed': String(c.id === cm.current), lang: c.lang,
     title: c.missingBooks.includes(book) ? `${c.name} doesn't cover ${bookName(book)}` : c.about,
-    onclick: () => { cm.current = c.id; store.set('commentary', c.id); loadInlineCommentary(); },
+    onclick: () => { cm.current = c.id; store.set('commentary', c.id); loadCommentaryPage(); },
   }, c.name)), h('button', { class: 'chip edit-chip', 'aria-expanded': String(cm.manageOpen), onclick: () => {
     cm.manageOpen = !cm.manageOpen; cm.manage.hidden = !cm.manageOpen; drawManage(); drawCommentaryChips();
   } }, cm.manageOpen ? '✓ Done editing' : '✎ Edit list'));
@@ -734,7 +715,7 @@ function drawManage() {
   const set = (next) => {
     saveMyCommentaryIds(next);
     drawManage(); drawCommentaryChips();
-    if (!next.includes(cm.current)) loadInlineCommentary(); // the open one was removed
+    if (!next.includes(cm.current)) loadCommentaryPage(); // the open one was removed
   };
   const mine = h('div', { class: 'mine-list', role: 'list', 'aria-label': 'Your commentaries, in order' },
     ...ids.map((id, i) => {
@@ -813,10 +794,49 @@ function enableHoldToDrag(row, onDrop) {
   row.addEventListener('touchmove', (e) => { if (drag) e.preventDefault(); }, { passive: false });
 }
 
-async function loadInlineCommentary(focusVerse) {
+function openCommentaryPage(verse) {
+  cm.focusVerse = verse || null;
+  cm.returnVerse = verse || null;
+  clearSelection();
+  state.tab = 'commentary';
+  render();
+}
+
+function showCommentaryChapter(pos) {
+  state.pos = { book: pos.book, chapter: pos.chapter };
+  store.set('pos', state.pos);
+  cm.focusVerse = null; cm.returnVerse = null;
+  renderCommentaryPage();
+  window.scrollTo(0, 0);
+}
+
+function renderCommentaryPage() {
+  const { book, chapter } = state.pos;
+  const books = state.books || BOOKS_FALLBACK();
+  const meta = books.find((b) => b.id === book) || books[0];
+  const idx = books.indexOf(meta);
+  const prev = chapter > 1 ? { book, chapter: chapter - 1 } : idx > 0 ? { book: books[idx - 1].id, chapter: books[idx - 1].chapters } : null;
+  const next = chapter < meta.chapters ? { book, chapter: chapter + 1 } : idx < books.length - 1 ? { book: books[idx + 1].id, chapter: 1 } : null;
+  cm.chips = h('div', { class: 'chips', role: 'group', 'aria-label': 'Commentary' });
+  cm.manage = h('div', { class: 'manage-panel', hidden: !cm.manageOpen });
+  cm.status = h('div', { class: 'commentary-status', 'aria-live': 'polite' });
+  cm.listEl = h('div', { class: 'c-list' });
+  mount(h('main', { class: 'screen commentary-page' },
+    h('button', { class: 'text-btn back-btn', onclick: () => goTo(state.pos, cm.returnVerse) }, `‹ Back to ${meta.name} ${chapter}`),
+    h('h1', {}, 'Commentary'),
+    h('nav', { class: 'chapter-nav', 'aria-label': 'Chapter navigation' },
+      h('button', { class: 'text-btn', disabled: !prev, onclick: () => showCommentaryChapter(prev) }, 'Previous'),
+      h('button', { class: 'chapter-pill', onclick: openPicker, 'aria-label': 'Choose book and chapter' }, `${meta.name} ${chapter}`),
+      h('button', { class: 'text-btn', disabled: !next, onclick: () => showCommentaryChapter(next) }, 'Next')),
+    cm.chips, cm.manage, cm.status, cm.listEl));
+  loadCommentaryPage();
+}
+const BOOKS_FALLBACK = () => [{ id: state.pos.book, name: bookName(state.pos.book), chapters: 999 }];
+
+async function loadCommentaryPage() {
   const token = ++cm.token;
   const { book, chapter } = state.pos;
-  const stale = () => token !== cm.token || state.pos.book !== book || state.pos.chapter !== chapter || !state.showCommentary;
+  const stale = () => token !== cm.token || state.tab !== 'commentary' || state.pos.book !== book || state.pos.chapter !== chapter;
   try { cm.list = await loadCommentaryList(); } catch {
     if (!stale()) setStatus(h('p', { class: 'error' }, "Couldn't load commentaries. Check your connection."));
     return;
@@ -825,7 +845,7 @@ async function loadInlineCommentary(focusVerse) {
   const ids = myCommentaryIds(cm.list);
   cm.current = ids.includes(cm.current) ? cm.current : ids.includes(store.get('commentary', null)) ? store.get('commentary', null) : ids[0] || null;
   drawCommentaryChips(); drawManage();
-  removeInlineCommentary();
+  cm.listEl.replaceChildren();
   if (!cm.current) return setStatus(h('p', { class: 'empty-inline' }, 'Your commentary list is empty. Tap “Edit list” to add some.'));
   const meta = cm.list.find((c) => c.id === cm.current);
   const credit = h('p', { class: 'credit' }, meta.licenseUrl ? h('a', { href: meta.licenseUrl, target: '_blank', rel: 'noopener' }, meta.license) : meta.license);
@@ -842,50 +862,40 @@ async function loadInlineCommentary(focusVerse) {
     }
     if (stale()) return;
   }
-  if (!reader.body || !reader.verseEls.length) return;
-  const verseCount = reader.verseEls.length - 1;
-  setStatus(h('p', { class: 'commentary-note' }, data.entries.length
-    ? `${meta.name}: ${data.entries.length} comments in this chapter, shown after the verses they explain.`
-    : `${meta.name} has no comments on this chapter.`), credit);
+  let verses = [];
+  try { verses = (await loadBook(book))[chapter - 1] || []; } catch { /* show commentary without the verse text */ }
+  if (stale()) return;
+  const verseCount = verses.length || Math.max(0, ...data.entries.map((e) => e.verse));
+  setStatus(data.entries.length ? null : h('p', { class: 'empty-inline' }, `${meta.name} has no comments on this chapter.`), credit);
 
-  if (data.introduction) {
-    reader.body.prepend(commentaryBlock(meta, `Introduction to ${bookName(book)} ${chapter}`, data.introduction, { from: 0, to: 0 }));
-  }
+  const sections = [];
+  if (data.introduction) sections.push(commentarySection(meta, `Introduction to ${bookName(book)} ${chapter}`, data.introduction, null, 0, 0));
   data.entries.forEach((e, i) => {
-    if (e.verse > verseCount) return;
-    const last = Math.min(i + 1 < data.entries.length ? data.entries[i + 1].verse - 1 : verseCount, verseCount);
+    const last = Math.min(i + 1 < data.entries.length ? data.entries[i + 1].verse - 1 : verseCount, verseCount || e.verse);
     const to = Math.max(last, e.verse);
     const label = to > e.verse ? `Verses ${e.verse}–${to}` : `Verse ${e.verse}`;
-    reader.verseEls[to].after(commentaryBlock(meta, `${meta.name} · ${label}`, e.text, { from: e.verse, to }));
+    const text = verses.slice(e.verse - 1, to).map(([t], k) => `${e.verse + k} ${t}`).join(' ');
+    sections.push(commentarySection(meta, label, e.text, text, e.verse, to));
   });
-  if (focusVerse) focusCommentary(focusVerse);
-}
+  cm.listEl.replaceChildren(...sections);
 
-function commentaryBlock(meta, label, text, { from, to }) {
-  const long = text.length > 260;
-  const body = h('div', { class: 'commentary-text' + (long ? ' clamped' : '') }, text);
-  const more = long ? h('button', { class: 'text-btn ic-more', type: 'button', onclick: () => {
-    const open = body.classList.toggle('clamped') === false;
-    more.textContent = open ? 'Less' : 'More';
-  } }, 'More') : null;
-  return h('aside', { class: 'inline-commentary', lang: meta.lang, dataset: { from, to } },
-    h('div', { class: 'entry-label' }, label), body, more);
-}
-
-// Scroll to the comment covering a verse (turning commentary on first if needed) and open it.
-function focusCommentary(verse) {
-  if (!state.showCommentary) return setShowCommentary(true, verse);
-  const blocks = [...(reader.body?.querySelectorAll('.inline-commentary') || [])];
-  const block = blocks.find((b) => +b.dataset.from <= verse && verse <= +b.dataset.to);
-  if (!block) {
-    if (!blocks.length) return loadInlineCommentary(verse);
-    toast(`No comment on verse ${verse} in this commentary.`);
-    return;
+  if (cm.focusVerse) {
+    const v = cm.focusVerse;
+    const target = sections.find((el) => +el.dataset.from <= v && v <= +el.dataset.to);
+    if (target) {
+      requestAnimationFrame(() => { target.scrollIntoView({ block: 'start' }); window.scrollBy(0, -12); target.classList.add('flash'); });
+    } else toast(`No comment on verse ${v} in ${meta.name}. Showing the whole chapter.`);
   }
-  const text = block.querySelector('.commentary-text');
-  if (text.classList.contains('clamped')) block.querySelector('.ic-more')?.click();
-  block.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  block.classList.remove('flash'); void block.offsetWidth; block.classList.add('flash');
+}
+
+function commentarySection(meta, label, text, verseText, from, to) {
+  const { book, chapter } = state.pos;
+  return h('section', { class: 'c-entry', lang: meta.lang, dataset: { from, to } },
+    from
+      ? h('button', { class: 'c-label', title: 'Read these verses', onclick: () => goTo({ book, chapter }, from) }, `${bookName(book)} ${chapter} · ${label} ›`)
+      : h('div', { class: 'c-label' }, label),
+    verseText ? h('p', { class: 'c-verses', lang: 'en' }, verseText) : null,
+    h('div', { class: 'commentary-text' }, text));
 }
 
 async function openPicker() {
@@ -906,7 +916,7 @@ async function openPicker() {
         h('div', { class: 'title-row' }, h('h2', {}, b.name), h('button', { class: 'text-btn', onclick: showBooks }, 'Books')),
         h('div', { class: 'chapters' }, Array.from({ length: b.chapters }, (_, i) => h('button', {
           class: b.id === state.pos.book && i + 1 === state.pos.chapter ? 'current' : '',
-          onclick: () => { close(); goTo({ book: b.id, chapter: i + 1 }); },
+          onclick: () => { close(); const pos = { book: b.id, chapter: i + 1 }; if (state.tab === 'commentary') showCommentaryChapter(pos); else goTo(pos); },
         }, i + 1))));
     };
     showBooks();
@@ -1127,7 +1137,7 @@ function mount(screen) {
   $app.replaceChildren(screen, navEl);
 }
 function buildNav() {
-  const item = (tab, label) => h('button', { 'aria-current': state.tab === tab ? 'page' : null, dataset: { tab },
+  const item = (tab, label) => h('button', { 'aria-current': state.tab === tab || (tab === 'read' && state.tab === 'commentary') ? 'page' : null, dataset: { tab },
     onclick: () => {
       if (state.tab === tab && tab === 'read') return;
       clearSelection(); state.tab = tab; render(); window.scrollTo(0, 0); // re-tapping Notes/Friends refreshes
@@ -1140,11 +1150,12 @@ function updateBadge() {
   const n = state.friends?.incoming.length || 0;
   if (b) { if (n) b.dataset.count = n; else delete b.dataset.count; }
 }
-function rerender() { if (state.tab === 'read') paint(); else render(); }
+function rerender() { if (state.tab === 'read') paint(); else if (state.tab !== 'commentary') render(); }
 async function render() {
   buildNav();
   updateBadge();
   if (state.tab === 'read') return renderReader();
+  if (state.tab === 'commentary') return renderCommentaryPage();
   if (state.tab === 'notes') return renderNotes();
   return renderFriends();
 }

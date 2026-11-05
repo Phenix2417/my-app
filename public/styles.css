@@ -217,20 +217,10 @@ h1 { font-size: 28px; font-weight: 500; margin: 18px 0 24px; }
 .small-btn { padding: 8px 16px; font-size: 14px; }
 .commentary-text:lang(zh) { font-family: "Noto Serif SC", "Noto Serif TC", "Songti SC", "PMingLiU", serif; line-height: 1.8; }
 
-/* Inline commentary on the Read page */
-.reader-controls { border-bottom: 1px solid var(--divider); padding-bottom: 8px; }
-.reader-controls .switch-row { border-bottom: 0; padding: 8px 0; }
-.commentary-panel { padding: 4px 0 6px; }
+/* Commentary page */
 .commentary-status .credit { margin: 4px 0 0; }
 .commentary-note, .empty-inline { color: var(--muted); font-size: 14px; margin: 4px 0 0; }
 .manage-panel { margin: 4px 0 12px; padding: 4px 14px 10px; border-radius: 16px; background: var(--surface-2); }
-.inline-commentary { display: block; margin: .5em 0 .9em; padding: 12px 14px 6px; border-left: 3px solid var(--primary);
-  border-radius: 0 12px 12px 0; background: var(--surface); font: 16px/1.6 var(--font-ui, Roboto, system-ui, sans-serif);
-  user-select: text; -webkit-user-select: text; }
-.inline-commentary .commentary-text { font-size: 16px; line-height: 1.65; }
-.inline-commentary .commentary-text.clamped { display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden; }
-.inline-commentary .ic-more { padding: 4px 0; font-size: 15px; }
-.inline-commentary.flash { animation: flash 1.6s ease-out; }
 
 .manage-row.draggable { touch-action: pan-y; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; cursor: grab;
   background: var(--surface-2); position: relative; border-radius: 10px; }
@@ -254,5 +244,19 @@ h1 { font-size: 28px; font-weight: 500; margin: 18px 0 24px; }
 .side-label { display: grid; justify-items: center; gap: 4px; font-size: 13px; font-weight: 500; text-align: center; color: var(--on-bg); cursor: pointer; }
 .side-icon { width: 36px; height: 36px; border-radius: 18px; display: grid; place-items: center; background: var(--surface-2); color: var(--primary); }
 .side-icon svg { width: 20px; height: 20px; }
-.reader-controls:has(.commentary-panel[hidden]) { border-bottom: 0; padding-bottom: 0; }
 @media (prefers-reduced-motion: reduce) { .side-dock, .side-tab svg { transition: none; } }
+
+.commentary-page h1 { margin-top: 4px; }
+.back-btn { padding-left: 0; margin-top: 8px; font-size: 16px; }
+.commentary-page .chips { margin-top: 18px; }
+.c-list { display: grid; gap: 14px; margin-top: 14px; }
+.c-entry { background: var(--surface); border-radius: 18px; padding: 14px 16px 16px; scroll-margin-top: 12px; }
+.c-entry.flash { animation: flash 1.6s ease-out; }
+.c-label { display: block; background: none; border: 0; padding: 0; text-align: left; color: var(--primary); font-weight: 500; font-size: 14px; margin-bottom: 8px; }
+button.c-label:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; border-radius: 4px; }
+.c-verses { margin: 0 0 10px; padding-left: 10px; border-left: 3px solid var(--divider); color: var(--muted);
+  font: 15px/1.55 "Noto Serif", Georgia, serif; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.c-entry .commentary-text { font-size: 17px; line-height: 1.65; }
+.side-action { background: none; border: 0; padding: 0; font: inherit; font-size: 13px; font-weight: 500; }
+.side-go { color: var(--primary); font-size: 12px; margin-top: 2px; }
+.side-action:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; border-radius: 8px; }

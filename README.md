@@ -8,13 +8,13 @@ Read the Bible, highlight passages, write notes, and see the notes your friends 
   Pick a color to highlight, or tap **Note** to write a note.
 - **Show friends' notes** — friends' highlights appear underlined in their color, with a badge
   showing their initial. Tap it to read their note.
-- **Commentary** — turn on **Show commentary** on the Read page; comments appear right after the verses they
-  explain (or select a verse and tap **Commentary** to jump to its comment). Read what Matthew Henry,
-  Jamieson-Fausset-Brown, Adam Clarke, John Gill, John Calvin, Keil & Delitzsch (Old Testament) or the
-  Tyndale Open Study Notes say about it, or the Chinese 信望愛站註釋 (Simplified or Traditional) and 串珠
-  cross references from the 信望愛 (FHL) site. Tap **Edit list** to add or remove commentaries, and press and hold one to drag it into a new place;
-  each person's list is saved to their account. Texts come from the Free Use Bible API (bible.helloao.org); the server
-  fetches each chapter once and keeps a copy (in the Railway volume when one is attached).
+- **Commentary** — its own page: open the side bar (the tab on the right edge) and tap **Commentary**, or select
+  verses and tap **Commentary** in the toolbar to open it at those verses. Each comment shows the verses it explains;
+  tap the label to read them. Choose from Matthew Henry, Jamieson-Fausset-Brown, Adam Clarke, John Gill, John Calvin,
+  Keil & Delitzsch (Old Testament), Tyndale Open Study Notes, 信望愛站註釋 (Simplified or Traditional) and 串珠 cross
+  references. Tap **Edit list** to add or remove commentaries, and press and hold one to drag it into a new place;
+  each person's list is saved to their account. Texts come from the Free Use Bible API (bible.helloao.org) and the
+  信望愛 (FHL) site; the server fetches each chapter once and keeps a copy (in the Railway volume when one is attached).
 - **Notes** — *Mine* lists your notes; *Friends'* lists notes shared with you. Tap a card to jump to the verse.
 - **Friends** — add a friend by username; they accept the request. Each friend has a
   **Can see my notes** switch. Your notes stay private until you turn it on for that person,
