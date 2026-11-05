@@ -297,7 +297,10 @@ async function renderReader() {
       h('button', { class: 'text-btn', disabled: !prev, onclick: () => goTo(prev) }, 'Previous'),
       h('button', { class: 'chapter-pill', onclick: openPicker, 'aria-label': 'Choose book and chapter' }, `${meta.name} ${chapter}`),
       h('button', { class: 'text-btn', disabled: !next, onclick: () => goTo(next) }, 'Next')),
-    h('p', { class: 'hint' }, 'Hold a word or tap a verse number to select. Drag the handles to adjust.'),
+    h('div', { class: 'hint-row' },
+      h('p', { class: 'hint' }, 'Hold a word or tap a verse number to select. Drag the handles to adjust.'),
+      // Opens at the selected verse, or at the verse nearest the top of the screen.
+      h('button', { class: 'tonal-btn commentary-btn', onclick: () => openCommentary(state.selection?.start.v || topVisibleVerse()) }, 'Commentary')),
     h('div', { class: 'switch-row' }, h('label', { for: 'show-friends' }, "Show friends' notes"), sw),
     body);
   mount(screen);
@@ -603,6 +606,13 @@ function showNotesAt(p) {
 }
 
 /* ---------------- Commentaries ---------------- */
+function topVisibleVerse() {
+  for (let v = 1; v < reader.verseEls.length; v++) {
+    const el = reader.verseEls[v];
+    if (el && el.getBoundingClientRect().bottom > 80) return v;
+  }
+  return 1;
+}
 const commentaryCache = new Map(); // "id/book/chapter" -> response
 async function loadCommentaryList() {
   if (state.commentaries) return state.commentaries;
@@ -980,5 +990,17 @@ setInterval(async () => {
 }, 60000);
 window.addEventListener('resize', () => positionHandles());
 
-if ('serviceWorker' in navigator && window.isSecureContext) navigator.serviceWorker.register('/sw.js').catch(() => {});
+if ('serviceWorker' in navigator && window.isSecureContext) {
+  // When a new version of the app is deployed, its service worker takes over; reload to show it,
+  // but never while a sheet (like an unsaved note) is open.
+  const hadController = !!navigator.serviceWorker.controller;
+  let pendingReload = false;
+  const reloadIfIdle = () => { if (pendingReload && !document.querySelector('.scrim') && !state.selection) location.reload(); };
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (hadController) { pendingReload = true; reloadIfIdle(); } });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') reloadIfIdle(); });
+  document.addEventListener('click', () => setTimeout(reloadIfIdle, 0));
+  navigator.serviceWorker.register('/sw.js').then((reg) => {
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') reg.update().catch(() => {}); });
+  }).catch(() => {});
+}
 if (state.auth) start(); else renderAuth();

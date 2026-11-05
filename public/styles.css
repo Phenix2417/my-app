@@ -203,3 +203,7 @@ h1 { font-size: 28px; font-weight: 500; margin: 18px 0 24px; }
 .intro .commentary-text { margin-top: 10px; }
 .credit { color: var(--muted); font-size: 13px; margin: 10px 0 0; }
 .credit a { color: var(--muted); }
+
+.hint-row { display: flex; align-items: center; gap: 12px; margin: 6px 0 18px; }
+.hint-row .hint { margin: 0; flex: 1; min-width: 0; }
+.commentary-btn { flex: none; padding: 9px 16px; font-size: 15px; }
