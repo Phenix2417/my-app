@@ -5,6 +5,7 @@ import crypto from 'node:crypto';
 import { BOOKS, BOOK_IDS } from './books.js';
 import { commentaryList, CommentaryError, COMMENTARY_IDS } from './commentary.js';
 import { PronounceError } from './pronounce.js';
+import { TranslateError } from './translate.js';
 
 const COLORS = new Set(['yellow', 'green', 'blue', 'pink', 'purple']);
 const USERNAME_RE = /^[a-z0-9_]{3,20}$/i;
@@ -71,7 +72,7 @@ export function seedTestUsers(db, users) {
   return created;
 }
 
-export function createApp(db, { publicDir, trustProxy = false, commentary = null, pronounce = null, phonetics = null } = {}) {
+export function createApp(db, { publicDir, trustProxy = false, commentary = null, pronounce = null, phonetics = null, translate = null } = {}) {
   const q = (sql) => db.prepare(sql);
   const stmt = {
     userByName: q('SELECT * FROM users WHERE username = ?'),
@@ -190,6 +191,13 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
       if (!phonetics) throw new HttpError(503, 'Phonetics are not set up on this server');
       try { return await phonetics(word); } catch (e) {
         if (e instanceof PronounceError) throw new HttpError(e.status, e.message);
+        throw e;
+      }
+    }, true],
+    ['POST', /^\/api\/translate$/, async ({ body }) => {
+      if (!translate) throw new HttpError(503, 'Translation is not set up on this server');
+      try { return await translate(body.text); } catch (e) {
+        if (e instanceof TranslateError) throw new HttpError(e.status, e.message);
         throw e;
       }
     }, true],

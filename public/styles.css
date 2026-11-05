@@ -345,3 +345,9 @@ body.bars-hidden .bottom-nav { transform: translateY(100%); }
 .pron svg { width: 16px; height: 16px; color: var(--primary); }
 .pron.playing { background: color-mix(in srgb, var(--primary) 16%, transparent); border-color: var(--primary); }
 .pron:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+/* Translation of a multi-word selection, above the word buttons */
+.trans { margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid var(--divider); }
+.trans-en { margin: 0 0 6px; color: var(--muted); font: 14px/1.45 "Noto Serif", Georgia, serif;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.trans-zh { margin: 0; font-size: 18px; line-height: 1.55; }

@@ -673,7 +673,9 @@ function showToolbar() {
     h('div', { class: 'row' },
       h('button', { class: 'text-btn', onclick: () => noteEditor(draft('yellow'), { isNew: true }) }, 'Note'),
       h('button', { class: 'text-btn', onclick: () => { const v = start.v; clearSelection(); openCommentaryPage(v); } }, 'Commentary'),
-      h('button', { class: 'text-btn dict-btn', 'aria-expanded': 'false', onclick: (e) => toggleDictionary(bar, e.currentTarget) }, 'Dictionary'),
+      // One word: its dictionary entry. Several words: translate the selection, then look up each word.
+      h('button', { class: 'text-btn dict-btn', 'aria-expanded': 'false', onclick: (e) => toggleDictionary(bar, e.currentTarget) },
+        cmp(start, end) ? 'Translate' : 'Dictionary'),
       h('button', { class: 'text-btn', onclick: async () => {
         const text = `${selectedQuote()} — ${ref(draft('yellow'))} (WEB)`;
         try { await navigator.clipboard.writeText(text); toast('Copied'); } catch { toast("Couldn't copy"); }
@@ -760,9 +762,21 @@ function toggleDictionary(bar, btn) {
   let words = [...new Set(all.map(dictKey).filter(Boolean))];
   if (words.length > 1) words = words.filter((w) => !STOP.has(w));
   if (!words.length) words = [dictKey(all[0] || '')];
-  words = words.slice(0, 8);
+  words = words.slice(0, 12);
+  const multi = all.length > 1;
   const body = h('div', { class: 'dict-entry', 'aria-live': 'polite' });
-  const tabs = words.length > 1 ? h('div', { class: 'dict-words', role: 'group', 'aria-label': 'Words' }) : null;
+  const tabs = multi || words.length > 1 ? h('div', { class: 'dict-words', role: 'group', 'aria-label': 'Look up a word' }) : null;
+  // Several words: translate the whole selection first.
+  let trans = null;
+  if (multi) {
+    const zh = h('p', { class: 'trans-zh', lang: 'zh-Hans' }, 'Translating…');
+    trans = h('div', { class: 'trans', 'aria-live': 'polite' }, h('p', { class: 'trans-en' }, all.join(' ')), zh);
+    api('POST', '/api/translate', { text: all.join(' ') }).then((r) => { zh.textContent = r.text; positionToolbar(); }).catch((err) => {
+      zh.classList.add('dict-muted');
+      zh.textContent = err instanceof OfflineError ? 'Translation needs a connection.' : err.message;
+      positionToolbar();
+    });
+  }
   const show = async (w) => {
     tabs?.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.w === w)));
     body.replaceChildren(h('p', { class: 'dict-muted' }, 'Looking up…'));
@@ -780,8 +794,10 @@ function toggleDictionary(bar, btn) {
     positionToolbar();
   };
   if (tabs) tabs.append(...words.map((w) => h('button', { class: 'chip', dataset: { w }, onclick: () => show(w) }, w)));
-  bar.append(h('div', { class: 'dict' }, tabs, body, h('p', { class: 'dict-credit' }, 'ECDICT English–Chinese dictionary · Phonetics & audio: Youdao')));
-  show(words[0]);
+  bar.append(h('div', { class: 'dict' }, trans, tabs, body,
+    h('p', { class: 'dict-credit' }, multi ? 'Translation, phonetics & audio: Youdao · Dictionary: ECDICT' : 'ECDICT English–Chinese dictionary · Phonetics & audio: Youdao')));
+  if (multi) body.replaceChildren(h('p', { class: 'dict-muted' }, 'Tap a word above for its definition.'));
+  else show(words[0]);
 }
 
 // Place the selection bubble just above the selected words (or below them if there's no room),
