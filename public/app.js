@@ -676,6 +676,7 @@ function showToolbar() {
       // One word: its dictionary entry. Several words: translate the selection, then look up each word.
       h('button', { class: 'text-btn dict-btn', 'aria-expanded': 'false', onclick: (e) => toggleDictionary(bar, e.currentTarget) },
         cmp(start, end) ? 'Translate' : 'Dictionary'),
+      h('button', { class: 'text-btn grammar-btn', 'aria-expanded': 'false', onclick: (e) => toggleGrammar(bar, e.currentTarget) }, 'Grammar'),
       h('button', { class: 'text-btn', onclick: async () => {
         const text = `${selectedQuote()} — ${ref(draft('yellow'))} (WEB)`;
         try { await navigator.clipboard.writeText(text); toast('Copied'); } catch { toast("Couldn't copy"); }
@@ -744,6 +745,112 @@ function pronButton(word, accent, fallback) {
   return btn;
 }
 
+/* ----- Grammar analysis inside the bubble (compromise, MIT, runs on the phone) ----- */
+let nlpReady = null;
+function loadNlp() {
+  nlpReady ??= new Promise((resolve, reject) => {
+    if (window.nlp) return resolve(window.nlp);
+    const sc = document.createElement('script');
+    sc.src = '/vendor/compromise-14.19.0.js';
+    sc.onload = () => (window.nlp ? resolve(window.nlp) : reject(new Error('missing')));
+    sc.onerror = () => { nlpReady = null; reject(new Error('load')); };
+    document.head.append(sc);
+  });
+  return nlpReady;
+}
+
+// Part of speech in Chinese (and English), most specific tag first.
+const POS = [
+  ['Copula', '系动词', 'linking verb'], ['Modal', '情态动词', 'modal verb'], ['Auxiliary', '助动词', 'auxiliary'],
+  ['Verb', '动词', 'verb'], ['Possessive', '物主代词', 'possessive'], ['Pronoun', '代词', 'pronoun'],
+  ['ProperNoun', '专有名词', 'proper noun'], ['Noun', '名词', 'noun'], ['Adjective', '形容词', 'adjective'],
+  ['Adverb', '副词', 'adverb'], ['Preposition', '介词', 'preposition'], ['Conjunction', '连词', 'conjunction'],
+  ['QuestionWord', '关系词', 'relative/question word'], ['Value', '数词', 'number'], ['Negative', '否定词', 'negative'],
+];
+const ARTICLES = new Set(['the', 'a', 'an']);
+function posOf(term) {
+  const tags = new Set(term.tags || []);
+  if (tags.has('Determiner')) return ARTICLES.has(term.normal) ? ['冠词', 'article'] : ['限定词', 'determiner'];
+  const hit = POS.find(([t]) => tags.has(t));
+  return hit ? [hit[1], hit[2]] : ['其他', 'other'];
+}
+const TENSE = { PastTense: '过去时', PresentTense: '现在时', FutureTense: '将来时' };
+function describeVerb(v) {
+  const g = v.verb?.grammar || {};
+  const form = g.form || '';
+  const parts = [];
+  // has/have/had + past participle is a perfect tense (the library reports "has been made" as plain present).
+  const perfect = /\b(has|have|had)(n[’']t)?\s+\S/i.test(v.text) ? (/\bhad/i.test(v.text) ? '过去完成时' : '现在完成时') : '';
+  if (perfect) parts.push(perfect);
+  else if (/perfect/.test(form)) parts.push(g.tense === 'PastTense' ? '过去完成时' : g.tense === 'FutureTense' ? '将来完成时' : '现在完成时');
+  else if (/progressive|continuous/.test(form)) parts.push(`${TENSE[g.tense] ? TENSE[g.tense].replace('时', '') : ''}进行时`);
+  else if (g.tense && TENSE[g.tense]) parts.push(`一般${TENSE[g.tense]}`);
+  if (g.passive || /passive/.test(form)) parts.push('被动语态');
+  if (v.verb?.negative || /n[’']t\b|\bnot\b/i.test(v.text)) parts.push('否定');
+  if (/infinitive/.test(form)) parts.push('不定式');
+  return parts.join(' · ') || '动词';
+}
+
+function toggleGrammar(bar, btn) {
+  const open = bar.querySelector('.grammar');
+  if (open) { open.remove(); btn.setAttribute('aria-expanded', 'false'); positionToolbar(); return; }
+  // One panel at a time: close the translation/dictionary panel if it's open.
+  bar.querySelector('.dict')?.remove(); bar.querySelector('.dict-btn')?.setAttribute('aria-expanded', 'false');
+  btn.setAttribute('aria-expanded', 'true');
+  const text = reader.words.filter((x) => inRange(x, state.selection.start, state.selection.end)).map((x) => x.el.textContent).join(' ');
+  const panel = h('div', { class: 'grammar', 'aria-live': 'polite' }, h('p', { class: 'dict-muted' }, 'Analysing…'));
+  bar.append(panel);
+  positionToolbar();
+  loadNlp().then((nlp) => {
+    const sections = nlp(text).sentences().json().map((sj) => {
+      const doc = nlp(sj.text);
+      const terms = doc.json()[0]?.terms || [];
+      const words = h('div', { class: 'g-words' });
+      terms.forEach((t, i) => {
+        if (!t.text.trim()) return; // the hidden "not" of a contraction
+        let [zh, en] = posOf(t);
+        // "that/which/who" between a noun and a verb introduces a clause: a relative pronoun.
+        const next = terms.slice(i + 1).find((x) => x.text.trim());
+        if (i > 0 && ['that', 'which', 'who', 'whom', 'whose'].includes(t.normal) && next && (next.tags || []).some((g) => ['Verb', 'Auxiliary', 'Copula', 'Modal'].includes(g))) {
+          [zh, en] = ['关系代词', 'relative pronoun'];
+        }
+        words.append(h('span', { class: 'g-word', title: en, dataset: { pos: en.split(/[ /]/)[0] } },
+          h('span', { class: 'g-text' }, t.text.replace(/[,.;:!?]+$/, '')), h('span', { class: 'g-pos' }, zh)));
+      });
+      const rows = [];
+      // Subject / verb, only when the parser found a believable subject (it can't handle inverted word order).
+      const s = sj.sentence || {};
+      const firstSubj = terms.find((t) => t.normal === String(s.subject || '').split(' ')[0]);
+      if (s.subject && s.verb && firstSubj && !(firstSubj.tags || []).includes('Preposition')) {
+        rows.push(h('div', { class: 'g-row' }, h('span', { class: 'g-key' }, '主语 Subject'), h('span', {}, s.subject)));
+        rows.push(h('div', { class: 'g-row' }, h('span', { class: 'g-key' }, '谓语 Verb'), h('span', {}, s.verb)));
+        if (s.predicate) rows.push(h('div', { class: 'g-row' }, h('span', { class: 'g-key' }, '其余 Rest'), h('span', {}, s.predicate)));
+      }
+      for (const v of doc.verbs().json()) {
+        rows.push(h('div', { class: 'g-row' }, h('span', { class: 'g-key' }, '动词 Verb'), h('span', {}, h('b', {}, v.text.replace(/[,.;:!?]+$/, '')), ` — ${describeVerb(v)}`)));
+      }
+      const phrases = [
+        ...doc.match('#Preposition (#Determiner|#Possessive)? #Adjective? #Noun+').out('array').map((p) => ['介词短语', p]),
+        ...doc.nouns().out('array').filter((p) => p.trim().split(/\s+/).length > 1).map((p) => ['名词短语', p.replace(/^(and|or|but)\s+/i, '')]),
+      ];
+      const seen = new Set();
+      for (const [kind, p] of phrases) {
+        const clean = p.split(/[,.;:!?]/)[0].trim(); // a phrase ends at punctuation
+        if (seen.has(kind + clean)) continue;
+        seen.add(kind + clean);
+        rows.push(h('div', { class: 'g-row' }, h('span', { class: 'g-key' }, kind), h('span', {}, clean)));
+      }
+      return h('section', { class: 'g-sentence' }, words, ...rows);
+    });
+    panel.replaceChildren(...sections,
+      h('p', { class: 'dict-credit' }, 'Automatic analysis by compromise · may be wrong for unusual word order'));
+    positionToolbar();
+  }).catch(() => {
+    panel.replaceChildren(h('p', { class: 'dict-muted' }, "Couldn't load the grammar tool. Check your connection and try again."));
+    positionToolbar();
+  });
+}
+
 // Double tap: select the word and open its dictionary entry in the bubble.
 function openDictionaryFor(word) {
   navigator.vibrate?.(8);
@@ -756,6 +863,7 @@ function toggleDictionary(bar, btn) {
   const open = bar.querySelector('.dict');
   if (open) { open.remove(); btn.setAttribute('aria-expanded', 'false'); positionToolbar(); return; }
   btn.setAttribute('aria-expanded', 'true');
+  bar.querySelector('.grammar')?.remove(); bar.querySelector('.grammar-btn')?.setAttribute('aria-expanded', 'false');
   const all = reader.words.filter((x) => inRange(x, state.selection.start, state.selection.end)).map((x) => x.el.textContent);
   const multi = all.length > 1;
   const words = [dictKey(all[0] || '')];
