@@ -29,6 +29,14 @@ Environment variables: `PORT` (default 3000), `HOST` (default 0.0.0.0), `DB_FILE
 To use it on your phone, deploy it behind HTTPS (needed for install + offline mode), e.g. on any host
 that runs Node with a persistent disk for the database file.
 
+## Deploy on Railway (works from a phone browser)
+
+1. Sign in at railway.com with GitHub → **New Project** → **Deploy from GitHub repo** → pick this repo and branch.
+2. In the service, add a **Volume** (mount path `/data`). The app stores its database there automatically.
+3. **Settings → Networking → Generate Domain** to get the public HTTPS link.
+
+`railway.json` sets the start command and health check.
+
 ## Layout
 
 - `server/` — HTTP API + static files (`app.js`), database schema (`db.js`), book list.

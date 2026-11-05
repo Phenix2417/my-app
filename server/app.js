@@ -20,7 +20,7 @@ class HttpError extends Error {
 const sha256 = (s) => crypto.createHash('sha256').update(s).digest('hex');
 const hashPassword = (password, salt) => crypto.scryptSync(password, salt, 64).toString('hex');
 
-export function createApp(db, { publicDir } = {}) {
+export function createApp(db, { publicDir, trustProxy = false } = {}) {
   const q = (sql) => db.prepare(sql);
   const stmt = {
     userByName: q('SELECT * FROM users WHERE username = ?'),
@@ -289,7 +289,8 @@ export function createApp(db, { publicDir } = {}) {
       const body = await readJson(req);
       const result = await fn({
         me, token, body, query: url.searchParams, params: url.pathname.match(re).slice(1),
-        ip: req.socket.remoteAddress,
+        // The proxy appends the real client address last; earlier entries can be forged by the client.
+        ip: (trustProxy && String(req.headers['x-forwarded-for'] || '').split(',').pop().trim()) || req.socket.remoteAddress,
       });
       if (result && result.status && result.body) return send(res, result.status, result.body);
       return send(res, 200, result);
