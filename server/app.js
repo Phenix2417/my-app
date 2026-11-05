@@ -198,7 +198,8 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
       if (!pronounce) throw new HttpError(503, 'Pronunciation is not set up on this server');
       try {
         const { buf, type } = await pronounce(accent, word);
-        return { status: 200, body: buf, headers: { 'Content-Type': type, 'Cache-Control': 'public, max-age=2592000' } };
+        // no-store: phones stream the recording each time instead of keeping it (the server keeps the copy).
+        return { status: 200, body: buf, headers: { 'Content-Type': type, 'Cache-Control': 'no-store' } };
       } catch (e) {
         if (e instanceof PronounceError) throw new HttpError(e.status, e.message);
         throw e;

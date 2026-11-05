@@ -39,6 +39,7 @@ test('audio route serves the right content type without sign-in', async () => {
     const res = await fetch(`http://127.0.0.1:${server.address().port}/api/pronounce/uk/grace`);
     assert.equal(res.status, 200);
     assert.equal(res.headers.get('content-type'), 'audio/wav');
+    assert.equal(res.headers.get('cache-control'), 'no-store', 'phones must not keep audio');
     assert.equal((await res.arrayBuffer()).byteLength, wav.length);
     assert.equal((await fetch(`http://127.0.0.1:${server.address().port}/api/pronounce/uk/zzzz`)).status, 404);
   } finally { server.close(); }
