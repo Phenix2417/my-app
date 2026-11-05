@@ -755,9 +755,8 @@ function drawManage() {
     }));
   const others = list.filter((c) => !ids.includes(c.id));
   const groups = ['zh-Hans', 'zh-Hant', 'en'].map((lang) => others.filter((c) => c.lang === lang)).filter((g) => g.length);
-  const done = () => h('button', { class: 'filled-btn', onclick: () => setManageOpen(false) }, 'Done');
   cm.manage.replaceChildren(...[
-    h('div', { class: 'manage-head' }, h('h2', {}, 'Edit your list'), done()),
+    h('div', { class: 'manage-head' }, h('h2', {}, 'Edit your list')),
     h('p', { class: 'hint' }, 'The first one opens by default. Press and hold a commentary, then drag it to change the order.'),
     ids.length ? mine : h('p', { class: 'empty' }, 'Your list is empty. Add commentaries below.'),
     others.length ? h('div', { class: 'section-label' }, 'Add more') : null,
