@@ -715,9 +715,11 @@ function revealActiveChip() {
   if (chip) cm.chips.scrollTo({ left: chip.offsetLeft - (cm.chips.clientWidth - chip.offsetWidth) / 2, behavior: 'smooth' });
 }
 
+// While editing, the page shows only the editor: the commentary buttons and text are hidden until Done.
 function setManageOpen(open) {
   cm.manageOpen = open;
   if (cm.manage) cm.manage.hidden = !open;
+  for (const el of [cm.chips, cm.status, cm.listEl]) if (el) el.hidden = open;
   drawManage(); drawCommentaryChips();
   if (cm.scroller) cm.scroller.scrollTop = 0;
 }
@@ -756,7 +758,7 @@ function drawManage() {
   const others = list.filter((c) => !ids.includes(c.id));
   const groups = ['zh-Hans', 'zh-Hant', 'en'].map((lang) => others.filter((c) => c.lang === lang)).filter((g) => g.length);
   cm.manage.replaceChildren(...[
-    h('div', { class: 'manage-head' }, h('h2', {}, 'Edit your list')),
+    h('div', { class: 'manage-head' }, h('h2', {}, 'Edit your list'), h('button', { class: 'filled-btn', onclick: () => setManageOpen(false) }, 'Done')),
     h('p', { class: 'hint' }, 'The first one opens by default. Press and hold a commentary, then drag it to change the order.'),
     ids.length ? mine : h('p', { class: 'empty' }, 'Your list is empty. Add commentaries below.'),
     others.length ? h('div', { class: 'section-label' }, 'Add more') : null,
@@ -824,8 +826,9 @@ function renderCommentaryPage() {
   const { book, chapter } = state.pos;
   const books = state.books || BOOKS_FALLBACK();
   const meta = books.find((b) => b.id === book) || books[0];
+  cm.manageOpen = false; // the page always opens showing commentary, not the editor
   cm.chips = h('div', { class: 'chips', role: 'group', 'aria-label': 'Commentary' });
-  cm.manage = h('div', { class: 'manage-panel', hidden: !cm.manageOpen });
+  cm.manage = h('div', { class: 'manage-panel', hidden: true });
   cm.status = h('div', { class: 'commentary-status', 'aria-live': 'polite' });
   cm.listEl = h('div', { class: 'c-list' });
   // The header stays put; only this area scrolls. Swiping sideways in it changes commentary.
