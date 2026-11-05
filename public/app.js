@@ -790,51 +790,134 @@ function describeVerb(v) {
   return parts.join(' · ') || '动词';
 }
 
-// Grammar of a passage, as elements to show in the Translate panel.
+// What each preposition usually tells you, for explaining prepositional phrases.
+const PREP_ROLE = {
+  in: '时间或地点（在…里/在…时候）', at: '时间或地点（在…）', on: '时间或地点（在…上）', into: '方向（进入…）',
+  to: '方向或对象（到…/向…）', unto: '方向或对象（到…/向…）', toward: '方向（朝着…）', towards: '方向（朝着…）',
+  from: '来源或起点（从…）', through: '途径或手段（借着/通过…）', by: '方式或动作的执行者（靠…/被…）',
+  with: '伴随或方式（与…一起/用…）', without: '条件或方式（没有…）', for: '目的或对象（为了…/给…）',
+  about: '涉及的内容（关于…）', after: '时间（在…之后）', before: '时间或位置（在…之前）', among: '范围（在…中间）',
+  upon: '位置或对象（在…上/临到…）', under: '位置（在…下面）', over: '位置或范围（在…之上/遍及…）', of: '所属或性质（…的）',
+  as: '身份或方式（作为…/像…）', like: '比较（像…）', against: '对立（反对…/对着…）', within: '范围（在…之内）', out: '方向（向外）',
+};
+const VERB_MEANING = {
+  一般过去时: '一般过去时表示过去发生的动作或过去存在的状态。',
+  一般现在时: '一般现在时表示现在的状态、经常发生的动作或普遍的真理。',
+  一般将来时: '一般将来时（will/shall + 动词原形）表示将来要发生的动作。',
+  现在完成时: '现在完成时（have/has + 过去分词）表示过去发生的动作对现在仍有影响，或一直持续到现在。',
+  过去完成时: '过去完成时（had + 过去分词）表示在过去某个时间之前已经完成的动作。',
+  将来完成时: '将来完成时（will have + 过去分词）表示到将来某时会已经完成的动作。',
+  被动语态: '被动语态（be + 过去分词）：主语是动作的承受者，强调“被怎样”，不强调是谁做的。',
+  否定: '句中有 not（或 n’t），表示否定。',
+  不定式: '不定式（to + 动词原形）常表示目的或将要做的事。',
+};
+const q = (x) => `“${x}”`;
+
+// Grammar of a passage, as elements to show in the Translate panel. Every part can be tapped for an
+// explanation of what it does in this sentence.
 async function analyzeGrammar(text) {
   let nlp;
   try { nlp = await loadNlp(); } catch { return [h('p', { class: 'dict-muted' }, "Couldn't load the grammar tool. Check your connection and try again.")]; }
   const sections = nlp(text).sentences().json().map((sj) => {
     const doc = nlp(sj.text);
-    const terms = doc.json()[0]?.terms || [];
+    const terms = (doc.json()[0]?.terms || []).filter((t) => t.text.trim()); // drop the hidden "not" of contractions
+    const tagsOf = (t) => new Set(t?.tags || []);
+    const strip = (x) => String(x || '').split(/[,.;:!?]/)[0].trim();
+    const verbs = doc.verbs().json();
+    const mainVerb = verbs[0];
+    const isPassive = !!(mainVerb && (mainVerb.verb?.grammar?.passive || /passive/.test(mainVerb.verb?.grammar?.form || '')));
+    const isCopula = !!(mainVerb && mainVerb.terms?.some((t) => (t.tags || []).includes('Copula')) && !isPassive);
+    // "There came a man": there only introduces the sentence; the real subject comes after the verb.
+    const isThere = terms[0]?.normal === 'there' && tagsOf(terms[1]).has('Verb');
+
     const words = h('div', { class: 'g-words' });
     terms.forEach((t, i) => {
-      if (!t.text.trim()) return; // the hidden "not" of a contraction
       let [zh, en] = posOf(t);
-      // "that/which/who" between a noun and a verb introduces a clause: a relative pronoun.
-      const next = terms.slice(i + 1).find((x) => x.text.trim());
-      if (i > 0 && ['that', 'which', 'who', 'whom', 'whose'].includes(t.normal) && next && (next.tags || []).some((g) => ['Verb', 'Auxiliary', 'Copula', 'Modal'].includes(g))) {
-        [zh, en] = ['关系代词', 'relative pronoun'];
-      }
+      const next = terms[i + 1];
+      if (i > 0 && ['that', 'which', 'who', 'whom', 'whose'].includes(t.normal) && next && ['Verb', 'Auxiliary', 'Copula', 'Modal'].some((g) => tagsOf(next).has(g))) [zh, en] = ['关系代词', 'relative pronoun'];
+      if (i === 0 && isThere) [zh, en] = ['引导词', 'introductory there'];
       words.append(h('span', { class: 'g-word', title: en, dataset: { pos: en.split(/[ /]/)[0] } },
         h('span', { class: 'g-text' }, t.text.replace(/[,.;:!?]+$/, '')), h('span', { class: 'g-pos' }, zh)));
     });
+
     const rows = [];
-    // Subject / verb, only when the parser found a believable subject (it can't handle inverted word order).
+    const row = (key, value, explain) => rows.push({ key, value, explain });
     const s = sj.sentence || {};
     const firstSubj = terms.find((t) => t.normal === String(s.subject || '').split(' ')[0]);
-    if (s.subject && s.verb && firstSubj && !(firstSubj.tags || []).includes('Preposition')) {
-      rows.push(h('div', { class: 'g-row' }, h('span', { class: 'g-key' }, '主语 Subject'), h('span', {}, s.subject)));
-      rows.push(h('div', { class: 'g-row' }, h('span', { class: 'g-key' }, '谓语 Verb'), h('span', {}, s.verb)));
-      if (s.predicate) rows.push(h('div', { class: 'g-row' }, h('span', { class: 'g-key' }, '其余 Rest'), h('span', {}, s.predicate)));
+    const verbText = strip(s.verb);
+    const verbDesc = mainVerb ? describeVerb(mainVerb) : '';
+    if (isThere && s.verb) {
+      const subj = strip(s.predicate);
+      row('主语 Subject', subj, `${q(subj)}是真正的主语。句子以 There 开头，There 只是引导词，本身没有意思；它让主语放到动词${q(verbText)}后面，用来引出一个新出现的人或事物（“有…来了/有…”）。`);
+      row('谓语 Verb', verbText, `${q(verbText)}是谓语，说明主语${q(subj)}做了什么或怎样存在。这里是${verbDesc}。`);
+    } else if (s.subject && s.verb && firstSubj && !tagsOf(firstSubj).has('Preposition')) {
+      const subj = strip(s.subject);
+      row('主语 Subject', subj, `${q(subj)}是主语，这句话讲的就是它。` + (isPassive
+        ? `本句是被动语态，${q(subj)}是动作${q(verbText)}的承受者（“被…”），而不是发出者。`
+        : isCopula ? `谓语是系动词${q(verbText)}，后面的部分用来说明${q(subj)}是什么或怎么样。` : `它是动作${q(verbText)}的发出者。`));
+      row('谓语 Verb', verbText, `${q(verbText)}是谓语，说明主语${q(subj)}` + (isPassive ? '遭受了什么动作' : isCopula ? '是什么、在哪里或处于什么状态' : '做了什么') + `。这里是${verbDesc}。`);
+      const rest = strip(s.predicate);
+      if (rest) {
+        const restFirst = terms.find((t) => t.normal === rest.split(' ')[0].toLowerCase());
+        const prep = restFirst && tagsOf(restFirst).has('Preposition') ? restFirst.normal : null;
+        row('其余 Rest', rest, prep
+          ? `${q(rest)}以介词${q(prep)}开头，是介词短语作状语，表示${PREP_ROLE[prep] || '动作的相关情况'}，补充说明谓语${q(verbText)}。`
+          : ['that', 'which', 'who', 'whom'].includes(rest.split(' ')[0].toLowerCase())
+            ? `${q(rest)}是一个从句，修饰前面的名词，说明它是怎样的。`
+            : isCopula ? `${q(rest)}是表语，跟在系动词${q(verbText)}后面，说明主语${q(subj)}是什么或怎么样。`
+              : `${q(rest)}是宾语，是动作${q(verbText)}的对象（承受这个动作的人或事物）。`);
+      }
     }
-    for (const v of doc.verbs().json()) {
-      rows.push(h('div', { class: 'g-row' }, h('span', { class: 'g-key' }, '动词 Verb'), h('span', {}, h('b', {}, v.text.replace(/[,.;:!?]+$/, '')), ` — ${describeVerb(v)}`)));
+    for (const v of verbs) {
+      const desc = describeVerb(v);
+      const copula = v.terms?.some((t) => (t.tags || []).includes('Copula')) && !/被动语态/.test(desc);
+      const meaning = desc.split(' · ').map((p) => VERB_MEANING[p] || '').join('');
+      row('动词 Verb', `${strip(v.text)} — ${desc}`, `${q(strip(v.text))}：${meaning}` + (copula ? '它是系动词（be 的一种形式），本身意思很弱，作用是把主语和后面的说明部分连接起来。' : ''));
     }
-    const phrases = [
-      ...doc.match('#Preposition (#Determiner|#Possessive)? #Adjective? #Noun+').out('array').map((p) => ['介词短语', p]),
-      ...doc.nouns().out('array').filter((p) => p.trim().split(/\s+/).length > 1).map((p) => ['名词短语', p.replace(/^(and|or|but)\s+/i, '')]),
-    ];
+    const prepPhrases = doc.match('#Preposition (#Determiner|#Possessive)? #Adjective? #Noun+').out('array').map(strip).filter(Boolean);
     const seen = new Set();
-    for (const [kind, p] of phrases) {
-      const clean = p.split(/[,.;:!?]/)[0].trim(); // a phrase ends at punctuation
-      if (!clean || seen.has(kind + clean)) continue;
-      seen.add(kind + clean);
-      rows.push(h('div', { class: 'g-row' }, h('span', { class: 'g-key' }, kind), h('span', {}, clean)));
+    for (const p of prepPhrases) {
+      if (seen.has('p' + p)) continue;
+      seen.add('p' + p);
+      const [prep, ...objWords] = p.split(/\s+/);
+      const at = terms.findIndex((t) => t.text.replace(/[,.;:!?]+$/, '') === prep);
+      const before = at > 0 ? terms[at - 1] : null;
+      // "of" after a noun describes that noun (定语); other prepositions here describe the action (状语).
+      const modifiesNoun = prep.toLowerCase() === 'of' && before && tagsOf(before).has('Noun');
+      row('介词短语', p, `${q(p)}是介词短语：介词${q(prep)} + ${q(objWords.join(' '))}。它表示${PREP_ROLE[prep.toLowerCase()] || '相关的情况'}，` +
+        (modifiesNoun ? `用来修饰前面的名词（作定语）。` : `用来说明动作或状态发生的情况（作状语）。`));
     }
-    return h('section', { class: 'g-sentence' }, words, ...rows);
+    const subjText = isThere ? strip(s.predicate) : strip(s.subject);
+    for (const raw of doc.nouns().out('array')) {
+      const np = strip(raw.replace(/^(and|or|but)\s+/i, ''));
+      if (np.split(/\s+/).length < 2 || seen.has('n' + np)) continue;
+      seen.add('n' + np);
+      const head = np.split(/\s+/).pop();
+      const inPrep = prepPhrases.find((p) => p.toLowerCase().endsWith(np.toLowerCase()));
+      const role = np.toLowerCase() === subjText.toLowerCase() ? '作主语'
+        : inPrep ? `作介词${q(inPrep.split(' ')[0])}的宾语，和介词一起组成介词短语${q(inPrep)}`
+          : isCopula ? '作表语，说明主语是什么' : '作宾语，是动作的对象';
+      row('名词短语', np, `${q(np)}是名词短语，中心词是${q(head)}，前面的词（冠词、形容词或物主代词）修饰它。在这句话里它${role}。`);
+    }
+
+    // Each part is a button; tapping it shows (or hides) what that part does in this sentence.
+    const list = h('div', { class: 'g-rows' });
+    for (const r of rows) {
+      const exp = h('p', { class: 'g-explain', hidden: true }, r.explain);
+      const btn = h('button', { class: 'g-row', type: 'button', 'aria-expanded': 'false', onclick: () => {
+        const opening = exp.hidden;
+        const scope = list.closest('.dict') || list; // one explanation open at a time, across all sentences
+        scope.querySelectorAll('.g-explain').forEach((e) => { e.hidden = true; });
+        scope.querySelectorAll('.g-row').forEach((b) => b.setAttribute('aria-expanded', 'false'));
+        exp.hidden = !opening;
+        btn.setAttribute('aria-expanded', String(opening));
+        positionToolbar();
+      } }, h('span', { class: 'g-key' }, r.key), h('span', { class: 'g-val' }, r.value));
+      list.append(btn, exp);
+    }
+    return h('section', { class: 'g-sentence' }, words, list);
   });
-  return [...sections, h('p', { class: 'g-note' }, 'Grammar: automatic analysis (compromise) · may be wrong for unusual word order')];
+  return [...sections, h('p', { class: 'g-note' }, 'Tap a part to see what it does. Automatic analysis (compromise) · may be wrong for unusual word order')];
 }
 
 // Double tap: select the word and open its dictionary entry in the bubble.

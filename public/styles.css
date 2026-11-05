@@ -362,7 +362,6 @@ body.bars-hidden .bottom-nav { transform: translateY(100%); }
 .g-word[data-pos="noun"], .g-word[data-pos="proper"], .g-word[data-pos="pronoun"], .g-word[data-pos="possessive"] { background: color-mix(in srgb, var(--hl-blue) 60%, transparent); }
 .g-word[data-pos="adjective"], .g-word[data-pos="adverb"] { background: color-mix(in srgb, var(--hl-green) 60%, transparent); }
 .g-word[data-pos="preposition"], .g-word[data-pos="conjunction"] { background: color-mix(in srgb, var(--hl-yellow) 60%, transparent); }
-.g-row { display: grid; grid-template-columns: 6.2em 1fr; gap: 8px; font-size: 14px; padding: 3px 0; }
 .g-key { color: var(--primary); font-weight: 500; font-size: 12px; padding-top: 2px; }
 
 /* Grammar button at the end of the selected text, and its analysis */
@@ -371,3 +370,11 @@ body.bars-hidden .bottom-nav { transform: translateY(100%); }
 .g-btn[aria-pressed="true"] { background: var(--primary); color: var(--on-primary); }
 .g-btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .g-note { color: var(--muted); font-size: 11px; margin: 8px 0 0; }
+
+.g-row { display: grid; grid-template-columns: 6.2em 1fr; gap: 8px; width: 100%; text-align: left; font-size: 14px; padding: 5px 4px;
+  background: none; border: 0; border-radius: 8px; color: var(--on-bg); cursor: pointer; }
+.g-row[aria-expanded="true"] { background: color-mix(in srgb, var(--primary) 12%, transparent); }
+.g-row:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+.g-val b { font-weight: 600; }
+.g-explain { margin: 2px 4px 8px; padding: 8px 10px; border-left: 3px solid var(--primary); background: var(--surface-2); border-radius: 0 8px 8px 0;
+  font-size: 14px; line-height: 1.6; }
