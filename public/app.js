@@ -335,7 +335,15 @@ async function renderReader() {
   mount(screen);
   reader.body = body;
   reader.scroller = scroller;
-  scroller.addEventListener('scroll', () => { if (state.selection) positionHandles(); }, { passive: true });
+  setBars(true);
+  // Reading further down slides the bars away; a tap brings them back.
+  let lastTop = 0;
+  scroller.addEventListener('scroll', () => {
+    if (state.selection) positionHandles();
+    const top = scroller.scrollTop;
+    if (top > lastTop + 6 && top > 60 && !state.selection) setBars(false);
+    lastTop = top;
+  }, { passive: true });
 
   let data;
   try { data = await loadBook(meta.id); } catch {
@@ -521,7 +529,7 @@ let autoScroll = null;
 function autoScrollFor(y, onTick) {
   cancelAnimationFrame(autoScroll?.raf);
   // Scroll when the finger nears the top or bottom of the Bible text area.
-  const box = reader.scroller?.getBoundingClientRect();
+  const box = visibleTextArea();
   const edge = box ? box.top + 50 : 70, bottomEdge = box ? box.bottom - 60 : window.innerHeight - 170;
   const speed = y < edge ? -(edge - y) / 4 : y > bottomEdge ? (y - bottomEdge) / 4 : 0;
   if (!speed) { autoScroll = null; return; }
@@ -625,7 +633,10 @@ function attachReaderGestures(body) {
       if (ws.length) setSelection({ v, w: 0 }, { v, w: ws[ws.length - 1].w });
       return;
     }
-    if (p.word) showNotesAt(p.word);
+    // A tap on a word with notes opens them; any other tap shows or hides the top and bottom bars.
+    const here = p.word ? notesAt(p.word) : { mine: [], friends: [] };
+    if (here.mine.length || here.friends.length) showNotesAt(p.word);
+    else setBars(document.body.classList.contains('bars-hidden'));
   };
   body.addEventListener('pointerup', end);
   body.addEventListener('pointercancel', end);
@@ -713,7 +724,7 @@ const cm = { chips: null, manage: null, status: null, listEl: null, list: null, 
 function topVisibleVerse() {
   for (let v = 1; v < reader.verseEls.length; v++) {
     const el = reader.verseEls[v];
-    if (el && el.getBoundingClientRect().bottom > (reader.scroller?.getBoundingClientRect().top ?? 0) + 8) return v;
+    if (el && el.getBoundingClientRect().bottom > (visibleTextArea()?.top ?? 0) + 8) return v;
   }
   return 1;
 }
@@ -1295,7 +1306,20 @@ function updateBadge() {
   if (b) { if (n) b.dataset.count = n; else delete b.dataset.count; }
 }
 function rerender() { if (state.tab === 'read') paint(); else if (state.tab !== 'commentary') render(); }
+// The part of the Bible text not covered by the top and bottom bars.
+function visibleTextArea() {
+  const box = reader.scroller?.getBoundingClientRect();
+  if (!box) return null;
+  if (document.body.classList.contains('bars-hidden')) return { top: box.top, bottom: box.bottom };
+  const head = document.querySelector('.r-head')?.getBoundingClientRect(), nav = navEl?.getBoundingClientRect();
+  return { top: head ? head.bottom : box.top, bottom: nav ? Math.min(box.bottom, nav.top) : box.bottom };
+}
+
+// Top and bottom bars on the Read page slide away while reading (body.bars-hidden).
+function setBars(visible) { document.body.classList.toggle('bars-hidden', !visible); }
+
 async function render() {
+  if (state.tab !== 'read') setBars(true);
   buildNav();
   updateBadge();
   if (state.tab === 'read') return renderReader();
