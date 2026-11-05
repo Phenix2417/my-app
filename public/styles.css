@@ -264,3 +264,21 @@ button.c-label:focus-visible { outline: 2px solid var(--primary); outline-offset
 .manage-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 10px; }
 .manage-head h2 { margin: 0; font-size: 19px; font-weight: 500; }
 .manage-foot { display: flex; justify-content: flex-end; padding-top: 14px; }
+
+/* Commentary page: fixed header, commentary scrolls on its own */
+.commentary-page { height: 100dvh; display: flex; flex-direction: column; overflow: hidden;
+  padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px)); }
+.c-head { flex: none; padding-bottom: 8px; border-bottom: 1px solid var(--divider); }
+.c-titlebar { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.c-titlebar h1 { margin: 12px 0 14px; font-size: 24px; order: -1; }
+.commentary-page .back-btn { margin: 0; padding: 8px 0 8px 8px; font-size: 15px; }
+.commentary-page .chips { margin: 12px 0 0; }
+.c-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; padding: 10px 2px 24px; }
+.c-scroll:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+.c-meta { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 12px; }
+.swipe-hint { color: var(--muted); font-size: 13px; }
+.c-list { margin-top: 10px; will-change: transform; }
+.c-list.slide-from-right { animation: slide-r .22s ease-out; }
+.c-list.slide-from-left { animation: slide-l .22s ease-out; }
+@keyframes slide-r { from { transform: translateX(40px); opacity: .3; } }
+@keyframes slide-l { from { transform: translateX(-40px); opacity: .3; } }

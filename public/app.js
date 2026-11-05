@@ -704,13 +704,19 @@ function drawCommentaryChips() {
     title: c.missingBooks.includes(book) ? `${c.name} doesn't cover ${bookName(book)}` : c.about,
     onclick: () => { cm.current = c.id; store.set('commentary', c.id); loadCommentaryPage(); },
   }, c.name)));
+  requestAnimationFrame(revealActiveChip);
+}
+
+function revealActiveChip() {
+  const chip = cm.chips?.querySelector('.chip[aria-pressed="true"]');
+  if (chip) cm.chips.scrollTo({ left: chip.offsetLeft - (cm.chips.clientWidth - chip.offsetWidth) / 2, behavior: 'smooth' });
 }
 
 function setManageOpen(open) {
   cm.manageOpen = open;
   if (cm.manage) cm.manage.hidden = !open;
   drawManage(); drawCommentaryChips();
-  if (!open) cm.chips?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); // back to the commentary buttons
+  if (cm.scroller) cm.scroller.scrollTop = 0;
 }
 
 function drawManage() {
@@ -832,14 +838,20 @@ function renderCommentaryPage() {
   cm.manage = h('div', { class: 'manage-panel', hidden: !cm.manageOpen });
   cm.status = h('div', { class: 'commentary-status', 'aria-live': 'polite' });
   cm.listEl = h('div', { class: 'c-list' });
+  // The header stays put; only this area scrolls. Swiping sideways in it changes commentary.
+  cm.scroller = h('div', { class: 'c-scroll', tabindex: 0, 'aria-label': 'Commentary text' }, cm.manage, cm.status, cm.listEl);
+  enableCommentarySwipe(cm.scroller);
   mount(h('main', { class: 'screen commentary-page' },
-    h('button', { class: 'text-btn back-btn', onclick: () => goTo(state.pos, cm.returnVerse) }, `‹ Back to ${meta.name} ${chapter}`),
-    h('h1', {}, 'Commentary'),
-    h('nav', { class: 'chapter-nav', 'aria-label': 'Chapter navigation' },
-      h('button', { class: 'text-btn', disabled: !prev, onclick: () => showCommentaryChapter(prev) }, 'Previous'),
-      h('button', { class: 'chapter-pill', onclick: openPicker, 'aria-label': 'Choose book and chapter' }, `${meta.name} ${chapter}`),
-      h('button', { class: 'text-btn', disabled: !next, onclick: () => showCommentaryChapter(next) }, 'Next')),
-    cm.chips, cm.manage, cm.status, cm.listEl));
+    h('div', { class: 'c-head' },
+      h('div', { class: 'c-titlebar' },
+        h('button', { class: 'text-btn back-btn', onclick: () => goTo(state.pos, cm.returnVerse) }, `‹ Back to ${meta.name} ${chapter}`),
+        h('h1', {}, 'Commentary')),
+      h('nav', { class: 'chapter-nav', 'aria-label': 'Chapter navigation' },
+        h('button', { class: 'text-btn', disabled: !prev, onclick: () => showCommentaryChapter(prev) }, 'Previous'),
+        h('button', { class: 'chapter-pill', onclick: openPicker, 'aria-label': 'Choose book and chapter' }, `${meta.name} ${chapter}`),
+        h('button', { class: 'text-btn', disabled: !next, onclick: () => showCommentaryChapter(next) }, 'Next')),
+      cm.chips),
+    cm.scroller));
   loadCommentaryPage();
 }
 const BOOKS_FALLBACK = () => [{ id: state.pos.book, name: bookName(state.pos.book), chapters: 999 }];
@@ -877,7 +889,8 @@ async function loadCommentaryPage() {
   try { verses = (await loadBook(book))[chapter - 1] || []; } catch { /* show commentary without the verse text */ }
   if (stale()) return;
   const verseCount = verses.length || Math.max(0, ...data.entries.map((e) => e.verse));
-  setStatus(data.entries.length ? null : h('p', { class: 'empty-inline' }, `${meta.name} has no comments on this chapter.`), credit);
+  setStatus(data.entries.length ? null : h('p', { class: 'empty-inline' }, `${meta.name} has no comments on this chapter.`),
+    h('div', { class: 'c-meta' }, credit, swipeHint()));
 
   const sections = [];
   if (data.introduction) sections.push(commentarySection(meta, `Introduction to ${bookName(book)} ${chapter}`, data.introduction, null, 0, 0));
@@ -889,14 +902,74 @@ async function loadCommentaryPage() {
     sections.push(commentarySection(meta, label, e.text, text, e.verse, to));
   });
   cm.listEl.replaceChildren(...sections);
+  if (cm.slideFrom) {
+    cm.listEl.classList.remove('slide-from-right', 'slide-from-left'); void cm.listEl.offsetWidth;
+    cm.listEl.classList.add(cm.slideFrom > 0 ? 'slide-from-right' : 'slide-from-left');
+    cm.slideFrom = 0;
+  }
 
   if (cm.focusVerse) {
     const v = cm.focusVerse;
     const target = sections.find((el) => +el.dataset.from <= v && v <= +el.dataset.to);
     if (target) {
-      requestAnimationFrame(() => { target.scrollIntoView({ block: 'start' }); window.scrollBy(0, -12); target.classList.add('flash'); });
+      requestAnimationFrame(() => { cm.scroller.scrollTop = target.offsetTop - cm.scroller.offsetTop - 8; target.classList.add('flash'); });
     } else toast(`No comment on verse ${v} in ${meta.name}. Showing the whole chapter.`);
-  }
+  } else cm.scroller.scrollTop = 0;
+}
+
+function swipeHint() {
+  const ids = myCommentaryIds(cm.list || []);
+  if (ids.length < 2) return null;
+  return h('span', { class: 'swipe-hint' }, `‹ swipe › · ${ids.indexOf(cm.current) + 1} of ${ids.length}`);
+}
+
+// Move to the next (dir 1) or previous (dir -1) commentary in the person's list.
+function switchCommentary(dir) {
+  const ids = myCommentaryIds(cm.list || []);
+  const i = ids.indexOf(cm.current);
+  const next = ids[i + dir];
+  if (!next) return false;
+  cm.current = next;
+  store.set('commentary', next);
+  cm.slideFrom = dir; // new content slides in from that side
+  loadCommentaryPage();
+  return true;
+}
+
+// Horizontal swipe on the commentary area. Vertical movement is left to normal scrolling.
+function enableCommentarySwipe(el) {
+  let g = null;
+  const list = () => cm.listEl;
+  el.addEventListener('pointerdown', (e) => {
+    if ((e.pointerType === 'mouse' && e.button !== 0) || cm.manageOpen || e.target.closest('button, a, input')) return;
+    g = { x: e.clientX, y: e.clientY, id: e.pointerId, dx: 0, horiz: null };
+  });
+  el.addEventListener('pointermove', (e) => {
+    if (!g || e.pointerId !== g.id) return;
+    const dx = e.clientX - g.x, dy = e.clientY - g.y;
+    if (g.horiz === null && Math.hypot(dx, dy) > 10) g.horiz = Math.abs(dx) > Math.abs(dy) * 1.3;
+    if (!g.horiz) return;
+    g.dx = dx;
+    list().style.transition = 'none';
+    list().style.transform = `translateX(${dx * 0.6}px)`;
+    list().style.opacity = String(1 - Math.min(Math.abs(dx) / 500, 0.4));
+  });
+  const end = () => {
+    if (!g) return;
+    const { dx, horiz } = g;
+    g = null;
+    list().style.transition = 'transform .18s ease, opacity .18s ease';
+    list().style.transform = '';
+    list().style.opacity = '';
+    if (horiz && Math.abs(dx) > 70 && !switchCommentary(dx < 0 ? 1 : -1)) {
+      toast(dx < 0 ? 'That was the last commentary in your list.' : 'That was the first commentary in your list.');
+    }
+  };
+  el.addEventListener('pointerup', end);
+  el.addEventListener('pointercancel', end);
+  el.addEventListener('keydown', (e) => { // keyboard: arrow keys while the commentary area has focus
+    if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') { e.preventDefault(); switchCommentary(e.key === 'ArrowRight' ? 1 : -1); }
+  });
 }
 
 function commentarySection(meta, label, text, verseText, from, to) {
