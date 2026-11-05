@@ -330,15 +330,18 @@ body.bars-hidden .bottom-nav { transform: translateY(100%); }
 .dict-words .chip { padding: 4px 10px; font-size: 13px; }
 .dict-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
 .dict-word { font: 600 19px "Noto Serif", Georgia, serif; }
-.dict-ph { color: var(--muted); font-size: 14px; background: none; border: 0; padding: 4px 2px; border-radius: 6px; }
-.dict-ph.playing, .speaker.playing { color: var(--primary); }
-.speaker { display: inline-flex; align-items: center; gap: 3px; border: 1px solid var(--divider); background: none; color: var(--primary);
-  border-radius: 14px; padding: 3px 9px 3px 7px; font-size: 12px; font-weight: 600; }
-.speaker svg { width: 16px; height: 16px; }
-.speaker.playing { background: color-mix(in srgb, var(--primary) 16%, transparent); }
-.dict-ph:focus-visible, .speaker:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .dict-zh { margin: 4px 0 6px; white-space: pre-line; font-size: 16px; line-height: 1.5; }
 .dict-en { margin: 0 0 6px; white-space: pre-line; color: var(--muted); font-size: 14px; line-height: 1.45; }
 .dict-base { margin: 8px 0 2px; font-size: 13px; color: var(--primary); font-weight: 500; }
 .dict-muted { color: var(--muted); font-size: 14px; margin: 4px 0; }
 .dict-credit { color: var(--muted); font-size: 11px; margin: 6px 0 2px; text-align: right; }
+
+.dict-prons { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 4px; }
+.pron { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--divider); background: none; color: var(--on-bg);
+  border-radius: 16px; padding: 4px 8px 4px 10px; font-size: 14px; }
+.pron .accent { font-size: 11px; font-weight: 700; color: var(--primary); letter-spacing: .04em; }
+.pron .ipa { font-family: "Noto Sans", "Segoe UI", "Lucida Sans Unicode", "Arial Unicode MS", sans-serif; }
+.pron .ipa.pending { color: var(--muted); }
+.pron svg { width: 16px; height: 16px; color: var(--primary); }
+.pron.playing { background: color-mix(in srgb, var(--primary) 16%, transparent); border-color: var(--primary); }
+.pron:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }

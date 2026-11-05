@@ -71,7 +71,7 @@ export function seedTestUsers(db, users) {
   return created;
 }
 
-export function createApp(db, { publicDir, trustProxy = false, commentary = null, pronounce = null } = {}) {
+export function createApp(db, { publicDir, trustProxy = false, commentary = null, pronounce = null, phonetics = null } = {}) {
   const q = (sql) => db.prepare(sql);
   const stmt = {
     userByName: q('SELECT * FROM users WHERE username = ?'),
@@ -186,6 +186,13 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
     ['GET', /^\/api\/health$/, () => ({ ok: true })],
     ['GET', /^\/api\/books$/, () => ({ books: BOOKS })],
     ['GET', /^\/api\/commentaries$/, () => ({ commentaries: commentaryList() })],
+    ['GET', /^\/api\/phonetics\/([a-z-]{1,40})$/, async ({ params: [word] }) => {
+      if (!phonetics) throw new HttpError(503, 'Phonetics are not set up on this server');
+      try { return await phonetics(word); } catch (e) {
+        if (e instanceof PronounceError) throw new HttpError(e.status, e.message);
+        throw e;
+      }
+    }, true],
     // Audio for <audio> elements, which can't send a sign-in header; limited to dictionary words.
     ['GET', /^\/api\/pronounce\/(uk|us)\/([a-z-]{1,40})$/, async ({ params: [accent, word] }) => {
       if (!pronounce) throw new HttpError(503, 'Pronunciation is not set up on this server');

@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { openDb } from './db.js';
 import { createServer, seedTestUsers } from './app.js';
 import { createCommentaryService } from './commentary.js';
-import { createPronounceService } from './pronounce.js';
+import { createPronounceService, createPhoneticsService } from './pronounce.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // On Railway, a volume attached to the service is mounted at RAILWAY_VOLUME_MOUNT_PATH; keep the database there.
@@ -26,7 +26,8 @@ if (process.env.SEED_TEST_USERS !== '0') {
 const commentary = createCommentaryService({ cacheDir: path.join(dataDir, 'commentary-cache') });
 
 const pronounce = createPronounceService({ cacheDir: path.join(dataDir, 'audio-cache') });
+const phonetics = createPhoneticsService({ cacheDir: path.join(dataDir, 'phonetics-cache') });
 
-createServer(db, { publicDir: path.join(root, 'public'), trustProxy, commentary, pronounce }).listen(port, host, () => {
+createServer(db, { publicDir: path.join(root, 'public'), trustProxy, commentary, pronounce, phonetics }).listen(port, host, () => {
   console.log(`Bible Study running at http://localhost:${port}`);
 });

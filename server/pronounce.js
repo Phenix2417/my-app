@@ -69,3 +69,43 @@ export function createPronounceService({
     return inflight.get(key);
   };
 }
+
+// British and American phonetic symbols, from Youdao's dictionary data; kept on disk once fetched.
+export function createPhoneticsService({
+  cacheDir, fetchImpl = globalThis.fetch, upstream = 'https://dict.youdao.com/jsonapi',
+  dictDir = path.join(here, '..', 'public', 'dict'), words = null,
+} = {}) {
+  let known = words;
+  const memory = new Map();
+  const inflight = new Map();
+  const clean = (s) => (typeof s === 'string' ? s.trim().replace(/^\/|\/$/g, '').slice(0, 80) : '');
+
+  async function load(word) {
+    const file = cacheDir && path.join(cacheDir, `${word}.json`);
+    if (file) { try { return JSON.parse(await fs.promises.readFile(file, 'utf8')); } catch { /* not cached */ } }
+    let res;
+    try { res = await fetchImpl(`${upstream}?q=${encodeURIComponent(word)}`, { signal: AbortSignal.timeout(15000) }); } catch {
+      throw new PronounceError(503, "Couldn't reach the dictionary service.");
+    }
+    if (!res.ok) throw new PronounceError(503, "The dictionary service isn't responding right now.");
+    let data;
+    try { data = await res.json(); } catch { throw new PronounceError(502, 'The dictionary service sent something unexpected'); }
+    const pick = (list) => (Array.isArray(list) ? list[0] : list) || {};
+    const ec = pick(data?.ec?.word), simple = pick(data?.simple?.word);
+    const value = { uk: clean(ec.ukphone || simple.ukphone), us: clean(ec.usphone || simple.usphone) };
+    if (file) { try { await fs.promises.mkdir(cacheDir, { recursive: true }); await fs.promises.writeFile(file, JSON.stringify(value)); } catch { /* best effort */ } }
+    return value;
+  }
+
+  return async function getPhonetics(rawWord) {
+    const word = String(rawWord).toLowerCase();
+    known ??= loadWords(dictDir);
+    if (!/^[a-z][a-z-]{0,39}$/.test(word) || !known.has(word)) throw new PronounceError(404, 'Not a dictionary word');
+    if (memory.has(word)) return memory.get(word);
+    if (!inflight.has(word)) inflight.set(word, load(word).finally(() => inflight.delete(word)));
+    const value = await inflight.get(word);
+    memory.set(word, value);
+    if (memory.size > 2000) memory.delete(memory.keys().next().value);
+    return value;
+  };
+}

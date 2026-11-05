@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { createPronounceService, audioType } from '../server/pronounce.js';
+import { createPronounceService, createPhoneticsService, audioType } from '../server/pronounce.js';
 import { openDb } from '../server/db.js';
 import { createServer } from '../server/app.js';
 
@@ -42,4 +42,16 @@ test('audio route serves the right content type without sign-in', async () => {
     assert.equal((await res.arrayBuffer()).byteLength, wav.length);
     assert.equal((await fetch(`http://127.0.0.1:${server.address().port}/api/pronounce/uk/zzzz`)).status, 404);
   } finally { server.close(); }
+});
+
+test('British and American phonetics come from the dictionary service, once per word', async () => {
+  const calls = [];
+  const fetchImpl = async (url) => { calls.push(url); return Response.json({ ec: { word: [{ ukphone: 'təˈmɑːtəʊ', usphone: 'təˈmeɪtoʊ' }] } }); };
+  const get = createPhoneticsService({ fetchImpl, words: new Set(['tomato']) });
+  assert.deepEqual(await get('tomato'), { uk: 'təˈmɑːtəʊ', us: 'təˈmeɪtoʊ' });
+  await get('tomato');
+  assert.deepEqual(calls, ['https://dict.youdao.com/jsonapi?q=tomato']);
+  await assert.rejects(get('zzzz'), { status: 404 });
+  const empty = createPhoneticsService({ fetchImpl: async () => Response.json({}), words: new Set(['x-ray']) });
+  assert.deepEqual(await empty('x-ray'), { uk: '', us: '' });
 });

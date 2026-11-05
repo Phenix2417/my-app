@@ -696,7 +696,7 @@ async function lookUp(word) {
 let wordAudio = null;
 function playWord(word, accent, btn) {
   wordAudio?.pause();
-  document.querySelectorAll('.speaker.playing, .dict-ph.playing').forEach((b) => b.classList.remove('playing'));
+  document.querySelectorAll('.pron.playing').forEach((b) => b.classList.remove('playing'));
   const a = new Audio(`/api/pronounce/${accent}/${encodeURIComponent(word)}`);
   wordAudio = a;
   btn?.classList.add('playing');
@@ -705,9 +705,29 @@ function playWord(word, accent, btn) {
   a.addEventListener('error', () => { done(); if (wordAudio === a) toast(navigator.onLine === false ? 'Pronunciation needs a connection.' : `No ${accent === 'uk' ? 'British' : 'American'} recording for “${word}”.`); });
   a.play().catch(() => {}); // errors are reported by the 'error' event above
 }
-function speakerButton(word, accent, label) {
-  return h('button', { class: 'speaker', 'aria-label': `Play ${accent === 'uk' ? 'British' : 'American'} pronunciation of ${word}`,
-    onclick: (e) => playWord(word, accent, e.currentTarget) }, svg(ICONS.speaker), label);
+const phoneticsCache = new Map();
+function phoneticsFor(word) {
+  if (!phoneticsCache.has(word)) {
+    const p = api('GET', `/api/phonetics/${encodeURIComponent(word)}`);
+    phoneticsCache.set(word, p);
+    p.catch(() => phoneticsCache.delete(word));
+  }
+  return phoneticsCache.get(word);
+}
+// "UK /ɡreɪs/ 🔊": shows the dictionary's phonetic until the accent-specific one arrives.
+function pronButton(word, accent, fallback) {
+  const name = accent === 'uk' ? 'British' : 'American';
+  const ipa = h('span', { class: 'ipa' + (fallback ? ' pending' : '') }, fallback ? `/${fallback}/` : '…');
+  const btn = h('button', { class: 'pron', 'aria-label': `Play ${name} pronunciation of ${word}`, onclick: () => playWord(word, accent, btn) },
+    h('span', { class: 'accent' }, accent.toUpperCase()), ipa, svg(ICONS.speaker));
+  phoneticsFor(word).then((p) => {
+    const v = p?.[accent];
+    if (v) ipa.textContent = `/${v}/`; else if (!fallback) ipa.textContent = '';
+    ipa.classList.remove('pending');
+    btn.setAttribute('aria-label', `Play ${name} pronunciation of ${word}${v ? `, /${v}/` : ''}`);
+    positionToolbar();
+  }).catch(() => { ipa.classList.remove('pending'); if (!fallback) ipa.textContent = ''; });
+  return btn;
 }
 
 function toggleDictionary(bar, btn) {
@@ -728,10 +748,9 @@ function toggleDictionary(bar, btn) {
     let e;
     try { e = await lookUp(w); } catch { body.replaceChildren(h('p', { class: 'dict-muted' }, "Couldn't load the dictionary. Check your connection.")); positionToolbar(); return; }
     const block = (x, main) => [
-      h('div', { class: 'dict-head' }, h('span', { class: 'dict-word' }, x.word),
-        // Tapping the phonetic plays the British recording; the speaker buttons play British or American.
-        x.p ? h('button', { class: 'dict-ph', 'aria-label': `Play British pronunciation of ${x.word}`, onclick: (e) => playWord(x.word, 'uk', e.currentTarget) }, `/${x.p}/`) : null,
-        speakerButton(x.word, 'uk', 'UK'), speakerButton(x.word, 'us', 'US')),
+      h('div', { class: 'dict-head' }, h('span', { class: 'dict-word' }, x.word)),
+      // British and American phonetics; tapping either plays that recording.
+      h('div', { class: 'dict-prons' }, pronButton(x.word, 'uk', x.p), pronButton(x.word, 'us', x.p)),
       x.t ? h('p', { class: 'dict-zh', lang: 'zh-Hans' }, x.t) : null,
       x.d && main ? h('p', { class: 'dict-en' }, x.d) : null,
     ];
@@ -740,7 +759,7 @@ function toggleDictionary(bar, btn) {
     positionToolbar();
   };
   if (tabs) tabs.append(...words.map((w) => h('button', { class: 'chip', dataset: { w }, onclick: () => show(w) }, w)));
-  bar.append(h('div', { class: 'dict' }, tabs, body, h('p', { class: 'dict-credit' }, 'ECDICT English–Chinese dictionary · Audio: Youdao')));
+  bar.append(h('div', { class: 'dict' }, tabs, body, h('p', { class: 'dict-credit' }, 'ECDICT English–Chinese dictionary · Phonetics & audio: Youdao')));
   show(words[0]);
 }
 
