@@ -302,20 +302,26 @@ async function renderReader() {
     paint();
     if (on) { await refreshChapterFriendNotes(); paint(); }
   };
-  const screen = h('main', { class: 'screen' },
-    h('h1', {}, `${meta.name} ${chapter}`),
-    h('nav', { class: 'chapter-nav', 'aria-label': 'Chapter navigation' },
-      h('button', { class: 'text-btn', disabled: !prev, onclick: () => goTo(prev) }, 'Previous'),
-      h('button', { class: 'chapter-pill', onclick: openPicker, 'aria-label': 'Choose book and chapter' }, `${meta.name} ${chapter}`),
-      h('button', { class: 'text-btn', disabled: !next, onclick: () => goTo(next) }, 'Next')),
+  // The title and chapter navigation stay put; the Bible text scrolls on its own.
+  const scroller = h('div', { class: 'r-scroll' },
     h('p', { class: 'hint' }, 'Hold a word or tap a verse number to select. Drag the handles to adjust.'),
-    body,
+    body);
+  const screen = h('main', { class: 'screen reader-page' },
+    h('div', { class: 'r-head' },
+      h('h1', {}, `${meta.name} ${chapter}`),
+      h('nav', { class: 'chapter-nav', 'aria-label': 'Chapter navigation' },
+        h('button', { class: 'text-btn', disabled: !prev, onclick: () => goTo(prev) }, 'Previous'),
+        h('button', { class: 'chapter-pill', onclick: openPicker, 'aria-label': 'Choose book and chapter' }, `${meta.name} ${chapter}`),
+        h('button', { class: 'text-btn', disabled: !next, onclick: () => goTo(next) }, 'Next'))),
+    scroller,
     sideDock([
       { id: 'show-friends', label: "Friends' notes", icon: ICONS.friends, toggle: { get: () => state.showFriends, set: setShowFriends } },
       { id: 'open-commentary', label: 'Commentary', icon: ICONS.commentary, action: () => openCommentaryPage(topVisibleVerse()) },
     ]));
   mount(screen);
   reader.body = body;
+  reader.scroller = scroller;
+  scroller.addEventListener('scroll', () => { if (state.selection) positionHandles(); }, { passive: true });
 
   let data;
   try { data = await loadBook(meta.id); } catch {
@@ -470,10 +476,12 @@ function wordAtPoint(x, y) {
 let autoScroll = null;
 function autoScrollFor(y, onTick) {
   cancelAnimationFrame(autoScroll?.raf);
-  const edge = 70, bottomEdge = window.innerHeight - 170;
+  // Scroll when the finger nears the top or bottom of the Bible text area.
+  const box = reader.scroller?.getBoundingClientRect();
+  const edge = box ? box.top + 50 : 70, bottomEdge = box ? box.bottom - 60 : window.innerHeight - 170;
   const speed = y < edge ? -(edge - y) / 4 : y > bottomEdge ? (y - bottomEdge) / 4 : 0;
   if (!speed) { autoScroll = null; return; }
-  const tick = () => { window.scrollBy(0, speed); onTick(); autoScroll = { raf: requestAnimationFrame(tick) }; };
+  const tick = () => { (reader.scroller || window).scrollBy(0, speed); onTick(); autoScroll = { raf: requestAnimationFrame(tick) }; };
   autoScroll = { raf: requestAnimationFrame(tick) };
 }
 function stopAutoScroll() { cancelAnimationFrame(autoScroll?.raf); autoScroll = null; }
@@ -661,7 +669,7 @@ const cm = { chips: null, manage: null, status: null, listEl: null, list: null, 
 function topVisibleVerse() {
   for (let v = 1; v < reader.verseEls.length; v++) {
     const el = reader.verseEls[v];
-    if (el && el.getBoundingClientRect().bottom > 80) return v;
+    if (el && el.getBoundingClientRect().bottom > (reader.scroller?.getBoundingClientRect().top ?? 0) + 8) return v;
   }
   return 1;
 }
@@ -1012,7 +1020,7 @@ function goTo(pos, verse) {
     if (verse && reader.verseEls[verse]) {
       reader.verseEls[verse].scrollIntoView({ block: 'center' });
       reader.verseEls[verse].classList.add('flash');
-    } else window.scrollTo(0, 0);
+    } else if (reader.scroller) reader.scroller.scrollTop = 0;
   });
 }
 

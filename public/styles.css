@@ -286,3 +286,11 @@ button.c-label:focus-visible { outline: 2px solid var(--primary); outline-offset
 .side-btn[aria-pressed="true"] { background: var(--primary); color: var(--on-primary); }
 .side-btn:not([aria-pressed]) { color: var(--primary); }
 .side-btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
+
+/* Read page: fixed title and chapter navigation, Bible text scrolls on its own */
+.reader-page { height: 100dvh; display: flex; flex-direction: column; overflow: hidden;
+  padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px)); }
+.r-head { flex: none; padding-bottom: 10px; border-bottom: 1px solid var(--divider); }
+.r-head h1 { margin: 12px 0 14px; }
+.r-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 4px 2px 32px; }
+.r-scroll .hint { margin: 10px 0 0; }
