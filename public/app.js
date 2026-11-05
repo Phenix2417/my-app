@@ -585,6 +585,7 @@ function nudgeHandle(e, which) {
 
 function attachReaderGestures(body) {
   let press = null; // {timer, x, y, word, sliding}
+  let lastTap = null; // {word, time, timer}: a short tap on a word, waiting to see if a second tap follows
   const cancel = () => { if (press) clearTimeout(press.timer); press = null; };
 
   body.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -625,19 +626,31 @@ function attachReaderGestures(body) {
     stopAutoScroll();
     if (p.sliding) { showToolbar(); return; }
     if (e.type === 'pointercancel') return;
-    // Short tap
-    if (state.selection) { clearSelection(); return; }
-    const vnum = e.target.closest('.vnum');
-    if (vnum) { // tap a verse number to select the whole verse
-      const v = +vnum.dataset.v;
-      const ws = reader.words.filter((x) => x.v === v);
-      if (ws.length) setSelection({ v, w: 0 }, { v, w: ws[ws.length - 1].w });
+    // Short tap. A second tap on the same word soon after is a double tap: straight to the dictionary.
+    const now = Date.now();
+    if (p.word && lastTap && now - lastTap.time < 320 && !cmp(lastTap.word, p.word)) {
+      clearTimeout(lastTap.timer); lastTap = null;
+      openDictionaryFor(p.word);
       return;
     }
-    // A tap on a word with notes opens them; any other tap shows or hides the top and bottom bars.
-    const here = p.word ? notesAt(p.word) : { mine: [], friends: [] };
-    if (here.mine.length || here.friends.length) showNotesAt(p.word);
-    else setBars(document.body.classList.contains('bars-hidden'));
+    const target = e.target;
+    const single = () => {
+      if (state.selection) { clearSelection(); return; }
+      const vnum = target.closest('.vnum');
+      if (vnum) { // tap a verse number to select the whole verse
+        const v = +vnum.dataset.v;
+        const ws = reader.words.filter((x) => x.v === v);
+        if (ws.length) setSelection({ v, w: 0 }, { v, w: ws[ws.length - 1].w });
+        return;
+      }
+      // A tap on a word with notes opens them; any other tap shows or hides the top and bottom bars.
+      const here = p.word ? notesAt(p.word) : { mine: [], friends: [] };
+      if (here.mine.length || here.friends.length) showNotesAt(p.word);
+      else setBars(document.body.classList.contains('bars-hidden'));
+    };
+    if (!p.word) { single(); return; } // taps off words can't be double taps: act at once
+    clearTimeout(lastTap?.timer);
+    lastTap = { word: p.word, time: now, timer: setTimeout(() => { lastTap = null; single(); }, 280) };
   };
   body.addEventListener('pointerup', end);
   body.addEventListener('pointercancel', end);
@@ -728,6 +741,14 @@ function pronButton(word, accent, fallback) {
     positionToolbar();
   }).catch(() => { ipa.classList.remove('pending'); if (!fallback) ipa.textContent = ''; });
   return btn;
+}
+
+// Double tap: select the word and open its dictionary entry in the bubble.
+function openDictionaryFor(word) {
+  navigator.vibrate?.(8);
+  setSelection(word, word);
+  const btn = reader.toolbar?.querySelector('.dict-btn');
+  if (btn) toggleDictionary(reader.toolbar, btn);
 }
 
 function toggleDictionary(bar, btn) {
