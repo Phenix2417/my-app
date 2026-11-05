@@ -44,6 +44,12 @@ that runs Node with a persistent disk for the database file.
 
 `railway.json` sets the start command and health check.
 
+## Test accounts
+
+On startup the server creates two test accounts if they don't exist: **phenix** and **james** (password `xqq888999`).
+They are friends and share notes with each other. Set the environment variable `SEED_TEST_USERS=0` to turn this off
+before real use, and change the passwords.
+
 ## Layout
 
 - `server/` — HTTP API + static files (`app.js`), database schema (`db.js`), book list.

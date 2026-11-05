@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openDb } from './db.js';
-import { createServer } from './app.js';
+import { createServer, seedTestUsers } from './app.js';
 import { createCommentaryService } from './commentary.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -12,6 +12,15 @@ const db = openDb(process.env.DB_FILE || path.join(dataDir, 'bible-study.db'));
 const trustProxy = process.env.TRUST_PROXY === '1' || !!process.env.RAILWAY_PROJECT_ID;
 const port = Number(process.env.PORT || 3000);
 const host = process.env.HOST || '0.0.0.0';
+
+// Test accounts, created on startup when missing. Set SEED_TEST_USERS=0 to turn this off.
+if (process.env.SEED_TEST_USERS !== '0') {
+  const created = seedTestUsers(db, [
+    { username: 'phenix', password: 'xqq888999', displayName: 'Phenix' },
+    { username: 'james', password: 'xqq888999', displayName: 'James' },
+  ]);
+  if (created.length) console.log(`Created test accounts: ${created.join(', ')}`);
+}
 
 const commentary = createCommentaryService({ cacheDir: path.join(dataDir, 'commentary-cache') });
 

@@ -44,6 +44,32 @@ function cleanCommentaryList(v) {
 }
 const meOut = (u) => ({ ...userOut(u.id, u.username, u.display_name), commentaries: parsePrefs(u.commentary_prefs) });
 
+// Create test accounts if they don't exist yet, and make them friends who share notes with each other.
+// Existing accounts are left alone (their passwords and settings are not reset).
+export function seedTestUsers(db, users) {
+  const created = [];
+  const ids = users.map(({ username, password, displayName = '' }) => {
+    const row = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
+    if (row) return row.id;
+    const salt = crypto.randomBytes(16).toString('hex');
+    const { lastInsertRowid } = db.prepare('INSERT INTO users (username, display_name, pass_hash, salt, created_at) VALUES (?, ?, ?, ?, ?)')
+      .run(username, displayName, hashPassword(password, salt), salt, Date.now());
+    created.push(username);
+    return Number(lastInsertRowid);
+  });
+  for (let i = 0; i < ids.length; i++) {
+    for (let j = i + 1; j < ids.length; j++) {
+      const [a, b] = ids[i] < ids[j] ? [ids[i], ids[j]] : [ids[j], ids[i]];
+      db.prepare("INSERT OR IGNORE INTO friendships (user_a, user_b, requested_by, status, created_at) VALUES (?, ?, ?, 'accepted', ?)").run(a, b, a, Date.now());
+      if (created.length) { // only set up sharing for newly created test accounts
+        db.prepare('INSERT OR IGNORE INTO shares (owner_id, viewer_id) VALUES (?, ?)').run(ids[i], ids[j]);
+        db.prepare('INSERT OR IGNORE INTO shares (owner_id, viewer_id) VALUES (?, ?)').run(ids[j], ids[i]);
+      }
+    }
+  }
+  return created;
+}
+
 export function createApp(db, { publicDir, trustProxy = false, commentary = null } = {}) {
   const q = (sql) => db.prepare(sql);
   const stmt = {

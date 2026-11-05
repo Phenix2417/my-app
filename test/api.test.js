@@ -1,7 +1,7 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { openDb } from '../server/db.js';
-import { createServer } from '../server/app.js';
+import { createServer, seedTestUsers } from '../server/app.js';
 
 let server, base;
 before(async () => {
@@ -124,4 +124,21 @@ test('each person keeps their own ordered commentary list', async () => {
   // Changing the display name leaves the list alone.
   r = await api('PUT', '/api/me', { token, body: { displayName: '读者' } });
   assert.deepEqual(r.data.user.commentaries, []);
+});
+
+test('test accounts are created once, as friends who share notes', async () => {
+  const db = openDb(':memory:');
+  const users = [{ username: 'phenix', password: 'xqq888999', displayName: 'Phenix' }, { username: 'james', password: 'xqq888999' }];
+  assert.deepEqual(seedTestUsers(db, users), ['phenix', 'james']);
+  assert.deepEqual(seedTestUsers(db, users), [], 'second start creates nothing');
+  const srv = createServer(db);
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  const call = async (method, path, token, body) => (await fetch(`http://127.0.0.1:${srv.address().port}${path}`, {
+    method, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: body && JSON.stringify(body) })).json();
+  try {
+    const p = await call('POST', '/api/login', null, { username: 'phenix', password: 'xqq888999' });
+    assert.equal(p.user.displayName, 'Phenix');
+    const f = await call('GET', '/api/friends', p.token);
+    assert.deepEqual(f.friends.map((x) => [x.username, x.sharing, x.sharesWithMe]), [['james', true, true]]);
+  } finally { srv.close(); }
 });
