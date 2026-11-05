@@ -21,7 +21,7 @@ Read the Bible, highlight passages, write notes, and see the notes your friends 
   word used in the Bible text: `node scripts/build-dict.mjs ecdict.csv` regenerates `public/dict/`.
   Tap the phonetic or the **UK** / **US** speaker buttons to hear recorded British or American pronunciation
   (Youdao audio, fetched by the server once per word and kept in the data folder).
-- **Grammar** — select text and tap **Grammar** in the bubble: every word gets its part of speech in Chinese
+- **Grammar** — in the Translate panel, tap **Grammar** after the selected text: every word gets its part of speech in Chinese
   (colour-coded), each verb its tense and voice (e.g. 一般过去时 · 被动语态), plus subject/verb and prepositional and
   noun phrases. It runs on the phone with [compromise](https://github.com/spencermountain/compromise) 14.19.0 (MIT),
   shipped in `public/vendor/` and loaded on first use; it can misread unusual (e.g. inverted) word order.

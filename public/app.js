@@ -676,7 +676,6 @@ function showToolbar() {
       // One word: its dictionary entry. Several words: translate the selection, then look up each word.
       h('button', { class: 'text-btn dict-btn', 'aria-expanded': 'false', onclick: (e) => toggleDictionary(bar, e.currentTarget) },
         cmp(start, end) ? 'Translate' : 'Dictionary'),
-      h('button', { class: 'text-btn grammar-btn', 'aria-expanded': 'false', onclick: (e) => toggleGrammar(bar, e.currentTarget) }, 'Grammar'),
       h('button', { class: 'text-btn', onclick: async () => {
         const text = `${selectedQuote()} — ${ref(draft('yellow'))} (WEB)`;
         try { await navigator.clipboard.writeText(text); toast('Copied'); } catch { toast("Couldn't copy"); }
@@ -791,64 +790,51 @@ function describeVerb(v) {
   return parts.join(' · ') || '动词';
 }
 
-function toggleGrammar(bar, btn) {
-  const open = bar.querySelector('.grammar');
-  if (open) { open.remove(); btn.setAttribute('aria-expanded', 'false'); positionToolbar(); return; }
-  // One panel at a time: close the translation/dictionary panel if it's open.
-  bar.querySelector('.dict')?.remove(); bar.querySelector('.dict-btn')?.setAttribute('aria-expanded', 'false');
-  btn.setAttribute('aria-expanded', 'true');
-  const text = reader.words.filter((x) => inRange(x, state.selection.start, state.selection.end)).map((x) => x.el.textContent).join(' ');
-  const panel = h('div', { class: 'grammar', 'aria-live': 'polite' }, h('p', { class: 'dict-muted' }, 'Analysing…'));
-  bar.append(panel);
-  positionToolbar();
-  loadNlp().then((nlp) => {
-    const sections = nlp(text).sentences().json().map((sj) => {
-      const doc = nlp(sj.text);
-      const terms = doc.json()[0]?.terms || [];
-      const words = h('div', { class: 'g-words' });
-      terms.forEach((t, i) => {
-        if (!t.text.trim()) return; // the hidden "not" of a contraction
-        let [zh, en] = posOf(t);
-        // "that/which/who" between a noun and a verb introduces a clause: a relative pronoun.
-        const next = terms.slice(i + 1).find((x) => x.text.trim());
-        if (i > 0 && ['that', 'which', 'who', 'whom', 'whose'].includes(t.normal) && next && (next.tags || []).some((g) => ['Verb', 'Auxiliary', 'Copula', 'Modal'].includes(g))) {
-          [zh, en] = ['关系代词', 'relative pronoun'];
-        }
-        words.append(h('span', { class: 'g-word', title: en, dataset: { pos: en.split(/[ /]/)[0] } },
-          h('span', { class: 'g-text' }, t.text.replace(/[,.;:!?]+$/, '')), h('span', { class: 'g-pos' }, zh)));
-      });
-      const rows = [];
-      // Subject / verb, only when the parser found a believable subject (it can't handle inverted word order).
-      const s = sj.sentence || {};
-      const firstSubj = terms.find((t) => t.normal === String(s.subject || '').split(' ')[0]);
-      if (s.subject && s.verb && firstSubj && !(firstSubj.tags || []).includes('Preposition')) {
-        rows.push(h('div', { class: 'g-row' }, h('span', { class: 'g-key' }, '主语 Subject'), h('span', {}, s.subject)));
-        rows.push(h('div', { class: 'g-row' }, h('span', { class: 'g-key' }, '谓语 Verb'), h('span', {}, s.verb)));
-        if (s.predicate) rows.push(h('div', { class: 'g-row' }, h('span', { class: 'g-key' }, '其余 Rest'), h('span', {}, s.predicate)));
+// Grammar of a passage, as elements to show in the Translate panel.
+async function analyzeGrammar(text) {
+  let nlp;
+  try { nlp = await loadNlp(); } catch { return [h('p', { class: 'dict-muted' }, "Couldn't load the grammar tool. Check your connection and try again.")]; }
+  const sections = nlp(text).sentences().json().map((sj) => {
+    const doc = nlp(sj.text);
+    const terms = doc.json()[0]?.terms || [];
+    const words = h('div', { class: 'g-words' });
+    terms.forEach((t, i) => {
+      if (!t.text.trim()) return; // the hidden "not" of a contraction
+      let [zh, en] = posOf(t);
+      // "that/which/who" between a noun and a verb introduces a clause: a relative pronoun.
+      const next = terms.slice(i + 1).find((x) => x.text.trim());
+      if (i > 0 && ['that', 'which', 'who', 'whom', 'whose'].includes(t.normal) && next && (next.tags || []).some((g) => ['Verb', 'Auxiliary', 'Copula', 'Modal'].includes(g))) {
+        [zh, en] = ['关系代词', 'relative pronoun'];
       }
-      for (const v of doc.verbs().json()) {
-        rows.push(h('div', { class: 'g-row' }, h('span', { class: 'g-key' }, '动词 Verb'), h('span', {}, h('b', {}, v.text.replace(/[,.;:!?]+$/, '')), ` — ${describeVerb(v)}`)));
-      }
-      const phrases = [
-        ...doc.match('#Preposition (#Determiner|#Possessive)? #Adjective? #Noun+').out('array').map((p) => ['介词短语', p]),
-        ...doc.nouns().out('array').filter((p) => p.trim().split(/\s+/).length > 1).map((p) => ['名词短语', p.replace(/^(and|or|but)\s+/i, '')]),
-      ];
-      const seen = new Set();
-      for (const [kind, p] of phrases) {
-        const clean = p.split(/[,.;:!?]/)[0].trim(); // a phrase ends at punctuation
-        if (seen.has(kind + clean)) continue;
-        seen.add(kind + clean);
-        rows.push(h('div', { class: 'g-row' }, h('span', { class: 'g-key' }, kind), h('span', {}, clean)));
-      }
-      return h('section', { class: 'g-sentence' }, words, ...rows);
+      words.append(h('span', { class: 'g-word', title: en, dataset: { pos: en.split(/[ /]/)[0] } },
+        h('span', { class: 'g-text' }, t.text.replace(/[,.;:!?]+$/, '')), h('span', { class: 'g-pos' }, zh)));
     });
-    panel.replaceChildren(...sections,
-      h('p', { class: 'dict-credit' }, 'Automatic analysis by compromise · may be wrong for unusual word order'));
-    positionToolbar();
-  }).catch(() => {
-    panel.replaceChildren(h('p', { class: 'dict-muted' }, "Couldn't load the grammar tool. Check your connection and try again."));
-    positionToolbar();
+    const rows = [];
+    // Subject / verb, only when the parser found a believable subject (it can't handle inverted word order).
+    const s = sj.sentence || {};
+    const firstSubj = terms.find((t) => t.normal === String(s.subject || '').split(' ')[0]);
+    if (s.subject && s.verb && firstSubj && !(firstSubj.tags || []).includes('Preposition')) {
+      rows.push(h('div', { class: 'g-row' }, h('span', { class: 'g-key' }, '主语 Subject'), h('span', {}, s.subject)));
+      rows.push(h('div', { class: 'g-row' }, h('span', { class: 'g-key' }, '谓语 Verb'), h('span', {}, s.verb)));
+      if (s.predicate) rows.push(h('div', { class: 'g-row' }, h('span', { class: 'g-key' }, '其余 Rest'), h('span', {}, s.predicate)));
+    }
+    for (const v of doc.verbs().json()) {
+      rows.push(h('div', { class: 'g-row' }, h('span', { class: 'g-key' }, '动词 Verb'), h('span', {}, h('b', {}, v.text.replace(/[,.;:!?]+$/, '')), ` — ${describeVerb(v)}`)));
+    }
+    const phrases = [
+      ...doc.match('#Preposition (#Determiner|#Possessive)? #Adjective? #Noun+').out('array').map((p) => ['介词短语', p]),
+      ...doc.nouns().out('array').filter((p) => p.trim().split(/\s+/).length > 1).map((p) => ['名词短语', p.replace(/^(and|or|but)\s+/i, '')]),
+    ];
+    const seen = new Set();
+    for (const [kind, p] of phrases) {
+      const clean = p.split(/[,.;:!?]/)[0].trim(); // a phrase ends at punctuation
+      if (!clean || seen.has(kind + clean)) continue;
+      seen.add(kind + clean);
+      rows.push(h('div', { class: 'g-row' }, h('span', { class: 'g-key' }, kind), h('span', {}, clean)));
+    }
+    return h('section', { class: 'g-sentence' }, words, ...rows);
   });
+  return [...sections, h('p', { class: 'g-note' }, 'Grammar: automatic analysis (compromise) · may be wrong for unusual word order')];
 }
 
 // Double tap: select the word and open its dictionary entry in the bubble.
@@ -863,7 +849,6 @@ function toggleDictionary(bar, btn) {
   const open = bar.querySelector('.dict');
   if (open) { open.remove(); btn.setAttribute('aria-expanded', 'false'); positionToolbar(); return; }
   btn.setAttribute('aria-expanded', 'true');
-  bar.querySelector('.grammar')?.remove(); bar.querySelector('.grammar-btn')?.setAttribute('aria-expanded', 'false');
   const all = reader.words.filter((x) => inRange(x, state.selection.start, state.selection.end)).map((x) => x.el.textContent);
   const multi = all.length > 1;
   const words = [dictKey(all[0] || '')];
@@ -878,6 +863,16 @@ function toggleDictionary(bar, btn) {
       if (i) en.append(' ');
       en.append(key ? h('button', { class: 'tw', type: 'button', dataset: { w: key }, 'aria-pressed': 'false', onclick: () => show(key) }, token) : token);
     });
+    // Grammar of the whole selection, shown below the translation (where word definitions also appear).
+    const gBtn = h('button', { class: 'g-btn', type: 'button', 'aria-pressed': 'false', onclick: async () => {
+      trans.querySelectorAll('.tw').forEach((b) => b.setAttribute('aria-pressed', 'false'));
+      gBtn.setAttribute('aria-pressed', 'true');
+      body.replaceChildren(h('p', { class: 'dict-muted' }, 'Analysing…'));
+      positionToolbar();
+      const nodes = await analyzeGrammar(all.join(' '));
+      if (gBtn.getAttribute('aria-pressed') === 'true') { body.replaceChildren(...nodes); positionToolbar(); }
+    } }, 'Grammar');
+    en.append(' ', gBtn);
     trans = h('div', { class: 'trans', 'aria-live': 'polite' }, en, zh);
     api('POST', '/api/translate', { text: all.join(' ') }).then((r) => { zh.textContent = r.text; positionToolbar(); }).catch((err) => {
       zh.classList.add('dict-muted');
@@ -887,6 +882,7 @@ function toggleDictionary(bar, btn) {
   }
   const show = async (w) => {
     trans?.querySelectorAll('.tw').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.w === w)));
+    trans?.querySelector('.g-btn')?.setAttribute('aria-pressed', 'false');
     body.replaceChildren(h('p', { class: 'dict-muted' }, 'Looking up…'));
     let e;
     try { e = await lookUp(w); } catch { body.replaceChildren(h('p', { class: 'dict-muted' }, "Couldn't load the dictionary. Check your connection.")); positionToolbar(); return; }
@@ -903,7 +899,7 @@ function toggleDictionary(bar, btn) {
   };
   bar.append(h('div', { class: 'dict' }, trans, body,
     h('p', { class: 'dict-credit' }, multi ? 'Translation, phonetics & audio: Youdao · Dictionary: ECDICT' : 'ECDICT English–Chinese dictionary · Phonetics & audio: Youdao')));
-  if (multi) body.replaceChildren(h('p', { class: 'dict-muted' }, 'Tap any word in the text above for its definition.'));
+  if (multi) body.replaceChildren(h('p', { class: 'dict-muted' }, 'Tap any word above for its definition, or Grammar to analyse the passage.'));
   else show(words[0]);
 }
 
