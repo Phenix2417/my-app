@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { BOOKS, BOOK_IDS } from './books.js';
-import { commentaryList, CommentaryError } from './commentary.js';
+import { commentaryList, CommentaryError, COMMENTARY_IDS } from './commentary.js';
 
 const COLORS = new Set(['yellow', 'green', 'blue', 'pink', 'purple']);
 const USERNAME_RE = /^[a-z0-9_]{3,20}$/i;
@@ -32,6 +32,17 @@ function cleanDisplayName(v) {
   return s;
 }
 const userOut = (id, username, displayName) => ({ id, username, displayName: displayName || username });
+// The commentaries a person keeps in their list, in their order. null = never customised (the app picks defaults).
+function parsePrefs(raw) {
+  try { const v = JSON.parse(raw); return Array.isArray(v) ? v.filter((id) => COMMENTARY_IDS.has(id)) : null; } catch { return null; }
+}
+function cleanCommentaryList(v) {
+  if (!Array.isArray(v) || v.length > 50 || !v.every((id) => typeof id === 'string' && COMMENTARY_IDS.has(id))) {
+    throw new HttpError(400, 'Invalid commentary list');
+  }
+  return [...new Set(v)];
+}
+const meOut = (u) => ({ ...userOut(u.id, u.username, u.display_name), commentaries: parsePrefs(u.commentary_prefs) });
 
 export function createApp(db, { publicDir, trustProxy = false, commentary = null } = {}) {
   const q = (sql) => db.prepare(sql);
@@ -40,8 +51,10 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
     userById: q('SELECT id, username, display_name FROM users WHERE id = ?'),
     insertUser: q('INSERT INTO users (username, display_name, pass_hash, salt, created_at) VALUES (?, ?, ?, ?, ?)'),
     setDisplayName: q('UPDATE users SET display_name = ? WHERE id = ?'),
+    setCommentaryPrefs: q('UPDATE users SET commentary_prefs = ? WHERE id = ?'),
+    meRow: q('SELECT id, username, display_name, commentary_prefs FROM users WHERE id = ?'),
     insertSession: q('INSERT INTO sessions (token_hash, user_id, created_at) VALUES (?, ?, ?)'),
-    sessionUser: q('SELECT u.id, u.username, u.display_name FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ?'),
+    sessionUser: q('SELECT u.id, u.username, u.display_name, u.commentary_prefs FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ?'),
     deleteSession: q('DELETE FROM sessions WHERE token_hash = ?'),
 
     friendship: q('SELECT * FROM friendships WHERE user_a = ? AND user_b = ?'),
@@ -165,7 +178,7 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
       const salt = crypto.randomBytes(16).toString('hex');
       const { lastInsertRowid } = stmt.insertUser.run(username, displayName, hashPassword(password, salt), salt, now());
       const id = Number(lastInsertRowid);
-      return { status: 201, body: { token: createSession(id), user: userOut(id, username, displayName) } };
+      return { status: 201, body: { token: createSession(id), user: meOut(stmt.meRow.get(id)) } };
     }],
 
     ['POST', /^\/api\/login$/, ({ body, ip }) => {
@@ -174,15 +187,16 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
       const ok = u && crypto.timingSafeEqual(
         Buffer.from(hashPassword(String(body.password || ''), u.salt), 'hex'), Buffer.from(u.pass_hash, 'hex'));
       if (!ok) throw new HttpError(401, 'Wrong username or password');
-      return { token: createSession(u.id), user: userOut(u.id, u.username, u.display_name) };
+      return { token: createSession(u.id), user: meOut(u) };
     }],
 
     ['POST', /^\/api\/logout$/, ({ token }) => { if (token) stmt.deleteSession.run(sha256(token)); return { ok: true }; }],
-    ['GET', /^\/api\/me$/, ({ me }) => ({ user: userOut(me.id, me.username, me.display_name) }), true],
+    ['GET', /^\/api\/me$/, ({ me }) => ({ user: meOut(me) }), true],
+    // Change any of: displayName, commentaries. Fields left out stay as they are.
     ['PUT', /^\/api\/me$/, ({ me, body }) => {
-      const displayName = cleanDisplayName(body.displayName);
-      stmt.setDisplayName.run(displayName, me.id);
-      return { user: userOut(me.id, me.username, displayName) };
+      if ('displayName' in body) stmt.setDisplayName.run(cleanDisplayName(body.displayName), me.id);
+      if ('commentaries' in body) stmt.setCommentaryPrefs.run(JSON.stringify(cleanCommentaryList(body.commentaries)), me.id);
+      return { user: meOut(stmt.meRow.get(me.id)) };
     }, true],
 
     ['GET', /^\/api\/notes$/, ({ me, query }) => {

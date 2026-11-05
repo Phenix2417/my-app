@@ -625,28 +625,96 @@ async function loadCommentaryList() {
   return state.commentaries;
 }
 
+// The person's own commentary list, in their order. Until they customise it, Chinese readers get the
+// Chinese commentary first; everyone gets every English commentary and the cross references.
+function defaultCommentaryIds(list) {
+  const lang = (navigator.language || '').toLowerCase();
+  const zh = lang.startsWith('zh') ? [/-(tw|hk|mo)|hant/.test(lang) ? 'fhl-zh-hant' : 'fhl-zh-hans'] : [];
+  return [...zh, ...list.filter((c) => c.lang === 'en' && c.id !== 'tsk').map((c) => c.id), 'tsk'];
+}
+function myCommentaryIds(list) {
+  const known = new Set(list.map((c) => c.id));
+  const saved = state.auth?.user.commentaries;
+  return (Array.isArray(saved) ? saved : defaultCommentaryIds(list)).filter((id) => known.has(id));
+}
+let prefsTimer;
+function saveMyCommentaryIds(ids) {
+  state.auth = { ...state.auth, user: { ...state.auth.user, commentaries: ids } };
+  store.set('auth', state.auth);
+  clearTimeout(prefsTimer);
+  prefsTimer = setTimeout(() => {
+    api('PUT', '/api/me', { commentaries: ids }).catch((e) => {
+      toast(e instanceof OfflineError ? "You're offline. Your list is saved on this phone and will sync when you reorder again online." : e.message);
+    });
+  }, 500);
+}
+const LANG_LABEL = { en: 'English', 'zh-Hans': '简体中文', 'zh-Hant': '繁體中文' };
+
+function manageCommentaries(list, onChange) {
+  openSheet((close) => {
+    const wrap = h('div');
+    const draw = () => {
+      const ids = myCommentaryIds(list);
+      const meta = (id) => list.find((c) => c.id === id);
+      const row = (c, actions) => h('div', { class: 'manage-row' },
+        h('div', { class: 'manage-info', lang: c.lang }, h('div', { class: 'manage-name' }, c.name),
+          h('div', { class: 'manage-about' }, `${LANG_LABEL[c.lang] || c.lang} · ${c.about}`)),
+        h('div', { class: 'manage-actions' }, actions));
+      const set = (next) => { saveMyCommentaryIds(next); draw(); onChange(); };
+      const move = (i, d) => { const next = [...ids]; [next[i], next[i + d]] = [next[i + d], next[i]]; set(next); };
+      const icon = (label, text, onclick, disabled) => h('button', { class: 'icon-btn', 'aria-label': label, title: label, disabled, onclick }, text);
+
+      const mine = ids.map((id, i) => row(meta(id), [
+        icon(`Move ${meta(id).name} up`, '↑', () => move(i, -1), i === 0),
+        icon(`Move ${meta(id).name} down`, '↓', () => move(i, 1), i === ids.length - 1),
+        icon(`Remove ${meta(id).name}`, '✕', () => set(ids.filter((x) => x !== id))),
+      ]));
+      const others = list.filter((c) => !ids.includes(c.id));
+      const groups = ['zh-Hans', 'zh-Hant', 'en'].map((lang) => others.filter((c) => c.lang === lang)).filter((g) => g.length);
+      wrap.replaceChildren(
+        h('div', { class: 'title-row' }, h('h2', {}, 'Your commentaries'), h('button', { class: 'filled-btn', onclick: close }, 'Done')),
+        h('p', { class: 'hint' }, 'The first one opens by default. Use the arrows to change the order.'),
+        ...(mine.length ? mine : [h('p', { class: 'empty' }, 'Your list is empty. Add commentaries below.')]),
+        others.length ? h('div', { class: 'section-label' }, 'Add more') : null,
+        ...groups.flatMap((g) => g.map((c) => row(c, [h('button', { class: 'tonal-btn small-btn', onclick: () => set([...ids, c.id]) }, 'Add')]))),
+      );
+    };
+    draw();
+    return wrap;
+  }, { label: 'Manage commentaries' });
+}
+
 async function openCommentary(verse) {
   const { book, chapter } = state.pos;
   const verseCount = reader.chapterData?.length || verse;
   let list;
   try { list = await loadCommentaryList(); } catch { toast("Couldn't load commentaries. Check your connection."); return; }
-  let current = store.get('commentary', 'matthew-henry');
-  if (!list.some((c) => c.id === current)) current = list[0].id;
+  let current = store.get('commentary', null);
 
   openSheet((close) => {
     const chips = h('div', { class: 'chips', role: 'group', 'aria-label': 'Commentary' });
     const body = h('div', { class: 'commentary-body', 'aria-live': 'polite' });
     const credit = h('p', { class: 'credit' });
 
-    const drawChips = () => chips.replaceChildren(...list.map((c) => h('button', {
-      class: 'chip' + (c.missingBooks.includes(book) ? ' unavailable' : ''), 'aria-pressed': String(c.id === current),
-      title: c.missingBooks.includes(book) ? `${c.name} doesn't cover ${bookName(book)}` : c.about,
-      onclick: () => { current = c.id; store.set('commentary', current); drawChips(); show(); },
-    }, c.name)));
+    const drawChips = () => {
+      const ids = myCommentaryIds(list);
+      if (!ids.includes(current)) current = ids[0] || null;
+      chips.replaceChildren(...ids.map((id) => list.find((c) => c.id === id)).map((c) => h('button', {
+        class: 'chip' + (c.missingBooks.includes(book) ? ' unavailable' : ''), 'aria-pressed': String(c.id === current), lang: c.lang,
+        title: c.missingBooks.includes(book) ? `${c.name} doesn't cover ${bookName(book)}` : c.about,
+        onclick: () => { current = c.id; store.set('commentary', current); drawChips(); show(); },
+      }, c.name)), h('button', { class: 'chip edit-chip', onclick: () => manageCommentaries(list, () => { const before = current; drawChips(); if (current !== before || !current) show(); }) }, '✎ Edit list'));
+    };
 
     async function show() {
       const id = current;
+      if (!id) {
+        credit.replaceChildren();
+        body.replaceChildren(h('p', { class: 'empty' }, 'Your commentary list is empty. Tap “Edit list” to add some.'));
+        return;
+      }
       const meta = list.find((c) => c.id === id);
+      body.lang = meta.lang;
       credit.replaceChildren(meta.licenseUrl
         ? h('a', { href: meta.licenseUrl, target: '_blank', rel: 'noopener' }, meta.license) : meta.license);
       if (meta.missingBooks.includes(book)) {

@@ -207,3 +207,15 @@ h1 { font-size: 28px; font-weight: 500; margin: 18px 0 24px; }
 .hint-row { display: flex; align-items: center; gap: 12px; margin: 6px 0 18px; }
 .hint-row .hint { margin: 0; flex: 1; min-width: 0; }
 .commentary-btn { flex: none; padding: 9px 16px; font-size: 15px; }
+
+.edit-chip { color: var(--primary); border-style: dashed; }
+.manage-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--divider); }
+.manage-info { flex: 1; min-width: 0; }
+.manage-name { font-weight: 500; font-size: 16px; overflow-wrap: anywhere; }
+.manage-about { color: var(--muted); font-size: 13px; }
+.manage-actions { display: flex; gap: 4px; flex: none; }
+.icon-btn { width: 40px; height: 40px; border-radius: 20px; border: 0; background: var(--surface); font-size: 17px; }
+.icon-btn:disabled { opacity: .3; }
+.icon-btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.small-btn { padding: 8px 16px; font-size: 14px; }
+.commentary-text:lang(zh) { font-family: "Noto Serif SC", "Noto Serif TC", "Songti SC", "PMingLiU", serif; line-height: 1.8; }

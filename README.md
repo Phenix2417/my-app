@@ -10,7 +10,9 @@ Read the Bible, highlight passages, write notes, and see the notes your friends 
   showing their initial. Tap it to read their note.
 - **Commentary** — select a verse (tap its number) and tap **Commentary** to read what Matthew Henry,
   Jamieson-Fausset-Brown, Adam Clarke, John Gill, John Calvin, Keil & Delitzsch (Old Testament) or the
-  Tyndale Open Study Notes say about it. Texts come from the Free Use Bible API (bible.helloao.org); the server
+  Tyndale Open Study Notes say about it, or the Chinese 信望愛站註釋 (Simplified or Traditional) and 串珠
+  cross references from the 信望愛 (FHL) site. Tap **Edit list** to reorder, remove or add commentaries;
+  each person's list is saved to their account. Texts come from the Free Use Bible API (bible.helloao.org); the server
   fetches each chapter once and keeps a copy (in the Railway volume when one is attached).
 - **Notes** — *Mine* lists your notes; *Friends'* lists notes shared with you. Tap a card to jump to the verse.
 - **Friends** — add a friend by username; they accept the request. Each friend has a

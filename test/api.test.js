@@ -87,7 +87,7 @@ test('validation and auth', async () => {
 
 test('display names can be in any language and are separate from usernames', async () => {
   const xm = (await api('POST', '/api/register', { body: { username: 'xiaoming', password: 'password1', displayName: '  小明​  ' } })).data;
-  assert.deepEqual(xm.user, { id: xm.user.id, username: 'xiaoming', displayName: '小明' });
+  assert.deepEqual(xm.user, { id: xm.user.id, username: 'xiaoming', displayName: '小明', commentaries: null });
   const jo = (await api('POST', '/api/register', { body: { username: 'jose_1', password: 'password1' } })).data;
   assert.equal(jo.user.displayName, 'jose_1'); // falls back to the username
 
@@ -110,4 +110,18 @@ test('display names can be in any language and are separate from usernames', asy
   assert.equal((await api('PUT', '/api/me', { token: jo.token, body: { displayName: '字'.repeat(40) } })).status, 200);
   assert.equal((await api('PUT', '/api/me', { token: jo.token, body: { displayName: '字'.repeat(41) } })).status, 400);
   assert.equal((await api('PUT', '/api/me', { token: jo.token, body: { displayName: '' } })).data.user.displayName, 'jose_1');
+});
+
+test('each person keeps their own ordered commentary list', async () => {
+  const { token } = (await api('POST', '/api/register', { body: { username: 'lister', password: 'password1' } })).data;
+  assert.equal((await api('GET', '/api/me', { token })).data.user.commentaries, null); // not customised yet
+  let r = await api('PUT', '/api/me', { token, body: { commentaries: ['fhl-zh-hans', 'matthew-henry', 'tsk', 'fhl-zh-hans'] } });
+  assert.deepEqual(r.data.user.commentaries, ['fhl-zh-hans', 'matthew-henry', 'tsk']); // duplicates dropped
+  assert.equal(r.data.user.displayName, 'lister', 'other fields untouched');
+  assert.equal((await api('PUT', '/api/me', { token, body: { commentaries: ['not-a-commentary'] } })).status, 400);
+  r = await api('PUT', '/api/me', { token, body: { commentaries: [] } });
+  assert.deepEqual(r.data.user.commentaries, []);
+  // Changing the display name leaves the list alone.
+  r = await api('PUT', '/api/me', { token, body: { displayName: '读者' } });
+  assert.deepEqual(r.data.user.commentaries, []);
 });

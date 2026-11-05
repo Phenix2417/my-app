@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { createCommentaryService, commentaryList } from '../server/commentary.js';
+import { createCommentaryService, commentaryList, cleanFhlText } from '../server/commentary.js';
 import { openDb } from '../server/db.js';
 import { createServer } from '../server/app.js';
 
@@ -75,6 +75,55 @@ test('commentary route requires sign-in and returns the chapter', async () => {
     assert.equal(res.status, 200);
     assert.equal((await res.json()).commentary.name, 'Matthew Henry');
     const list = await (await fetch(`${base}/api/commentaries`)).json();
-    assert.equal(list.commentaries.length, 7);
+    assert.equal(list.commentaries.length, 10);
   } finally { server.close(); }
+});
+
+// A stand-in for the FHL (信望愛) API: John 1 in three sections that point at each other.
+function fakeFhl() {
+  const calls = [];
+  const sections = { 1: [1, 2, 3], 3: [3, 13, 14], 14: [14, 51, null] };
+  const fetchImpl = async (url) => {
+    calls.push(url);
+    const u = new URL(url);
+    if (u.pathname !== '/json/sc.php') return new Response('nope', { status: 404 });
+    const p = Object.fromEntries(u.searchParams);
+    if (p.engs !== 'John' || p.chap !== '1') return Response.json({ status: 'success', record_count: 0, record: [] });
+    if (p.book === '4') { // cross references: one per verse
+      return Response.json({ status: 'success', record_count: 1, record: [{ title: `約翰福音 1章${p.sec}節 到 1章${p.sec}節`, com_text: `\n * the Word.\n # Isa 7:14; Mt 1:${p.sec}|\n` }] });
+    }
+    const s = sections[p.sec];
+    if (!s) return Response.json({ status: 'success', record_count: 0, record: [] });
+    const [from, to, next] = s;
+    const zh = p.gb === '1' ? '节' : '節';
+    return Response.json({ status: 'success', record_count: 1,
+      next: next ? { engs: 'John', chap: 1, sec: next } : { engs: 'John', chap: 2, sec: 1 },
+      record: [{ title: `约翰福音 1章${from}${zh} 到 1章${to}${zh}`, com_text: `  （一）太初有道。#1:1-2|\r\n        ●「道」：SNG03056，基本意義是「言\r\n              語」。第${from}段` }] });
+  };
+  return { calls, fetchImpl };
+}
+
+test('Chinese commentary: walks the sections of a chapter and cleans the text', async () => {
+  const up = fakeFhl();
+  const get = createCommentaryService({ fetchImpl: up.fetchImpl, verseCount: () => 51 });
+  const ch = await get('fhl-zh-hans', 'john', 1);
+  assert.deepEqual(ch.entries.map((e) => e.verse), [1, 3, 14]);
+  assert.equal(ch.entries[0].text, '（一）太初有道。1:1-2\n●「道」：G3056，基本意義是「言語」。第1段');
+  assert.equal(up.calls.length, 3, 'one request per section');
+  assert.ok(up.calls[0].includes('gb=1') && up.calls[0].includes('book=3'));
+  assert.equal(ch.commentary.lang, 'zh-Hans');
+  await assert.rejects(get('fhl-zh-hant', 'genesis', 1), { status: 404 }); // nothing there
+});
+
+test('cross references: one entry per verse, fetched a few at a time', async () => {
+  const up = fakeFhl();
+  const get = createCommentaryService({ fetchImpl: up.fetchImpl, verseCount: () => 5, fhlConcurrency: 2 });
+  const ch = await get('tsk', 'john', 1);
+  assert.deepEqual(ch.entries.map((e) => e.verse), [1, 2, 3, 4, 5]);
+  assert.equal(ch.entries[2].text, '• the Word.\nIsa 7:14; Mt 1:3');
+});
+
+test('cleanFhlText joins wrapped Chinese lines without adding spaces', () => {
+  assert.equal(cleanFhlText('●「太初」：七十士譯本用此字來翻\n      譯#創 1:1|的「起初」SNH07225。'), '●「太初」：七十士譯本用此字來翻譯創 1:1的「起初」H7225。');
+  assert.equal(cleanFhlText('He said\n   that it was'), 'He said that it was');
 });

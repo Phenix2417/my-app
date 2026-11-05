@@ -13,6 +13,7 @@ export function openDb(file) {
       id INTEGER PRIMARY KEY,
       username TEXT NOT NULL UNIQUE COLLATE NOCASE,
       display_name TEXT NOT NULL DEFAULT '',
+      commentary_prefs TEXT NOT NULL DEFAULT '',
       pass_hash TEXT NOT NULL,
       salt TEXT NOT NULL,
       created_at INTEGER NOT NULL
@@ -62,5 +63,6 @@ export function openDb(file) {
   // Databases created before display names existed get the column added.
   const cols = db.prepare('PRAGMA table_info(users)').all().map((c) => c.name);
   if (!cols.includes('display_name')) db.exec("ALTER TABLE users ADD COLUMN display_name TEXT NOT NULL DEFAULT ''");
+  if (!cols.includes('commentary_prefs')) db.exec("ALTER TABLE users ADD COLUMN commentary_prefs TEXT NOT NULL DEFAULT ''");
   return db;
 }
