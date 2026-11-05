@@ -659,6 +659,7 @@ function showToolbar() {
     h('div', { class: 'row' },
       h('button', { class: 'text-btn', onclick: () => noteEditor(draft('yellow'), { isNew: true }) }, 'Note'),
       h('button', { class: 'text-btn', onclick: () => { const v = start.v; clearSelection(); openCommentaryPage(v); } }, 'Commentary'),
+      h('button', { class: 'text-btn dict-btn', 'aria-expanded': 'false', onclick: (e) => toggleDictionary(bar, e.currentTarget) }, 'Dictionary'),
       h('button', { class: 'text-btn', onclick: async () => {
         const text = `${selectedQuote()} — ${ref(draft('yellow'))} (WEB)`;
         try { await navigator.clipboard.writeText(text); toast('Copied'); } catch { toast("Couldn't copy"); }
@@ -667,6 +668,58 @@ function showToolbar() {
   reader.toolbar = bar;
   document.body.append(bar);
   positionToolbar();
+}
+
+/* ----- Dictionary inside the selection bubble (ECDICT English–Chinese, words used in the Bible) ----- */
+const dictFiles = new Map();
+const STOP = new Set('a an the and or but of to in on at by for with from as is was were be been are am it its he him his she her they them their we us our you your i me my that this these those which who whom what so not no nor then than there here shall will would should may might can could do did does has have had'.split(' '));
+const dictKey = (w) => w.toLowerCase().replace(/[’']s$/, '').replace(/[^a-z-]/g, '').replace(/^-+|-+$/g, '');
+function dictFile(letter) {
+  if (!dictFiles.has(letter)) {
+    const p = fetch(`/dict/${letter}.json`).then((r) => (r.ok ? r.json() : {}));
+    dictFiles.set(letter, p);
+    p.catch(() => dictFiles.delete(letter));
+  }
+  return dictFiles.get(letter);
+}
+async function lookUp(word) {
+  const w = dictKey(word);
+  if (!w || !/^[a-z]/.test(w)) return null;
+  const e = (await dictFile(w[0]))[w];
+  if (!e) return { word: w };
+  const base = e.b ? { word: e.b, ...(await dictFile(e.b[0]))[e.b] } : null;
+  return { word: w, ...e, base };
+}
+
+function toggleDictionary(bar, btn) {
+  const open = bar.querySelector('.dict');
+  if (open) { open.remove(); btn.setAttribute('aria-expanded', 'false'); positionToolbar(); return; }
+  btn.setAttribute('aria-expanded', 'true');
+  // The words to offer: each distinct word in the selection, skipping very common ones when there are several.
+  const all = reader.words.filter((x) => inRange(x, state.selection.start, state.selection.end)).map((x) => x.el.textContent);
+  let words = [...new Set(all.map(dictKey).filter(Boolean))];
+  if (words.length > 1) words = words.filter((w) => !STOP.has(w));
+  if (!words.length) words = [dictKey(all[0] || '')];
+  words = words.slice(0, 8);
+  const body = h('div', { class: 'dict-entry', 'aria-live': 'polite' });
+  const tabs = words.length > 1 ? h('div', { class: 'dict-words', role: 'group', 'aria-label': 'Words' }) : null;
+  const show = async (w) => {
+    tabs?.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.w === w)));
+    body.replaceChildren(h('p', { class: 'dict-muted' }, 'Looking up…'));
+    let e;
+    try { e = await lookUp(w); } catch { body.replaceChildren(h('p', { class: 'dict-muted' }, "Couldn't load the dictionary. Check your connection.")); positionToolbar(); return; }
+    const block = (x, main) => [
+      h('div', { class: 'dict-head' }, h('span', { class: 'dict-word' }, x.word), x.p ? h('span', { class: 'dict-ph' }, `/${x.p}/`) : null),
+      x.t ? h('p', { class: 'dict-zh', lang: 'zh-Hans' }, x.t) : null,
+      x.d && main ? h('p', { class: 'dict-en' }, x.d) : null,
+    ];
+    if (!e || (!e.t && !e.d && !e.base)) body.replaceChildren(h('p', { class: 'dict-muted' }, `“${w}” isn't in the dictionary. Names of people and places usually aren't.`));
+    else body.replaceChildren(...block(e, !e.base), ...(e.base ? [h('div', { class: 'dict-base' }, `Base form: ${e.base.word}`), ...block(e.base, true)] : []));
+    positionToolbar();
+  };
+  if (tabs) tabs.append(...words.map((w) => h('button', { class: 'chip', dataset: { w }, onclick: () => show(w) }, w)));
+  bar.append(h('div', { class: 'dict' }, tabs, body, h('p', { class: 'dict-credit' }, 'ECDICT English–Chinese dictionary')));
+  show(words[0]);
 }
 
 // Place the selection bubble just above the selected words (or below them if there's no room),

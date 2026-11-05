@@ -15,6 +15,9 @@ Read the Bible, highlight passages, write notes, and see the notes your friends 
   references. Tap **Edit list** to add or remove commentaries, and press and hold one to drag it into a new place;
   each person's list is saved to their account. Texts come from the Free Use Bible API (bible.helloao.org) and the
   信望愛 (FHL) site; the server fetches each chapter once and keeps a copy (in the Railway volume when one is attached).
+- **Dictionary** — select a word (or a phrase) and tap **Dictionary** in the bubble for its pronunciation, Chinese
+  meaning and English definition; inflected words also show their base form. Built from ECDICT (MIT licence) for every
+  word used in the Bible text: `node scripts/build-dict.mjs ecdict.csv` regenerates `public/dict/`.
 - **Notes** — *Mine* lists your notes; *Friends'* lists notes shared with you. Tap a card to jump to the verse.
 - **Friends** — add a friend by username; they accept the request. Each friend has a
   **Can see my notes** switch. Your notes stay private until you turn it on for that person,
