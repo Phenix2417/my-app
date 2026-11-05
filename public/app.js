@@ -688,7 +688,6 @@ function showToolbar() {
 
 /* ----- Dictionary inside the selection bubble (ECDICT English–Chinese, words used in the Bible) ----- */
 const dictFiles = new Map();
-const STOP = new Set('a an the and or but of to in on at by for with from as is was were be been are am it its he him his she her they them their we us our you your i me my that this these those which who whom what so not no nor then than there here shall will would should may might can could do did does has have had'.split(' '));
 const dictKey = (w) => w.toLowerCase().replace(/[’']s$/, '').replace(/[^a-z-]/g, '').replace(/^-+|-+$/g, '');
 function dictFile(letter) {
   if (!dictFiles.has(letter)) {
@@ -757,20 +756,21 @@ function toggleDictionary(bar, btn) {
   const open = bar.querySelector('.dict');
   if (open) { open.remove(); btn.setAttribute('aria-expanded', 'false'); positionToolbar(); return; }
   btn.setAttribute('aria-expanded', 'true');
-  // The words to offer: each distinct word in the selection, skipping very common ones when there are several.
   const all = reader.words.filter((x) => inRange(x, state.selection.start, state.selection.end)).map((x) => x.el.textContent);
-  let words = [...new Set(all.map(dictKey).filter(Boolean))];
-  if (words.length > 1) words = words.filter((w) => !STOP.has(w));
-  if (!words.length) words = [dictKey(all[0] || '')];
-  words = words.slice(0, 12);
   const multi = all.length > 1;
+  const words = [dictKey(all[0] || '')];
   const body = h('div', { class: 'dict-entry', 'aria-live': 'polite' });
-  const tabs = multi || words.length > 1 ? h('div', { class: 'dict-words', role: 'group', 'aria-label': 'Look up a word' }) : null;
-  // Several words: translate the whole selection first.
+  // Several words: translate the whole selection, and make every word of it tappable for its definition.
   let trans = null;
   if (multi) {
     const zh = h('p', { class: 'trans-zh', lang: 'zh-Hans' }, 'Translating…');
-    trans = h('div', { class: 'trans', 'aria-live': 'polite' }, h('p', { class: 'trans-en' }, all.join(' ')), zh);
+    const en = h('p', { class: 'trans-en', role: 'group', 'aria-label': 'Tap a word for its definition' });
+    all.forEach((token, i) => {
+      const key = dictKey(token);
+      if (i) en.append(' ');
+      en.append(key ? h('button', { class: 'tw', type: 'button', dataset: { w: key }, 'aria-pressed': 'false', onclick: () => show(key) }, token) : token);
+    });
+    trans = h('div', { class: 'trans', 'aria-live': 'polite' }, en, zh);
     api('POST', '/api/translate', { text: all.join(' ') }).then((r) => { zh.textContent = r.text; positionToolbar(); }).catch((err) => {
       zh.classList.add('dict-muted');
       zh.textContent = err instanceof OfflineError ? 'Translation needs a connection.' : err.message;
@@ -778,7 +778,7 @@ function toggleDictionary(bar, btn) {
     });
   }
   const show = async (w) => {
-    tabs?.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.w === w)));
+    trans?.querySelectorAll('.tw').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.w === w)));
     body.replaceChildren(h('p', { class: 'dict-muted' }, 'Looking up…'));
     let e;
     try { e = await lookUp(w); } catch { body.replaceChildren(h('p', { class: 'dict-muted' }, "Couldn't load the dictionary. Check your connection.")); positionToolbar(); return; }
@@ -790,13 +790,12 @@ function toggleDictionary(bar, btn) {
       x.d && main ? h('p', { class: 'dict-en' }, x.d) : null,
     ];
     if (!e || (!e.t && !e.d && !e.base)) body.replaceChildren(h('p', { class: 'dict-muted' }, `“${w}” isn't in the dictionary. Names of people and places usually aren't.`));
-    else body.replaceChildren(...block(e, !e.base), ...(e.base ? [h('div', { class: 'dict-base' }, `Base form: ${e.base.word}`), ...block(e.base, true)] : []));
+    else body.replaceChildren(...[...block(e, !e.base), ...(e.base ? [h('div', { class: 'dict-base' }, `Base form: ${e.base.word}`), ...block(e.base, true)] : [])].filter(Boolean));
     positionToolbar();
   };
-  if (tabs) tabs.append(...words.map((w) => h('button', { class: 'chip', dataset: { w }, onclick: () => show(w) }, w)));
-  bar.append(h('div', { class: 'dict' }, trans, tabs, body,
+  bar.append(h('div', { class: 'dict' }, trans, body,
     h('p', { class: 'dict-credit' }, multi ? 'Translation, phonetics & audio: Youdao · Dictionary: ECDICT' : 'ECDICT English–Chinese dictionary · Phonetics & audio: Youdao')));
-  if (multi) body.replaceChildren(h('p', { class: 'dict-muted' }, 'Tap a word above for its definition.'));
+  if (multi) body.replaceChildren(h('p', { class: 'dict-muted' }, 'Tap any word in the text above for its definition.'));
   else show(words[0]);
 }
 
