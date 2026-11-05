@@ -282,3 +282,7 @@ button.c-label:focus-visible { outline: 2px solid var(--primary); outline-offset
 .c-list.slide-from-left { animation: slide-l .22s ease-out; }
 @keyframes slide-r { from { transform: translateX(40px); opacity: .3; } }
 @keyframes slide-l { from { transform: translateX(-40px); opacity: .3; } }
+
+.chip.edit-chip { display: grid; place-items: center; width: 40px; height: 36px; padding: 0; }
+.chip.edit-chip svg { width: 18px; height: 18px; }
+.chip.edit-chip[aria-expanded="true"] { background: var(--primary); color: var(--on-primary); border-style: solid; border-color: var(--primary); }
