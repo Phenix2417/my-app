@@ -238,13 +238,9 @@ h1 { font-size: 28px; font-weight: 500; margin: 18px 0 24px; }
 .side-tab svg { width: 22px; height: 22px; transition: transform .22s ease; }
 .side-dock.open .side-tab svg { transform: rotate(180deg); }
 .side-tab:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
-.side-panel { display: flex; flex-direction: column; gap: 18px; padding: 18px 12px;
+.side-panel { display: flex; flex-direction: column; gap: 14px; padding: 14px 12px;
   padding-right: calc(12px + env(safe-area-inset-right, 0px)); background: var(--surface); border-radius: 18px 0 0 18px;
   box-shadow: -4px 4px 18px rgba(0,0,0,.35); }
-.side-item { display: grid; justify-items: center; gap: 8px; width: 92px; }
-.side-label { display: grid; justify-items: center; gap: 4px; font-size: 13px; font-weight: 500; text-align: center; color: var(--on-bg); cursor: pointer; }
-.side-icon { width: 36px; height: 36px; border-radius: 18px; display: grid; place-items: center; background: var(--surface-2); color: var(--primary); }
-.side-icon svg { width: 20px; height: 20px; }
 @media (prefers-reduced-motion: reduce) { .side-dock, .side-tab svg { transition: none; } }
 
 .commentary-page h1 { margin-top: 4px; }
@@ -258,9 +254,6 @@ button.c-label:focus-visible { outline: 2px solid var(--primary); outline-offset
 .c-verses { margin: 0 0 10px; padding-left: 10px; border-left: 3px solid var(--divider); color: var(--muted);
   font: 15px/1.55 "Noto Serif", Georgia, serif; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .c-entry .commentary-text { font-size: 17px; line-height: 1.65; }
-.side-action { background: none; border: 0; padding: 0; font: inherit; font-size: 13px; font-weight: 500; }
-.side-go { color: var(--primary); font-size: 12px; margin-top: 2px; }
-.side-action:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; border-radius: 8px; }
 
 .manage-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 10px; }
 .manage-head h2 { margin: 0; font-size: 19px; font-weight: 500; }
@@ -286,3 +279,10 @@ button.c-label:focus-visible { outline: 2px solid var(--primary); outline-offset
 .chip.edit-chip { display: grid; place-items: center; width: 40px; height: 36px; padding: 0; }
 .chip.edit-chip svg { width: 18px; height: 18px; }
 .chip.edit-chip[aria-expanded="true"] { background: var(--primary); color: var(--on-primary); border-style: solid; border-color: var(--primary); }
+
+.side-btn { width: 52px; height: 52px; border-radius: 26px; border: 0; display: grid; place-items: center;
+  background: var(--surface-2); color: var(--muted); }
+.side-btn svg { width: 24px; height: 24px; }
+.side-btn[aria-pressed="true"] { background: var(--primary); color: var(--on-primary); }
+.side-btn:not([aria-pressed]) { color: var(--primary); }
+.side-btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }

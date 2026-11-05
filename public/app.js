@@ -297,11 +297,11 @@ async function renderReader() {
   const next = chapter < meta.chapters ? { book, chapter: chapter + 1 } : idx < books.length - 1 ? { book: books[idx + 1].id, chapter: 1 } : null;
 
   const body = h('div', { class: 'reader-body', style: `--verse-size:${state.fontSize}px` });
-  const sw = h('input', { type: 'checkbox', class: 'switch', id: 'show-friends', checked: state.showFriends, onchange: async (e) => {
-    state.showFriends = e.target.checked; store.set('showFriends', state.showFriends);
+  const setShowFriends = async (on) => {
+    state.showFriends = on; store.set('showFriends', on);
     paint();
-    if (state.showFriends) { await refreshChapterFriendNotes(); paint(); }
-  } });
+    if (on) { await refreshChapterFriendNotes(); paint(); }
+  };
   const screen = h('main', { class: 'screen' },
     h('h1', {}, `${meta.name} ${chapter}`),
     h('nav', { class: 'chapter-nav', 'aria-label': 'Chapter navigation' },
@@ -311,7 +311,7 @@ async function renderReader() {
     h('p', { class: 'hint' }, 'Hold a word or tap a verse number to select. Drag the handles to adjust.'),
     body,
     sideDock([
-      { id: 'show-friends', label: "Friends' notes", icon: ICONS.friends, input: sw },
+      { id: 'show-friends', label: "Friends' notes", icon: ICONS.friends, toggle: { get: () => state.showFriends, set: setShowFriends } },
       { id: 'open-commentary', label: 'Commentary', icon: ICONS.commentary, action: () => openCommentaryPage(topVisibleVerse()) },
     ]));
   mount(screen);
@@ -671,11 +671,16 @@ let closeSideDock = () => {};
 document.addEventListener('pointerdown', (e) => { if (!e.target.closest?.('.side-dock')) closeSideDock(); }, true);
 function sideDock(items) {
   const panel = h('div', { class: 'side-panel', id: 'side-panel', role: 'group', 'aria-label': 'Reading options' },
-    ...items.map(({ id, label, icon, input, action }) => h('div', { class: 'side-item' },
-      action
-        ? h('button', { id, class: 'side-label side-action', onclick: () => { closeSideDock(); action(); } },
-          h('span', { class: 'side-icon' }, svg(icon)), label, h('span', { class: 'side-go', 'aria-hidden': 'true' }, 'Open ›'))
-        : [h('label', { for: id, class: 'side-label' }, h('span', { class: 'side-icon' }, svg(icon)), label), input])));
+    // Icon-only buttons: a toggle shows its state by being filled; an action opens something.
+    ...items.map(({ id, label, icon, toggle, action }) => {
+      const btn = h('button', { id, class: 'side-btn', title: label, 'aria-label': label }, svg(icon));
+      if (toggle) {
+        const show = () => btn.setAttribute('aria-pressed', String(!!toggle.get()));
+        btn.addEventListener('click', () => { const on = !toggle.get(); toggle.set(on); show(); toast(`${label} ${on ? 'on' : 'off'}`); });
+        show();
+      } else btn.addEventListener('click', () => { closeSideDock(); action(); });
+      return btn;
+    }));
   const tab = h('button', { class: 'side-tab', 'aria-controls': 'side-panel', 'aria-expanded': 'false', 'aria-label': 'Show reading options' },
     svg(ICONS.chevronLeft));
   const dock = h('div', { class: 'side-dock' }, tab, panel);
