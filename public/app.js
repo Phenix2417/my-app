@@ -696,13 +696,21 @@ function drawCommentaryChips() {
   if (!cm.chips || !cm.list) return;
   const { book } = state.pos;
   const ids = myCommentaryIds(cm.list);
-  cm.chips.replaceChildren(...ids.map((id) => cm.list.find((c) => c.id === id)).map((c) => h('button', {
+  // "Edit list" comes first so it's always on screen, even when the row scrolls sideways.
+  cm.chips.replaceChildren(h('button', { class: 'chip edit-chip', 'aria-expanded': String(cm.manageOpen),
+    onclick: () => setManageOpen(!cm.manageOpen) }, cm.manageOpen ? '✓ Done' : '✎ Edit list'),
+  ...ids.map((id) => cm.list.find((c) => c.id === id)).map((c) => h('button', {
     class: 'chip' + (c.missingBooks.includes(book) ? ' unavailable' : ''), 'aria-pressed': String(c.id === cm.current), lang: c.lang,
     title: c.missingBooks.includes(book) ? `${c.name} doesn't cover ${bookName(book)}` : c.about,
     onclick: () => { cm.current = c.id; store.set('commentary', c.id); loadCommentaryPage(); },
-  }, c.name)), h('button', { class: 'chip edit-chip', 'aria-expanded': String(cm.manageOpen), onclick: () => {
-    cm.manageOpen = !cm.manageOpen; cm.manage.hidden = !cm.manageOpen; drawManage(); drawCommentaryChips();
-  } }, cm.manageOpen ? '✓ Done editing' : '✎ Edit list'));
+  }, c.name)));
+}
+
+function setManageOpen(open) {
+  cm.manageOpen = open;
+  if (cm.manage) cm.manage.hidden = !open;
+  drawManage(); drawCommentaryChips();
+  if (!open) cm.chips?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); // back to the commentary buttons
 }
 
 function drawManage() {
@@ -738,12 +746,15 @@ function drawManage() {
     }));
   const others = list.filter((c) => !ids.includes(c.id));
   const groups = ['zh-Hans', 'zh-Hant', 'en'].map((lang) => others.filter((c) => c.lang === lang)).filter((g) => g.length);
+  const done = (where) => h('button', { class: 'filled-btn', onclick: () => setManageOpen(false), 'aria-label': `Done editing (${where})` }, 'Done');
   cm.manage.replaceChildren(...[
+    h('div', { class: 'manage-head' }, h('h2', {}, 'Edit your list'), done('top')),
     h('p', { class: 'hint' }, 'The first one opens by default. Press and hold a commentary, then drag it to change the order.'),
     ids.length ? mine : h('p', { class: 'empty' }, 'Your list is empty. Add commentaries below.'),
     others.length ? h('div', { class: 'section-label' }, 'Add more') : null,
     ...groups.flatMap((g) => g.map((c) => h('div', { class: 'manage-row' }, info(c),
       h('div', { class: 'manage-actions' }, h('button', { class: 'tonal-btn small-btn', onclick: () => set([...ids, c.id]) }, 'Add'))))),
+    h('div', { class: 'manage-foot' }, done('bottom')),
   ].filter(Boolean));
 }
 
