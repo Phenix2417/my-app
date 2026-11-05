@@ -213,10 +213,17 @@ function toast(msg) {
   toastTimer = setTimeout(() => t.remove(), 2800);
 }
 
+const openSheets = new Map(); // label -> close(); a sheet is never stacked on a copy of itself
 function openSheet(build, { label } = {}) {
-  const sheet = h('div', { class: 'sheet', role: 'dialog', 'aria-modal': 'true', 'aria-label': label || 'Dialog' });
+  const key = label || 'Dialog';
+  openSheets.get(key)?.();
+  const sheet = h('div', { class: 'sheet', role: 'dialog', 'aria-modal': 'true', 'aria-label': key });
   const scrim = h('div', { class: 'scrim' }, sheet);
-  const close = () => { scrim.remove(); document.removeEventListener('keydown', onKey); };
+  const close = () => {
+    scrim.remove(); document.removeEventListener('keydown', onKey);
+    if (openSheets.get(key) === close) openSheets.delete(key);
+  };
+  openSheets.set(key, close);
   const onKey = (e) => { if (e.key === 'Escape') close(); };
   scrim.addEventListener('click', (e) => { if (e.target === scrim) close(); });
   document.addEventListener('keydown', onKey);
@@ -684,11 +691,15 @@ function manageCommentaries(list, onChange) {
   }, { label: 'Manage commentaries' });
 }
 
+let commentaryOpening = false;
 async function openCommentary(verse) {
+  if (commentaryOpening) return; // a second tap while the list loads would open a second sheet
   const { book, chapter } = state.pos;
   const verseCount = reader.chapterData?.length || verse;
   let list;
+  commentaryOpening = true;
   try { list = await loadCommentaryList(); } catch { toast("Couldn't load commentaries. Check your connection."); return; }
+  finally { commentaryOpening = false; }
   let current = store.get('commentary', null);
 
   openSheet((close) => {
