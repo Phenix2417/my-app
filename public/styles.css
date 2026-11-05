@@ -179,3 +179,10 @@ h1 { font-size: 28px; font-weight: 500; margin: 18px 0 24px; }
 
 .toast { position: fixed; z-index: 40; left: 50%; transform: translateX(-50%); bottom: calc(170px + env(safe-area-inset-bottom));
   background: var(--on-bg); color: var(--bg); padding: 12px 18px; border-radius: 10px; font-size: 15px; animation: fade .2s; max-width: calc(100vw - 32px); }
+
+.person-name { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 14px; }
+.person-name > div:first-child { min-width: 0; }
+.dname { font-size: 20px; font-weight: 500; overflow-wrap: anywhere; }
+.handle-sub { color: var(--muted); font-size: 14px; }
+.inline-field { display: flex; gap: 8px; align-items: center; }
+.inline-field input { flex: 1; min-width: 0; }

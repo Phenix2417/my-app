@@ -43,7 +43,7 @@ test('friends only see notes after the owner allows it', async () => {
   r = await api('GET', '/api/friends', { token: james.token });
   assert.equal(r.data.incoming[0].username, 'alice');
   r = await api('POST', `/api/friends/${alice.user.id}/accept`, { token: james.token });
-  assert.deepEqual(r.data.friends, [{ id: alice.user.id, username: 'alice', sharing: false, sharesWithMe: false }]);
+  assert.deepEqual(r.data.friends, [{ id: alice.user.id, username: 'alice', displayName: 'alice', sharing: false, sharesWithMe: false }]);
 
   // Friends but sharing off: still hidden.
   fn = await api('GET', '/api/friends/notes?book=john&chapter=1', { token: james.token });
@@ -83,4 +83,31 @@ test('validation and auth', async () => {
   assert.equal((await api('PUT', '/api/notes/abcdefgh', { token, body: note({ chapter: 99 }) })).status, 400);
   await api('POST', '/api/logout', { token });
   assert.equal((await api('GET', '/api/me', { token })).status, 401);
+});
+
+test('display names can be in any language and are separate from usernames', async () => {
+  const xm = (await api('POST', '/api/register', { body: { username: 'xiaoming', password: 'password1', displayName: '  小明​  ' } })).data;
+  assert.deepEqual(xm.user, { id: xm.user.id, username: 'xiaoming', displayName: '小明' });
+  const jo = (await api('POST', '/api/register', { body: { username: 'jose_1', password: 'password1' } })).data;
+  assert.equal(jo.user.displayName, 'jose_1'); // falls back to the username
+
+  // Friends are still added by username, and see each other's display name.
+  await api('POST', '/api/friends/requests', { token: jo.token, body: { username: 'xiaoming' } });
+  let r = await api('POST', `/api/friends/${jo.user.id}/accept`, { token: xm.token });
+  assert.equal(r.data.friends[0].displayName, 'jose_1');
+
+  r = await api('PUT', '/api/me', { token: jo.token, body: { displayName: 'José 🙏' } });
+  assert.equal(r.data.user.displayName, 'José 🙏');
+  assert.equal(r.data.user.username, 'jose_1');
+  assert.equal((await api('GET', '/api/friends', { token: xm.token })).data.friends[0].displayName, 'José 🙏');
+
+  await api('PUT', `/api/friends/${xm.user.id}/sharing`, { token: jo.token, body: { enabled: true } });
+  await api('PUT', '/api/notes/note-jose-1', { token: jo.token, body: note() });
+  const fn = await api('GET', '/api/friends/notes', { token: xm.token });
+  assert.deepEqual(fn.data.notes[0].author, { id: jo.user.id, username: 'jose_1', displayName: 'José 🙏' });
+
+  // 40 characters max, counted as characters (so CJK names get the same room); clearing falls back to username.
+  assert.equal((await api('PUT', '/api/me', { token: jo.token, body: { displayName: '字'.repeat(40) } })).status, 200);
+  assert.equal((await api('PUT', '/api/me', { token: jo.token, body: { displayName: '字'.repeat(41) } })).status, 400);
+  assert.equal((await api('PUT', '/api/me', { token: jo.token, body: { displayName: '' } })).data.user.displayName, 'jose_1');
 });

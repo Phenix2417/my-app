@@ -12,6 +12,7 @@ export function openDb(file) {
     CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY,
       username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+      display_name TEXT NOT NULL DEFAULT '',
       pass_hash TEXT NOT NULL,
       salt TEXT NOT NULL,
       created_at INTEGER NOT NULL
@@ -58,5 +59,8 @@ export function openDb(file) {
     CREATE INDEX IF NOT EXISTS notes_by_chapter ON notes (book, chapter, user_id);
     CREATE INDEX IF NOT EXISTS notes_by_user ON notes (user_id, updated_at);
   `);
+  // Databases created before display names existed get the column added.
+  const cols = db.prepare('PRAGMA table_info(users)').all().map((c) => c.name);
+  if (!cols.includes('display_name')) db.exec("ALTER TABLE users ADD COLUMN display_name TEXT NOT NULL DEFAULT ''");
   return db;
 }

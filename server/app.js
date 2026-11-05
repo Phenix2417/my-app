@@ -6,6 +6,7 @@ import { BOOKS, BOOK_IDS } from './books.js';
 
 const COLORS = new Set(['yellow', 'green', 'blue', 'pink', 'purple']);
 const USERNAME_RE = /^[a-z0-9_]{3,20}$/i;
+const MAX_DISPLAY_NAME = 40;
 const MAX_BODY = 64 * 1024;
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
@@ -20,14 +21,26 @@ class HttpError extends Error {
 const sha256 = (s) => crypto.createHash('sha256').update(s).digest('hex');
 const hashPassword = (password, salt) => crypto.scryptSync(password, salt, 64).toString('hex');
 
+// Display names may use any language. Strip control and invisible formatting characters, collapse spaces,
+// and limit the length in characters (not bytes) so CJK and emoji names get the same room.
+function cleanDisplayName(v) {
+  if (v == null) return '';
+  if (typeof v !== 'string') throw new HttpError(400, 'Invalid display name');
+  const s = v.normalize('NFC').replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, '').replace(/\s+/gu, ' ').trim();
+  if ([...s].length > MAX_DISPLAY_NAME) throw new HttpError(400, `Display name can be at most ${MAX_DISPLAY_NAME} characters`);
+  return s;
+}
+const userOut = (id, username, displayName) => ({ id, username, displayName: displayName || username });
+
 export function createApp(db, { publicDir, trustProxy = false } = {}) {
   const q = (sql) => db.prepare(sql);
   const stmt = {
     userByName: q('SELECT * FROM users WHERE username = ?'),
-    userById: q('SELECT id, username FROM users WHERE id = ?'),
-    insertUser: q('INSERT INTO users (username, pass_hash, salt, created_at) VALUES (?, ?, ?, ?)'),
+    userById: q('SELECT id, username, display_name FROM users WHERE id = ?'),
+    insertUser: q('INSERT INTO users (username, display_name, pass_hash, salt, created_at) VALUES (?, ?, ?, ?, ?)'),
+    setDisplayName: q('UPDATE users SET display_name = ? WHERE id = ?'),
     insertSession: q('INSERT INTO sessions (token_hash, user_id, created_at) VALUES (?, ?, ?)'),
-    sessionUser: q('SELECT u.id, u.username FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ?'),
+    sessionUser: q('SELECT u.id, u.username, u.display_name FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ?'),
     deleteSession: q('DELETE FROM sessions WHERE token_hash = ?'),
 
     friendship: q('SELECT * FROM friendships WHERE user_a = ? AND user_b = ?'),
@@ -35,7 +48,7 @@ export function createApp(db, { publicDir, trustProxy = false } = {}) {
     acceptFriendship: q("UPDATE friendships SET status = 'accepted' WHERE user_a = ? AND user_b = ?"),
     deleteFriendship: q('DELETE FROM friendships WHERE user_a = ? AND user_b = ?'),
     friendRows: q(`
-      SELECT f.*, u.id AS other_id, u.username AS other_name,
+      SELECT f.*, u.id AS other_id, u.username AS other_name, u.display_name AS other_display,
         EXISTS (SELECT 1 FROM shares WHERE owner_id = :me AND viewer_id = u.id) AS i_share,
         EXISTS (SELECT 1 FROM shares WHERE owner_id = u.id AND viewer_id = :me) AS they_share
       FROM friendships f
@@ -58,7 +71,7 @@ export function createApp(db, { publicDir, trustProxy = false } = {}) {
         verse_end = :verse_end, word_end = :word_end, color = :color, quote = :quote, body = :body, updated_at = :now`),
     deleteNote: q('DELETE FROM notes WHERE id = ? AND user_id = ?'),
     // Notes from friends who have allowed `viewer` to see them.
-    friendNotes: q(`SELECT n.*, u.username FROM notes n
+    friendNotes: q(`SELECT n.*, u.username, u.display_name FROM notes n
       JOIN users u ON u.id = n.user_id
       JOIN shares s ON s.owner_id = n.user_id AND s.viewer_id = :viewer
       JOIN friendships f ON f.user_a = MIN(n.user_id, :viewer) AND f.user_b = MAX(n.user_id, :viewer) AND f.status = 'accepted'
@@ -89,7 +102,7 @@ export function createApp(db, { publicDir, trustProxy = false } = {}) {
     id: n.id, book: n.book, chapter: n.chapter,
     start: { verse: n.verse_start, word: n.word_start }, end: { verse: n.verse_end, word: n.word_end },
     color: n.color, quote: n.quote, body: n.body, createdAt: n.created_at, updatedAt: n.updated_at,
-    ...(n.username ? { author: { id: n.user_id, username: n.username } } : {}),
+    ...(n.username ? { author: userOut(n.user_id, n.username, n.display_name) } : {}),
   });
 
   function validateNote(b) {
@@ -114,7 +127,7 @@ export function createApp(db, { publicDir, trustProxy = false } = {}) {
   function friendsPayload(me) {
     const out = { friends: [], incoming: [], outgoing: [] };
     for (const r of stmt.friendRows.all({ me })) {
-      const user = { id: r.other_id, username: r.other_name };
+      const user = userOut(r.other_id, r.other_name, r.other_display);
       if (r.status === 'accepted') out.friends.push({ ...user, sharing: !!r.i_share, sharesWithMe: !!r.they_share });
       else if (r.requested_by === me) out.outgoing.push(user);
       else out.incoming.push(user);
@@ -138,11 +151,12 @@ export function createApp(db, { publicDir, trustProxy = false } = {}) {
       const password = String(body.password || '');
       if (!USERNAME_RE.test(username)) throw new HttpError(400, 'Username must be 3–20 letters, numbers or _');
       if (password.length < 8) throw new HttpError(400, 'Password must be at least 8 characters');
+      const displayName = cleanDisplayName(body.displayName);
       if (stmt.userByName.get(username)) throw new HttpError(409, 'That username is taken');
       const salt = crypto.randomBytes(16).toString('hex');
-      const { lastInsertRowid } = stmt.insertUser.run(username, hashPassword(password, salt), salt, now());
+      const { lastInsertRowid } = stmt.insertUser.run(username, displayName, hashPassword(password, salt), salt, now());
       const id = Number(lastInsertRowid);
-      return { status: 201, body: { token: createSession(id), user: { id, username } } };
+      return { status: 201, body: { token: createSession(id), user: userOut(id, username, displayName) } };
     }],
 
     ['POST', /^\/api\/login$/, ({ body, ip }) => {
@@ -151,11 +165,16 @@ export function createApp(db, { publicDir, trustProxy = false } = {}) {
       const ok = u && crypto.timingSafeEqual(
         Buffer.from(hashPassword(String(body.password || ''), u.salt), 'hex'), Buffer.from(u.pass_hash, 'hex'));
       if (!ok) throw new HttpError(401, 'Wrong username or password');
-      return { token: createSession(u.id), user: { id: u.id, username: u.username } };
+      return { token: createSession(u.id), user: userOut(u.id, u.username, u.display_name) };
     }],
 
     ['POST', /^\/api\/logout$/, ({ token }) => { if (token) stmt.deleteSession.run(sha256(token)); return { ok: true }; }],
-    ['GET', /^\/api\/me$/, ({ me }) => ({ user: me }), true],
+    ['GET', /^\/api\/me$/, ({ me }) => ({ user: userOut(me.id, me.username, me.display_name) }), true],
+    ['PUT', /^\/api\/me$/, ({ me, body }) => {
+      const displayName = cleanDisplayName(body.displayName);
+      stmt.setDisplayName.run(displayName, me.id);
+      return { user: userOut(me.id, me.username, displayName) };
+    }, true],
 
     ['GET', /^\/api\/notes$/, ({ me, query }) => {
       const book = query.get('book');

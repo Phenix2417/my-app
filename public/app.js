@@ -64,6 +64,11 @@ const state = {
   selection: null, // {start:{v,w}, end:{v,w}}
 };
 const uid = () => state.auth?.user.id;
+// Display names can be in any language; @username is the ASCII handle used to add friends.
+const dn = (u) => u?.displayName || u?.username || 'Someone';
+const firstChar = (s) => (Array.from(s)[0] || '?').toUpperCase();
+const personName = (u, extra) => h('div', { class: 'person-name' },
+  h('div', {}, h('div', { class: 'dname' }, dn(u)), h('div', { class: 'handle-sub' }, '@' + u.username)), extra);
 const mineKey = () => `mine.${uid()}`;
 const loadMine = () => { state.mine = store.get(mineKey(), { notes: {}, queue: [] }); };
 const saveMine = () => store.set(mineKey(), state.mine);
@@ -235,7 +240,7 @@ function swatchRow(selected, onPick) {
 function noteCard(n, { onClick, friend } = {}) {
   return h('div', { class: 'card' + (onClick ? ' clickable' : ''), onclick: onClick, tabindex: onClick ? 0 : null,
     onkeydown: onClick ? (e) => { if (e.key === 'Enter') onClick(); } : null },
-  h('div', { class: 'card-head' }, h('span', {}, ref(n)), friend ? h('span', { class: 'who' }, '@' + n.author.username) : null),
+  h('div', { class: 'card-head' }, h('span', {}, ref(n)), friend ? h('span', { class: 'who', title: '@' + n.author.username }, dn(n.author)) : null),
   h('div', { class: 'quote', dataset: { c: n.color } }, n.quote),
   n.body ? h('p', { class: 'note-body' }, n.body) : null);
 }
@@ -375,7 +380,7 @@ function paint() {
       onclick: (e) => { e.stopPropagation(); showNotesAt({ v: n.end.verse, w: n.end.word }); } }, text));
   };
   for (const n of mine) if (n.body) addMark(n, 'mine', 'Your note', '✎');
-  for (const n of friends) addMark(n, `f-${n.color}`, `Note from @${n.author.username}`, n.author.username[0].toUpperCase());
+  for (const n of friends) addMark(n, `f-${n.color}`, `Note from ${dn(n.author)}`, firstChar(dn(n.author)));
   positionHandles();
 }
 function setAttr(el, name, val) { if (val) el.setAttribute(name, val); else el.removeAttribute(name); }
@@ -689,11 +694,11 @@ async function renderFriends() {
     if (f.incoming.length) {
       kids.push(h('div', { class: 'section-label' }, 'Friend requests'));
       for (const u of f.incoming) kids.push(h('div', { class: 'card' },
-        h('div', { class: 'friend-name' }, '@' + u.username),
+        personName(u),
         h('div', { class: 'hint', style: 'margin:0' }, 'wants to be friends'),
         h('div', { class: 'row-actions' },
           h('button', { class: 'text-btn', onclick: () => act('DELETE', `/api/friends/${u.id}`) }, 'Decline'),
-          h('button', { class: 'filled-btn', onclick: () => act('POST', `/api/friends/${u.id}/accept`, null, `You and @${u.username} are friends`) }, 'Accept'))));
+          h('button', { class: 'filled-btn', onclick: () => act('POST', `/api/friends/${u.id}/accept`, null, `You and ${dn(u)} are friends`) }, 'Accept'))));
     }
     kids.push(h('div', { class: 'section-label' }, 'Friends'));
     if (!f.friends.length) kids.push(h('p', { class: 'empty' }, 'No friends yet. Tap Add and enter a username.'));
@@ -704,21 +709,19 @@ async function renderFriends() {
         act('PUT', `/api/friends/${u.id}/sharing`, { enabled: e.target.checked });
       } });
       kids.push(h('div', { class: 'card' },
-        h('div', { class: 'friend-name' }, '@' + u.username,
-          h('button', { class: 'text-btn danger', style: 'font-size:15px', onclick: () => {
-            if (confirm(`Remove @${u.username} as a friend? You'll stop seeing each other's notes.`)) act('DELETE', `/api/friends/${u.id}`);
-          } }, 'Remove')),
+        personName(u, h('button', { class: 'text-btn danger', style: 'font-size:15px', onclick: () => {
+          if (confirm(`Remove ${dn(u)} (@${u.username}) as a friend? You'll stop seeing each other's notes.`)) act('DELETE', `/api/friends/${u.id}`);
+        } }, 'Remove')),
         h('div', { class: 'share-row' },
           h('label', { for: id }, h('div', { class: 'label' }, 'Can see my notes'),
-            h('div', { class: 'sub' }, u.sharing ? `@${u.username} can read all your notes` : `Your notes are hidden from @${u.username}`)),
+            h('div', { class: 'sub' }, u.sharing ? `${dn(u)} can read all your notes` : `Your notes are hidden from ${dn(u)}`)),
           sw),
-        h('div', { class: 'status-line' }, u.sharesWithMe ? `You can see @${u.username}'s notes` : `@${u.username} hasn't shared notes with you yet`)));
+        h('div', { class: 'status-line' }, u.sharesWithMe ? `You can see ${dn(u)}'s notes` : `${dn(u)} hasn't shared notes with you yet`)));
     }
     if (f.outgoing.length) {
       kids.push(h('div', { class: 'section-label' }, 'Sent requests'));
       for (const u of f.outgoing) kids.push(h('div', { class: 'card' },
-        h('div', { class: 'friend-name', style: 'margin:0' }, '@' + u.username,
-          h('button', { class: 'text-btn', style: 'font-size:15px', onclick: () => act('DELETE', `/api/friends/${u.id}`) }, 'Cancel'))));
+        personName(u, h('button', { class: 'text-btn', style: 'font-size:15px', onclick: () => act('DELETE', `/api/friends/${u.id}`) }, 'Cancel'))));
     }
     content.replaceChildren(...kids);
   };
@@ -758,11 +761,26 @@ function openAccount() {
       store.set('fontSize', state.fontSize);
       size.textContent = `${state.fontSize}px`;
     };
+    const me = state.auth.user;
+    const nameInput = h('input', { id: 'display-name', maxlength: 40, value: me.displayName && me.displayName !== me.username ? me.displayName : '', placeholder: me.username });
+    const nameErr = h('p', { class: 'error', style: 'margin:6px 0 0' });
+    const saveName = h('button', { class: 'tonal-btn', type: 'button', onclick: async () => {
+      saveName.disabled = true; nameErr.textContent = '';
+      try {
+        const { user } = await api('PUT', '/api/me', { displayName: nameInput.value });
+        state.auth = { ...state.auth, user: { ...state.auth.user, ...user } };
+        store.set('auth', state.auth);
+        toast('Display name saved');
+      } catch (e) { nameErr.textContent = e instanceof OfflineError ? "You're offline. Try again when connected." : e.message; }
+      saveName.disabled = false;
+    } }, 'Save');
     return [
       h('h2', {}, 'Account'),
       h('div', { class: 'card' },
-        h('div', { class: 'friend-name', style: 'margin:0' }, '@' + state.auth.user.username),
-        h('div', { class: 'hint', style: 'margin:4px 0 0' }, 'Friends add you with this username.')),
+        h('label', { class: 'field', style: 'margin:0' }, h('span', {}, 'Display name (any language)'),
+          h('div', { class: 'inline-field' }, nameInput, saveName)),
+        nameErr,
+        h('div', { class: 'hint', style: 'margin:12px 0 0' }, `Your username is @${me.username}. Friends use it to add you; it can't be changed.`)),
       h('div', { class: 'card' }, h('div', { class: 'share-row' }, h('div', { class: 'label' }, 'Reading text size'),
         h('div', { class: 'font-row' },
           h('button', { class: 'tonal-btn', 'aria-label': 'Smaller text', onclick: () => setSize(-2) }, 'A−'), size,
@@ -780,6 +798,7 @@ function openAccount() {
 function renderAuth(mode = 'login') {
   const user = h('input', { autocomplete: 'username', autocapitalize: 'none', spellcheck: false, required: true, minlength: 3, maxlength: 20, pattern: '[A-Za-z0-9_]+' });
   const pass = h('input', { type: 'password', autocomplete: mode === 'login' ? 'current-password' : 'new-password', required: true, minlength: mode === 'login' ? 1 : 8 });
+  const display = h('input', { autocomplete: 'nickname', maxlength: 40, placeholder: 'e.g. 小明, José, Anna' });
   const err = h('p', { class: 'error', role: 'alert' });
   const submit = h('button', { class: 'filled-btn', type: 'submit' }, mode === 'login' ? 'Sign in' : 'Create account');
   $app.replaceChildren(h('main', { class: 'auth' },
@@ -790,12 +809,14 @@ function renderAuth(mode = 'login') {
       e.preventDefault();
       submit.disabled = true; err.textContent = '';
       try {
-        state.auth = await api('POST', mode === 'login' ? '/api/login' : '/api/register', { username: user.value.trim(), password: pass.value });
+        state.auth = await api('POST', mode === 'login' ? '/api/login' : '/api/register',
+          { username: user.value.trim(), password: pass.value, ...(mode === 'register' ? { displayName: display.value } : {}) });
         store.set('auth', state.auth);
         start();
       } catch (ex) { err.textContent = ex instanceof OfflineError ? "Can't reach the server. Check your connection." : ex.message; submit.disabled = false; }
     } },
-    h('label', { class: 'field' }, h('span', {}, 'Username'), user),
+    mode === 'register' ? h('label', { class: 'field' }, h('span', {}, 'Display name (any language, optional)'), display) : null,
+    h('label', { class: 'field' }, h('span', {}, mode === 'register' ? 'Username (letters, numbers, _ — friends add you with this)' : 'Username'), user),
     h('label', { class: 'field' }, h('span', {}, mode === 'login' ? 'Password' : 'Password (8+ characters)'), pass),
     err, submit,
     h('button', { class: 'text-btn switch-mode', type: 'button', onclick: () => renderAuth(mode === 'login' ? 'register' : 'login') },
@@ -846,7 +867,12 @@ function start() {
   render();
   refreshMine().then(() => { if (state.tab === 'read') paint(); });
   refreshFriends().then(updateBadge);
-  api('GET', '/api/me').catch(() => {}); // detects revoked sessions
+  // Detects revoked sessions and picks up display-name changes made on another device.
+  api('GET', '/api/me').then(({ user }) => {
+    if (!state.auth) return;
+    state.auth = { ...state.auth, user: { ...state.auth.user, ...user } };
+    store.set('auth', state.auth);
+  }).catch(() => {});
 }
 
 window.addEventListener('online', () => { if (state.auth) flush().catch(() => {}); });
