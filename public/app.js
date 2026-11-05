@@ -34,6 +34,10 @@ const ICONS = {
   commentary: 'M21.99 4c0-1.1-.89-2-1.99-2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h14l4 4-.01-18zM18 14H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z',
   edit: 'M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z',
   check: 'M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z',
+  back: 'M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z',
+  refresh: 'M17.65 6.35A7.96 7.96 0 0 0 12 4a8 8 0 1 0 7.73 10h-2.08A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z',
+  personAdd: 'M15 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm-9-2V7H4v3H1v2h3v3h2v-3h3v-2H6zm9 4c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z',
+  account: 'M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z',
   chevronLeft: 'M15.41 7.41 14 6l-6 6 6 6 1.41-1.41L10.83 12z',
   friends: 'M9 13.75c-2.34 0-7 1.17-7 3.5V19h14v-1.75c0-2.33-4.66-3.5-7-3.5zM4.34 17c.84-.58 2.87-1.25 4.66-1.25s3.82.67 4.66 1.25H4.34zM9 12c1.93 0 3.5-1.57 3.5-3.5S10.93 5 9 5 5.5 6.57 5.5 8.5 7.07 12 9 12zm0-5c.83 0 1.5.67 1.5 1.5S9.83 10 9 10s-1.5-.67-1.5-1.5S8.17 7 9 7zm7.04 6.81c1.16.84 1.96 1.96 1.96 3.44V19h4v-1.75c0-2.02-3.5-3.17-5.96-3.44zM15 12c1.93 0 3.5-1.57 3.5-3.5S16.93 5 15 5c-.54 0-1.04.13-1.5.35.63.89 1 1.98 1 3.15s-.37 2.26-1 3.15c.46.22.96.35 1.5.35z',
 };
@@ -684,7 +688,10 @@ function sideDock(items) {
       const btn = h('button', { id, class: 'side-btn', title: label, 'aria-label': label }, svg(icon));
       if (toggle) {
         const show = () => btn.setAttribute('aria-pressed', String(!!toggle.get()));
-        btn.addEventListener('click', () => { const on = !toggle.get(); toggle.set(on); show(); toast(`${label} ${on ? 'on' : 'off'}`); });
+        btn.addEventListener('click', () => {
+          const on = !toggle.get(); toggle.set(on); show();
+          if (toggle.announce !== false) toast(`${label} ${on ? 'on' : 'off'}`);
+        });
         show();
       } else btn.addEventListener('click', () => { closeSideDock(); action(); });
       return btn;
@@ -735,6 +742,8 @@ function setManageOpen(open) {
   for (const el of [cm.chips, cm.status, cm.listEl]) if (el) el.hidden = open;
   drawManage(); drawCommentaryChips();
   if (cm.scroller) cm.scroller.scrollTop = 0;
+  document.getElementById('side-edit-list')?.setAttribute('aria-pressed', String(open));
+  closeSideDock(); // don't cover the list's remove buttons
 }
 
 function drawManage() {
@@ -853,7 +862,11 @@ function renderCommentaryPage() {
         h('button', { class: 'text-btn back-btn', onclick: () => goTo(state.pos, cm.returnVerse) }, `‹ Back to ${meta.name} ${chapter}`),
         h('h1', {}, 'Commentary')),
       cm.chips),
-    cm.scroller));
+    cm.scroller,
+    sideDock([
+      { id: 'side-edit-list', label: 'Edit list', icon: ICONS.edit, toggle: { get: () => cm.manageOpen, set: setManageOpen, announce: false } },
+      { id: 'side-back', label: `Back to ${meta.name} ${chapter}`, icon: ICONS.back, action: () => goTo(state.pos, cm.returnVerse) },
+    ])));
   loadCommentaryPage();
 }
 const BOOKS_FALLBACK = () => [{ id: state.pos.book, name: bookName(state.pos.book), chapters: 999 }];
@@ -1031,7 +1044,12 @@ async function renderNotes() {
   const seg = h('div', { class: 'segmented', role: 'group', 'aria-label': 'Whose notes' },
     h('button', { 'aria-pressed': String(state.notesTab === 'mine'), onclick: () => { state.notesTab = 'mine'; renderNotes(); } }, 'Mine'),
     h('button', { 'aria-pressed': String(state.notesTab === 'friends'), onclick: () => { state.notesTab = 'friends'; renderNotes(); } }, "Friends'"));
-  mount(h('main', { class: 'screen' }, h('h1', {}, state.notesTab === 'mine' ? 'My notes' : "Friends' notes"), seg, banner, list));
+  mount(h('main', { class: 'screen' }, h('h1', {}, state.notesTab === 'mine' ? 'My notes' : "Friends' notes"), seg, banner, list,
+    sideDock([
+      { id: 'side-notes-friends', label: "Friends' notes", icon: ICONS.friends,
+        toggle: { get: () => state.notesTab === 'friends', set: (on) => { state.notesTab = on ? 'friends' : 'mine'; renderNotes(); }, announce: false } },
+      { id: 'side-refresh', label: 'Refresh', icon: ICONS.refresh, action: () => renderNotes() },
+    ])));
   await loadBooks();
 
   const draw = (failed) => {
@@ -1061,7 +1079,11 @@ async function renderFriends() {
     h('div', { class: 'title-row' }, h('h1', {}, 'Friends'),
       h('button', { class: 'text-btn', onclick: openAccount }, 'Account'),
       h('button', { class: 'text-btn', onclick: openAddFriend }, 'Add')),
-    content));
+    content,
+    sideDock([
+      { id: 'side-add-friend', label: 'Add a friend', icon: ICONS.personAdd, action: () => openAddFriend() },
+      { id: 'side-account', label: 'Account', icon: ICONS.account, action: () => openAccount() },
+    ])));
 
   const draw = () => {
     const f = state.friends;
