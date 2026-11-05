@@ -263,7 +263,6 @@ button.c-label:focus-visible { outline: 2px solid var(--primary); outline-offset
 
 .manage-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 10px; }
 .manage-head h2 { margin: 0; font-size: 19px; font-weight: 500; }
-.manage-foot { display: flex; justify-content: flex-end; padding-top: 14px; }
 
 /* Commentary page: fixed header, commentary scrolls on its own */
 .commentary-page { height: 100dvh; display: flex; flex-direction: column; overflow: hidden;
