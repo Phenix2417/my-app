@@ -204,9 +204,6 @@ h1 { font-size: 28px; font-weight: 500; margin: 18px 0 24px; }
 .credit { color: var(--muted); font-size: 13px; margin: 10px 0 0; }
 .credit a { color: var(--muted); }
 
-.hint-row { display: flex; align-items: center; gap: 12px; margin: 6px 0 18px; }
-.hint-row .hint { margin: 0; flex: 1; min-width: 0; }
-.commentary-btn { flex: none; padding: 9px 16px; font-size: 15px; }
 
 .edit-chip { color: var(--primary); border-style: dashed; }
 .manage-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--divider); }
@@ -219,3 +216,24 @@ h1 { font-size: 28px; font-weight: 500; margin: 18px 0 24px; }
 .icon-btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .small-btn { padding: 8px 16px; font-size: 14px; }
 .commentary-text:lang(zh) { font-family: "Noto Serif SC", "Noto Serif TC", "Songti SC", "PMingLiU", serif; line-height: 1.8; }
+
+/* Inline commentary on the Read page */
+.reader-controls { border-bottom: 1px solid var(--divider); padding-bottom: 8px; }
+.reader-controls .switch-row { border-bottom: 0; padding: 8px 0; }
+.commentary-panel { padding: 4px 0 6px; }
+.commentary-status .credit { margin: 4px 0 0; }
+.commentary-note, .empty-inline { color: var(--muted); font-size: 14px; margin: 4px 0 0; }
+.manage-panel { margin: 4px 0 12px; padding: 4px 14px 10px; border-radius: 16px; background: var(--surface-2); }
+.inline-commentary { display: block; margin: .5em 0 .9em; padding: 12px 14px 6px; border-left: 3px solid var(--primary);
+  border-radius: 0 12px 12px 0; background: var(--surface); font: 16px/1.6 var(--font-ui, Roboto, system-ui, sans-serif);
+  user-select: text; -webkit-user-select: text; }
+.inline-commentary .commentary-text { font-size: 16px; line-height: 1.65; }
+.inline-commentary .commentary-text.clamped { display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden; }
+.inline-commentary .ic-more { padding: 4px 0; font-size: 15px; }
+.inline-commentary.flash { animation: flash 1.6s ease-out; }
+
+.manage-row.draggable { touch-action: pan-y; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; cursor: grab;
+  background: var(--surface-2); position: relative; border-radius: 10px; }
+.manage-row.dragging { z-index: 2; background: var(--surface); box-shadow: 0 8px 22px rgba(0,0,0,.35); cursor: grabbing; transition: none; }
+.manage-row.draggable:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.grip { color: var(--muted); font-size: 18px; letter-spacing: -3px; padding: 0 4px 0 2px; flex: none; }
