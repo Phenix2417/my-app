@@ -822,21 +822,10 @@ function openCommentaryPage(verse) {
   render();
 }
 
-function showCommentaryChapter(pos) {
-  state.pos = { book: pos.book, chapter: pos.chapter };
-  store.set('pos', state.pos);
-  cm.focusVerse = null; cm.returnVerse = null;
-  renderCommentaryPage();
-  window.scrollTo(0, 0);
-}
-
 function renderCommentaryPage() {
   const { book, chapter } = state.pos;
   const books = state.books || BOOKS_FALLBACK();
   const meta = books.find((b) => b.id === book) || books[0];
-  const idx = books.indexOf(meta);
-  const prev = chapter > 1 ? { book, chapter: chapter - 1 } : idx > 0 ? { book: books[idx - 1].id, chapter: books[idx - 1].chapters } : null;
-  const next = chapter < meta.chapters ? { book, chapter: chapter + 1 } : idx < books.length - 1 ? { book: books[idx + 1].id, chapter: 1 } : null;
   cm.chips = h('div', { class: 'chips', role: 'group', 'aria-label': 'Commentary' });
   cm.manage = h('div', { class: 'manage-panel', hidden: !cm.manageOpen });
   cm.status = h('div', { class: 'commentary-status', 'aria-live': 'polite' });
@@ -849,10 +838,6 @@ function renderCommentaryPage() {
       h('div', { class: 'c-titlebar' },
         h('button', { class: 'text-btn back-btn', onclick: () => goTo(state.pos, cm.returnVerse) }, `‹ Back to ${meta.name} ${chapter}`),
         h('h1', {}, 'Commentary')),
-      h('nav', { class: 'chapter-nav', 'aria-label': 'Chapter navigation' },
-        h('button', { class: 'text-btn', disabled: !prev, onclick: () => showCommentaryChapter(prev) }, 'Previous'),
-        h('button', { class: 'chapter-pill', onclick: openPicker, 'aria-label': 'Choose book and chapter' }, `${meta.name} ${chapter}`),
-        h('button', { class: 'text-btn', disabled: !next, onclick: () => showCommentaryChapter(next) }, 'Next')),
       cm.chips),
     cm.scroller));
   loadCommentaryPage();
@@ -1003,7 +988,7 @@ async function openPicker() {
         h('div', { class: 'title-row' }, h('h2', {}, b.name), h('button', { class: 'text-btn', onclick: showBooks }, 'Books')),
         h('div', { class: 'chapters' }, Array.from({ length: b.chapters }, (_, i) => h('button', {
           class: b.id === state.pos.book && i + 1 === state.pos.chapter ? 'current' : '',
-          onclick: () => { close(); const pos = { book: b.id, chapter: i + 1 }; if (state.tab === 'commentary') showCommentaryChapter(pos); else goTo(pos); },
+          onclick: () => { close(); goTo({ book: b.id, chapter: i + 1 }); },
         }, i + 1))));
     };
     showBooks();
