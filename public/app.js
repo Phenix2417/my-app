@@ -673,8 +673,9 @@ function showToolbar() {
     h('div', { class: 'row' },
       h('button', { class: 'text-btn', onclick: () => noteEditor(draft('yellow'), { isNew: true }) }, 'Note'),
       h('button', { class: 'text-btn', onclick: () => { const v = start.v; clearSelection(); openCommentaryPage(v); } }, 'Commentary'),
-      // Translate: one word shows its dictionary entry; several words are translated, then each word can be looked up.
-      h('button', { class: 'text-btn dict-btn', 'aria-expanded': 'false', onclick: (e) => toggleDictionary(bar, e.currentTarget) }, 'Translate'),
+      // One word: its dictionary entry. Several words: translate the selection, then look up each word.
+      h('button', { class: 'text-btn dict-btn', 'aria-expanded': 'false', onclick: (e) => toggleDictionary(bar, e.currentTarget) },
+        cmp(start, end) ? 'Translate' : 'Dictionary'),
       h('button', { class: 'text-btn', onclick: async () => {
         const text = `${selectedQuote()} — ${ref(draft('yellow'))} (WEB)`;
         try { await navigator.clipboard.writeText(text); toast('Copied'); } catch { toast("Couldn't copy"); }
