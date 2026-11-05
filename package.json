@@ -1,0 +1,12 @@
+{
+  "name": "bible-study",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Bible study app: highlight, take notes, and share notes with friends.",
+  "type": "module",
+  "engines": { "node": ">=22.13" },
+  "scripts": {
+    "start": "node --no-warnings=ExperimentalWarning server/index.js",
+    "test": "node --no-warnings=ExperimentalWarning --test \"test/*.test.js\""
+  }
+}
