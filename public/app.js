@@ -790,6 +790,16 @@ function describeVerb(v) {
   return parts.join(' · ') || '动词';
 }
 
+// Show one explanation at a time in the grammar panel: open this one (or close it if it's already open).
+function toggleExplain(btn, exp, text) {
+  const wasOpen = btn.getAttribute('aria-expanded') === 'true';
+  const scope = btn.closest('.dict') || btn.parentElement;
+  scope.querySelectorAll('.g-explain').forEach((e) => { e.hidden = true; });
+  scope.querySelectorAll('.g-row, .g-word').forEach((b) => b.setAttribute('aria-expanded', 'false'));
+  if (!wasOpen) { exp.textContent = text(); exp.hidden = false; btn.setAttribute('aria-expanded', 'true'); }
+  positionToolbar();
+}
+
 // What each preposition usually tells you, for explaining prepositional phrases.
 const PREP_ROLE = {
   in: '时间或地点（在…里/在…时候）', at: '时间或地点（在…）', on: '时间或地点（在…上）', into: '方向（进入…）',
@@ -831,13 +841,13 @@ async function analyzeGrammar(text) {
     const isThere = terms[0]?.normal === 'there' && tagsOf(terms[1]).has('Verb');
 
     const words = h('div', { class: 'g-words' });
-    terms.forEach((t, i) => {
+    const wordExp = h('p', { class: 'g-explain', hidden: true });
+    const labels = terms.map((t, i) => {
       let [zh, en] = posOf(t);
       const next = terms[i + 1];
       if (i > 0 && ['that', 'which', 'who', 'whom', 'whose'].includes(t.normal) && next && ['Verb', 'Auxiliary', 'Copula', 'Modal'].some((g) => tagsOf(next).has(g))) [zh, en] = ['关系代词', 'relative pronoun'];
       if (i === 0 && isThere) [zh, en] = ['引导词', 'introductory there'];
-      words.append(h('span', { class: 'g-word', title: en, dataset: { pos: en.split(/[ /]/)[0] } },
-        h('span', { class: 'g-text' }, t.text.replace(/[,.;:!?]+$/, '')), h('span', { class: 'g-pos' }, zh)));
+      return [zh, en];
     });
 
     const rows = [];
@@ -900,22 +910,82 @@ async function analyzeGrammar(text) {
       row('名词短语', np, `${q(np)}是名词短语，中心词是${q(head)}，前面的词（冠词、形容词或物主代词）修饰它。在这句话里它${role}。`);
     }
 
+    // Each coloured word is a button too: what that word does in this sentence.
+    const clean = (t) => t.text.replace(/[,.;:!?]+$/, '');
+    const nextContent = (i) => terms.slice(i + 1).find((x) => !tagsOf(x).has('Determiner') && !tagsOf(x).has('Adjective') && !tagsOf(x).has('Possessive')) || terms[i + 1];
+    const subjWords = new Set(subjText.toLowerCase().split(/\s+/));
+    const explainWord = (t, i) => {
+      const [zh] = labels[i];
+      const w = clean(t), lw = w.toLowerCase(), nx = nextContent(i), next = nx ? clean(nx) : '';
+      const prev = terms.slice(0, i).reverse().find((x) => !tagsOf(x).has('Determiner') && !tagsOf(x).has('Adjective'));
+      const phrase = prepPhrases.find((p) => p.split(/\s+/).map((x) => x.toLowerCase()).includes(lw));
+      const verbOf = verbs.find((v) => v.terms?.some((x) => x.text.replace(/[,.;:!?]+$/, '').toLowerCase() === lw));
+      const nounRole = () => {
+        if (prev && tagsOf(prev).has('Preposition') && phrase) return `是介词${q(clean(prev))}的宾语，和它组成介词短语${q(phrase)}。`;
+        if (subjWords.has(lw)) return isPassive ? '在这句话里属于主语部分，是动作的承受者。' : '在这句话里属于主语部分，是句子讲述的对象。';
+        if (prev && tagsOf(prev).has('Copula')) return `跟在系动词${q(clean(prev))}后面作表语，说明主语是什么。`;
+        if (prev && tagsOf(prev).has('Verb')) return `跟在动词${q(clean(prev))}后面作宾语，是这个动作的对象。`;
+        return '';
+      };
+      switch (zh) {
+        case '冠词': return lw === 'the'
+          ? `${q(w)}是定冠词，表示特指——说的是特定的、双方都知道的那个${next ? q(next) : ''}。`
+          : `${q(w)}是不定冠词，表示“一个”，泛指，常用来引出第一次提到的${next ? q(next) : ''}。`;
+        case '限定词': return `${q(w)}是限定词，放在名词前面，限定${next ? q(next) : '后面名词'}的范围或数量。`;
+        case '引导词': return `${q(w)}在这里是引导词，本身没有“那里”的意思，只是把真正的主语放到动词后面，引出新出现的人或事物。`;
+        case '专有名词': return `${q(w)}是专有名词（首字母大写），表示特定的人、事物或称呼。` + nounRole();
+        case '名词': return `${q(w)}是名词，表示人、事物或概念。` + nounRole();
+        case '代词': return `${q(w)}是代词，代替前面提到过或彼此知道的人或事物，避免重复。` + nounRole();
+        case '物主代词': return `${q(w)}是物主代词，表示“…的”，说明后面的${next ? q(next) : '事物'}属于谁。`;
+        case '系动词': return `${q(w)}是系动词（be 的${t.tags?.includes('PastTense') ? '过去式' : '一种形式'}），意思是“是/在/存在”，作用是把主语和后面说明主语的部分连接起来。`;
+        case '助动词': return `${q(w)}是助动词，本身没有完整意思，帮助${verbOf ? q(strip(verbOf.text)) : '主要动词'}构成时态、语态或否定（${verbOf ? describeVerb(verbOf) : ''}）。`;
+        case '情态动词': return `${q(w)}是情态动词，表示能力、可能、允许或必须等语气，后面跟动词原形。`;
+        case '动词': {
+          const desc = verbOf ? describeVerb(verbOf) : '';
+          if (/被动语态/.test(desc) && t.tags?.includes('PastTense')) return `${q(w)}是过去分词，和前面的 be 动词一起构成被动语态${q(strip(verbOf.text))}，表示主语“被${w}”。`;
+          return `${q(w)}是动词，表示动作或状态。` + (desc ? `这里是${desc}。` : '');
+        }
+        case '介词': return `${q(w)}是介词，` + (phrase ? `引出介词短语${q(phrase)}，` : '') + `表示${PREP_ROLE[lw] || '相关的关系'}。`;
+        case '连词': {
+          const left = terms.slice(0, i).map(clean).join(' ').split(/\band\b|\bbut\b|\bor\b/i).pop().trim();
+          const right = terms.slice(i + 1).map(clean).join(' ').split(/\band\b|\bbut\b|\bor\b/i)[0].trim();
+          const kind = { and: '并列连词，表示“和/并且”，前后两部分地位相同', but: '转折连词，表示“但是”，后面的意思与前面相对', or: '选择连词，表示“或者”', for: '连词，表示原因“因为”', so: '连词，表示结果“所以”', nor: '连词，表示“也不”' }[lw] || '连词，连接前后两部分';
+          return `${q(w)}是${kind}。它连接${left ? q(left) : '前面的部分'}和${right ? q(right) : '后面的部分'}。`;
+        }
+        case '形容词': return prev && tagsOf(prev).has('Copula')
+          ? `${q(w)}是形容词，跟在系动词后面作表语，描述主语的性质或状态。`
+          : `${q(w)}是形容词，修饰后面的${next ? q(next) : '名词'}，说明它是什么样的。`;
+        case '副词': return `${q(w)}是副词，修饰动词、形容词或整个句子，说明方式、程度、时间或地点。`;
+        case '关系代词': return `${q(w)}是关系代词，引导一个从句来修饰前面的${prev ? q(clean(prev)) : '名词'}，说明它是怎样的。`;
+        case '关系词': return `${q(w)}是关系词，引导从句，修饰或说明前面的${prev ? q(clean(prev)) : '名词'}。`;
+        case '否定词': return `${q(w)}表示否定。`;
+        case '数词': return `${q(w)}是数词，表示数量或顺序。`;
+        default: return `${q(w)}：${zh}。`;
+      }
+    };
+    terms.forEach((t, i) => {
+      const [zh, en] = labels[i];
+      const chip = h('button', { class: 'g-word', type: 'button', title: en, 'aria-expanded': 'false', dataset: { pos: en.split(/[ /]/)[0] },
+        onclick: () => toggleExplain(chip, wordExp, () => explainWord(t, i)) },
+      h('span', { class: 'g-text' }, clean(t)), h('span', { class: 'g-pos' }, zh));
+      words.append(chip);
+    });
+
     // Each part is a button; tapping it shows (or hides) what that part does in this sentence.
     const list = h('div', { class: 'g-rows' });
+    // Identical parts (e.g. "was — 一般过去时" three times) are listed once, with a count.
+    const merged = [];
     for (const r of rows) {
-      const exp = h('p', { class: 'g-explain', hidden: true }, r.explain);
-      const btn = h('button', { class: 'g-row', type: 'button', 'aria-expanded': 'false', onclick: () => {
-        const opening = exp.hidden;
-        const scope = list.closest('.dict') || list; // one explanation open at a time, across all sentences
-        scope.querySelectorAll('.g-explain').forEach((e) => { e.hidden = true; });
-        scope.querySelectorAll('.g-row').forEach((b) => b.setAttribute('aria-expanded', 'false'));
-        exp.hidden = !opening;
-        btn.setAttribute('aria-expanded', String(opening));
-        positionToolbar();
-      } }, h('span', { class: 'g-key' }, r.key), h('span', { class: 'g-val' }, r.value));
+      const same = merged.find((m) => m.key === r.key && m.value === r.value);
+      if (same) same.count++; else merged.push({ ...r, count: 1 });
+    }
+    for (const r of merged) {
+      const exp = h('p', { class: 'g-explain', hidden: true });
+      const btn = h('button', { class: 'g-row', type: 'button', 'aria-expanded': 'false', onclick: () => toggleExplain(btn, exp, () => r.explain + (r.count > 1 ? `（这句话里出现了 ${r.count} 次。）` : '')) },
+        h('span', { class: 'g-key' }, r.key), h('span', { class: 'g-val' }, r.value, r.count > 1 ? h('span', { class: 'g-count' }, ` ×${r.count}`) : null));
       list.append(btn, exp);
     }
-    return h('section', { class: 'g-sentence' }, words, list);
+    return h('section', { class: 'g-sentence' }, words, wordExp, list);
   });
   return [...sections, h('p', { class: 'g-note' }, 'Tap a part to see what it does. Automatic analysis (compromise) · may be wrong for unusual word order')];
 }
