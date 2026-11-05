@@ -38,6 +38,7 @@ const ICONS = {
   refresh: 'M17.65 6.35A7.96 7.96 0 0 0 12 4a8 8 0 1 0 7.73 10h-2.08A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z',
   personAdd: 'M15 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm-9-2V7H4v3H1v2h3v3h2v-3h3v-2H6zm9 4c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z',
   account: 'M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z',
+  textSize: 'M9 4v3h5v12h3V7h5V4H9zm-6 8h3v7h3v-7h3V9H3v3z',
   chevronRight: 'M10 6 8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z',
   chevronLeft: 'M15.41 7.41 14 6l-6 6 6 6 1.41-1.41L10.83 12z',
   friends: 'M9 13.75c-2.34 0-7 1.17-7 3.5V19h14v-1.75c0-2.33-4.66-3.5-7-3.5zM4.34 17c.84-.58 2.87-1.25 4.66-1.25s3.82.67 4.66 1.25H4.34zM9 12c1.93 0 3.5-1.57 3.5-3.5S10.93 5 9 5 5.5 6.57 5.5 8.5 7.07 12 9 12zm0-5c.83 0 1.5.67 1.5 1.5S9.83 10 9 10s-1.5-.67-1.5-1.5S8.17 7 9 7zm7.04 6.81c1.16.84 1.96 1.96 1.96 3.44V19h4v-1.75c0-2.02-3.5-3.17-5.96-3.44zM15 12c1.93 0 3.5-1.57 3.5-3.5S16.93 5 15 5c-.54 0-1.04.13-1.5.35.63.89 1 1.98 1 3.15s-.37 2.26-1 3.15c.46.22.96.35 1.5.35z',
@@ -324,8 +325,7 @@ async function renderReader() {
     sideDock([
       { id: 'show-friends', label: "Friends' notes", icon: ICONS.friends, toggle: { get: () => state.showFriends, set: setShowFriends } },
       { id: 'open-commentary', label: 'Commentary', icon: ICONS.commentary, action: () => openCommentaryPage(topVisibleVerse()) },
-      { id: 'prev-chapter', label: 'Previous chapter', icon: ICONS.chevronLeft, action: () => goChapter(-1) },
-      { id: 'next-chapter', label: 'Next chapter', icon: ICONS.chevronRight, action: () => goChapter(1) },
+      { id: 'text-size', label: 'Text size', icon: ICONS.textSize, popover: textSizeControl },
     ]));
   enableChapterSwipe(scroller, body, goChapter);
   if (!store.get('seenReadTip', false)) { // the instructions used to sit above the text; show them once instead
@@ -729,13 +729,30 @@ function topVisibleVerse() {
   return 1;
 }
 
+// A− / size / A+ for the Bible text; changes apply immediately and are remembered.
+function textSizeControl() {
+  const label = h('span', { class: 'size-value', 'aria-live': 'polite' }, `${state.fontSize}`);
+  const change = (d) => {
+    state.fontSize = Math.max(16, Math.min(34, state.fontSize + d));
+    store.set('fontSize', state.fontSize);
+    label.textContent = `${state.fontSize}`;
+    reader.body?.style.setProperty('--verse-size', `${state.fontSize}px`);
+    positionHandles();
+  };
+  return [
+    h('button', { class: 'size-btn', 'aria-label': 'Smaller text', onclick: () => change(-2) }, h('span', { class: 'size-a small' }, 'A'), '−'),
+    label,
+    h('button', { class: 'size-btn', 'aria-label': 'Larger text', onclick: () => change(2) }, h('span', { class: 'size-a big' }, 'A'), '+'),
+  ];
+}
+
 /* Side bar: a tab fixed to the middle of the right edge; tapping it slides out a vertical bar of switches. */
 let closeSideDock = () => {};
 document.addEventListener('pointerdown', (e) => { if (!e.target.closest?.('.side-dock')) closeSideDock(); }, true);
 function sideDock(items) {
   const panel = h('div', { class: 'side-panel', id: 'side-panel', role: 'group', 'aria-label': 'Reading options' },
     // Icon-only buttons: a toggle shows its state by being filled; an action opens something.
-    ...items.map(({ id, label, icon, toggle, action }) => {
+    ...items.map(({ id, label, icon, toggle, action, popover }) => {
       const btn = h('button', { id, class: 'side-btn', title: label, 'aria-label': label }, svg(icon));
       if (toggle) {
         const show = () => btn.setAttribute('aria-pressed', String(!!toggle.get()));
@@ -744,6 +761,20 @@ function sideDock(items) {
           if (toggle.announce !== false) toast(`${label} ${on ? 'on' : 'off'}`);
         });
         show();
+      } else if (popover) {
+        // Opens a small control beside the bar; the bar stays open while it's used.
+        btn.setAttribute('aria-expanded', 'false');
+        btn.addEventListener('click', () => {
+          const existing = dock.querySelector('.side-popover');
+          existing?.remove();
+          const opening = !existing;
+          btn.setAttribute('aria-expanded', String(opening));
+          if (!opening) return;
+          const pop = h('div', { class: 'side-popover', role: 'group', 'aria-label': label }, popover());
+          dock.append(pop);
+          pop.style.top = `${btn.offsetTop + panel.offsetTop + btn.offsetHeight / 2}px`;
+          pop.querySelector('button')?.focus();
+        });
       } else btn.addEventListener('click', () => { closeSideDock(); action(); });
       return btn;
     }));
@@ -755,6 +786,7 @@ function sideDock(items) {
     tab.setAttribute('aria-expanded', String(open));
     tab.setAttribute('aria-label', open ? 'Hide reading options' : 'Show reading options');
     panel.inert = !open;
+    if (!open) { dock.querySelector('.side-popover')?.remove(); dock.querySelector('[aria-expanded="true"].side-btn')?.setAttribute('aria-expanded', 'false'); }
   };
   setOpen(false);
   closeSideDock = () => setOpen(false); // tapping anywhere else slides it back

@@ -302,3 +302,13 @@ button.c-label:focus-visible { outline: 2px solid var(--primary); outline-offset
 .r-head { border-bottom: 1px solid var(--divider); }
 body.bars-hidden .r-head { transform: translateY(-100%); }
 body.bars-hidden .bottom-nav { transform: translateY(100%); }
+
+.side-popover { position: absolute; left: -8px; transform: translate(-100%, -50%);
+  display: flex; align-items: center; gap: 6px; padding: 8px; background: var(--surface); border-radius: 28px;
+  box-shadow: -4px 4px 18px rgba(0,0,0,.35); white-space: nowrap; }
+.size-btn { display: inline-flex; align-items: center; gap: 1px; line-height: 1; height: 44px; min-width: 52px; justify-content: center; border: 0;
+  border-radius: 22px; background: var(--surface-2); color: var(--on-bg); font-weight: 600; font-size: 15px; }
+.size-btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.size-a { font-family: "Noto Serif", Georgia, serif; }
+.size-a.small { font-size: 14px; } .size-a.big { font-size: 20px; }
+.size-value { min-width: 2.2em; text-align: center; font-variant-numeric: tabular-nums; color: var(--muted); font-size: 15px; }
