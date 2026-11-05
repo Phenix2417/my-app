@@ -112,7 +112,8 @@ h1 { font-size: 28px; font-weight: 500; margin: 18px 0 24px; }
 .swatch { width: 34px; height: 34px; border-radius: 50%; border: 2px solid transparent; flex: none; padding: 0; }
 .swatch[aria-pressed="true"] { border-color: var(--on-bg); }
 .sel-toolbar .text-btn { padding: 8px 10px; font-size: 15px; }
-.sel-toolbar .sep { width: 1px; align-self: stretch; background: var(--divider); margin: 0 2px; }
+.sel-toolbar { flex-direction: column; gap: 4px; padding: 10px 12px 6px; }
+.sel-toolbar .row { display: flex; gap: 10px; justify-content: center; align-items: center; }
 
 /* Cards */
 .card { background: var(--surface); border-radius: 24px; padding: 18px 18px; margin-bottom: 14px; }
@@ -186,3 +187,19 @@ h1 { font-size: 28px; font-weight: 500; margin: 18px 0 24px; }
 .handle-sub { color: var(--muted); font-size: 14px; }
 .inline-field { display: flex; gap: 8px; align-items: center; }
 .inline-field input { flex: 1; min-width: 0; }
+
+/* Commentary */
+.chips { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 6px; margin: 0 -4px 12px; padding-inline: 4px; scrollbar-width: none; }
+.chip { flex: none; border: 1px solid var(--divider); background: none; border-radius: 18px; padding: 7px 14px; font-size: 14px; font-weight: 500; white-space: nowrap; }
+.chip[aria-pressed="true"] { background: var(--pill); border-color: var(--pill); }
+.chip.unavailable { opacity: .5; }
+.commentary-body { max-height: 56vh; overflow-y: auto; scroll-padding-top: 4px; }
+.entry { padding: 12px 14px; border-radius: 14px; margin-bottom: 8px; }
+.entry.current { background: var(--surface); }
+.entry-label { color: var(--primary); font-weight: 500; font-size: 14px; margin-bottom: 6px; }
+.commentary-text { white-space: pre-line; font: 17px/1.6 "Noto Serif", Georgia, serif; overflow-wrap: anywhere; }
+.intro { margin-bottom: 10px; padding: 10px 14px; border: 1px solid var(--divider); border-radius: 14px; }
+.intro summary { cursor: pointer; font-weight: 500; }
+.intro .commentary-text { margin-top: 10px; }
+.credit { color: var(--muted); font-size: 13px; margin: 10px 0 0; }
+.credit a { color: var(--muted); }

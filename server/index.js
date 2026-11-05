@@ -2,6 +2,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openDb } from './db.js';
 import { createServer } from './app.js';
+import { createCommentaryService } from './commentary.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // On Railway, a volume attached to the service is mounted at RAILWAY_VOLUME_MOUNT_PATH; keep the database there.
@@ -12,6 +13,8 @@ const trustProxy = process.env.TRUST_PROXY === '1' || !!process.env.RAILWAY_PROJ
 const port = Number(process.env.PORT || 3000);
 const host = process.env.HOST || '0.0.0.0';
 
-createServer(db, { publicDir: path.join(root, 'public'), trustProxy }).listen(port, host, () => {
+const commentary = createCommentaryService({ cacheDir: path.join(dataDir, 'commentary-cache') });
+
+createServer(db, { publicDir: path.join(root, 'public'), trustProxy, commentary }).listen(port, host, () => {
   console.log(`Bible Study running at http://localhost:${port}`);
 });

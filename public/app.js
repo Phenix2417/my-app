@@ -297,7 +297,7 @@ async function renderReader() {
       h('button', { class: 'text-btn', disabled: !prev, onclick: () => goTo(prev) }, 'Previous'),
       h('button', { class: 'chapter-pill', onclick: openPicker, 'aria-label': 'Choose book and chapter' }, `${meta.name} ${chapter}`),
       h('button', { class: 'text-btn', disabled: !next, onclick: () => goTo(next) }, 'Next')),
-    h('p', { class: 'hint' }, 'Hold a word to select. Drag the handles to adjust.'),
+    h('p', { class: 'hint' }, 'Hold a word or tap a verse number to select. Drag the handles to adjust.'),
     h('div', { class: 'switch-row' }, h('label', { for: 'show-friends' }, "Show friends' notes"), sw),
     body);
   mount(screen);
@@ -576,16 +576,17 @@ function showToolbar() {
     start: { verse: start.v, word: start.w }, end: { verse: end.v, word: end.w }, color, quote: selectedQuote(), body: '',
   });
   const bar = h('div', { class: 'sel-toolbar', role: 'toolbar', 'aria-label': 'Selection actions' },
-    ...COLORS.map((c) => h('button', { class: 'swatch', dataset: { c }, 'aria-label': `Highlight ${c}`, onclick: () => {
+    h('div', { class: 'row' }, ...COLORS.map((c) => h('button', { class: 'swatch', dataset: { c }, 'aria-label': `Highlight ${c}`, onclick: () => {
       saveNote(draft(c)); clearSelection(); toast('Highlighted');
-    } })),
-    h('span', { class: 'sep' }),
-    h('button', { class: 'text-btn', onclick: () => noteEditor(draft('yellow'), { isNew: true }) }, 'Note'),
-    h('button', { class: 'text-btn', onclick: async () => {
-      const text = `${selectedQuote()} — ${ref(draft('yellow'))} (WEB)`;
-      try { await navigator.clipboard.writeText(text); toast('Copied'); } catch { toast("Couldn't copy"); }
-      clearSelection();
-    } }, 'Copy'));
+    } }))),
+    h('div', { class: 'row' },
+      h('button', { class: 'text-btn', onclick: () => noteEditor(draft('yellow'), { isNew: true }) }, 'Note'),
+      h('button', { class: 'text-btn', onclick: () => openCommentary(start.v) }, 'Commentary'),
+      h('button', { class: 'text-btn', onclick: async () => {
+        const text = `${selectedQuote()} — ${ref(draft('yellow'))} (WEB)`;
+        try { await navigator.clipboard.writeText(text); toast('Copied'); } catch { toast("Couldn't copy"); }
+        clearSelection();
+      } }, 'Copy')));
   reader.toolbar = bar;
   document.body.append(bar);
 }
@@ -599,6 +600,97 @@ function showNotesAt(p) {
     ...mine.map((n) => noteCard(n, { onClick: () => { close(); noteEditor(n); } })),
     ...friends.map((n) => noteCard(n, { friend: true })),
   ], { label: 'Notes on this passage' });
+}
+
+/* ---------------- Commentaries ---------------- */
+const commentaryCache = new Map(); // "id/book/chapter" -> response
+async function loadCommentaryList() {
+  if (state.commentaries) return state.commentaries;
+  state.commentaries = store.get('commentaries', null);
+  try {
+    const { commentaries } = await api('GET', '/api/commentaries');
+    state.commentaries = commentaries;
+    store.set('commentaries', commentaries);
+  } catch (e) { if (!state.commentaries) throw e; }
+  return state.commentaries;
+}
+
+async function openCommentary(verse) {
+  const { book, chapter } = state.pos;
+  const verseCount = reader.chapterData?.length || verse;
+  let list;
+  try { list = await loadCommentaryList(); } catch { toast("Couldn't load commentaries. Check your connection."); return; }
+  let current = store.get('commentary', 'matthew-henry');
+  if (!list.some((c) => c.id === current)) current = list[0].id;
+
+  openSheet((close) => {
+    const chips = h('div', { class: 'chips', role: 'group', 'aria-label': 'Commentary' });
+    const body = h('div', { class: 'commentary-body', 'aria-live': 'polite' });
+    const credit = h('p', { class: 'credit' });
+
+    const drawChips = () => chips.replaceChildren(...list.map((c) => h('button', {
+      class: 'chip' + (c.missingBooks.includes(book) ? ' unavailable' : ''), 'aria-pressed': String(c.id === current),
+      title: c.missingBooks.includes(book) ? `${c.name} doesn't cover ${bookName(book)}` : c.about,
+      onclick: () => { current = c.id; store.set('commentary', current); drawChips(); show(); },
+    }, c.name)));
+
+    async function show() {
+      const id = current;
+      const meta = list.find((c) => c.id === id);
+      credit.replaceChildren(meta.licenseUrl
+        ? h('a', { href: meta.licenseUrl, target: '_blank', rel: 'noopener' }, meta.license) : meta.license);
+      if (meta.missingBooks.includes(book)) {
+        body.replaceChildren(h('p', { class: 'empty' }, `${meta.name} doesn't cover ${bookName(book)}. Pick another commentary above.`));
+        return;
+      }
+      const key = `${id}/${book}/${chapter}`;
+      let data = commentaryCache.get(key);
+      if (!data) {
+        body.replaceChildren(h('p', { class: 'empty' }, `Loading ${meta.name}…`));
+        try { data = await api('GET', `/api/commentaries/${id}/${book}/${chapter}`); commentaryCache.set(key, data); } catch (e) {
+          if (current !== id) return;
+          body.replaceChildren(h('p', { class: e.status === 404 ? 'empty' : 'error' },
+            e instanceof OfflineError ? "You're offline. Commentary needs a connection the first time you open a chapter." : e.message));
+          return;
+        }
+      }
+      if (current !== id) return; // switched while loading
+      renderEntries(data);
+    }
+
+    function renderEntries(data) {
+      const kids = [];
+      if (data.introduction) {
+        kids.push(h('details', { class: 'intro' }, h('summary', {}, `Introduction to ${bookName(book)} ${chapter}`),
+          h('div', { class: 'commentary-text' }, data.introduction)));
+      }
+      // Each comment starts at a verse and runs until the next one.
+      let target = null;
+      data.entries.forEach((e, i) => {
+        const last = i + 1 < data.entries.length ? data.entries[i + 1].verse - 1 : Math.max(e.verse, verseCount);
+        const label = last > e.verse ? `Verses ${e.verse}–${last}` : `Verse ${e.verse}`;
+        const covers = verse >= e.verse && verse <= last;
+        const section = h('section', { class: 'entry' + (covers ? ' current' : '') },
+          h('div', { class: 'entry-label' }, `${bookName(book)} ${chapter} · ${label}`),
+          h('div', { class: 'commentary-text' }, e.text));
+        if (covers) target = section;
+        kids.push(section);
+      });
+      if (!data.entries.length) kids.push(h('p', { class: 'empty' }, 'No comments on this chapter.'));
+      else if (!target) kids.unshift(h('p', { class: 'hint' }, `No comment on verse ${verse} in this commentary. Here's the rest of the chapter.`));
+      body.replaceChildren(...kids);
+      body.scrollTop = 0;
+      if (target) requestAnimationFrame(() => target.scrollIntoView({ block: 'start' }));
+    }
+
+    drawChips();
+    show();
+    return [
+      h('div', { class: 'title-row' }, h('h2', {}, `Commentary · ${bookName(book)} ${chapter}:${verse}`),
+        h('button', { class: 'text-btn', onclick: close }, 'Close')),
+      chips, body, credit,
+    ];
+  }, { label: 'Commentary' });
 }
 
 async function openPicker() {

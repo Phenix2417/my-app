@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { BOOKS, BOOK_IDS } from './books.js';
+import { commentaryList, CommentaryError } from './commentary.js';
 
 const COLORS = new Set(['yellow', 'green', 'blue', 'pink', 'purple']);
 const USERNAME_RE = /^[a-z0-9_]{3,20}$/i;
@@ -32,7 +33,7 @@ function cleanDisplayName(v) {
 }
 const userOut = (id, username, displayName) => ({ id, username, displayName: displayName || username });
 
-export function createApp(db, { publicDir, trustProxy = false } = {}) {
+export function createApp(db, { publicDir, trustProxy = false, commentary = null } = {}) {
   const q = (sql) => db.prepare(sql);
   const stmt = {
     userByName: q('SELECT * FROM users WHERE username = ?'),
@@ -144,6 +145,14 @@ export function createApp(db, { publicDir, trustProxy = false } = {}) {
   const routes = [
     ['GET', /^\/api\/health$/, () => ({ ok: true })],
     ['GET', /^\/api\/books$/, () => ({ books: BOOKS })],
+    ['GET', /^\/api\/commentaries$/, () => ({ commentaries: commentaryList() })],
+    ['GET', /^\/api\/commentaries\/([a-z-]{1,40})\/([a-z0-9]{1,20})\/(\d{1,3})$/, async ({ params: [id, book, chapter] }) => {
+      if (!commentary) throw new HttpError(503, 'Commentaries are not set up on this server');
+      try { return await commentary(id, book, Number(chapter)); } catch (e) {
+        if (e instanceof CommentaryError) throw new HttpError(e.status, e.message);
+        throw e;
+      }
+    }, true],
 
     ['POST', /^\/api\/register$/, ({ body, ip }) => {
       throttle(ip);

@@ -8,6 +8,10 @@ Read the Bible, highlight passages, write notes, and see the notes your friends 
   Pick a color to highlight, or tap **Note** to write a note.
 - **Show friends' notes** — friends' highlights appear underlined in their color, with a badge
   showing their initial. Tap it to read their note.
+- **Commentary** — select a verse (tap its number) and tap **Commentary** to read what Matthew Henry,
+  Jamieson-Fausset-Brown, Adam Clarke, John Gill, John Calvin, Keil & Delitzsch (Old Testament) or the
+  Tyndale Open Study Notes say about it. Texts come from the Free Use Bible API (bible.helloao.org); the server
+  fetches each chapter once and keeps a copy (in the Railway volume when one is attached).
 - **Notes** — *Mine* lists your notes; *Friends'* lists notes shared with you. Tap a card to jump to the verse.
 - **Friends** — add a friend by username; they accept the request. Each friend has a
   **Can see my notes** switch. Your notes stay private until you turn it on for that person,
