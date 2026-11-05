@@ -35,3 +35,11 @@ that runs Node with a persistent disk for the database file.
 - `public/` — the app (plain HTML/CSS/JS, no build step) and `bible/*.json` scripture text.
 - `scripts/build-bible.mjs` — regenerates `public/bible` from the `world-english-bible` npm package.
 - `test/` — API tests, including the sharing/privacy rules.
+
+## claude.ai version
+
+`artifact/` holds a version of the app that runs as a claude.ai page, using claude.ai sign-in and the
+page's built-in storage instead of the Node server. Build it with `node artifact/build.mjs`; it is published
+together with the files in `public/bible/`. Notes are stored privately per person; while someone shares with at
+least one friend, a copy of their notes is kept in the page's shared storage and shown only to the friends they
+switched on.
