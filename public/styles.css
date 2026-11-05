@@ -72,13 +72,14 @@ h1 { font-size: 28px; font-weight: 500; margin: 18px 0 24px; }
 .switch:disabled { opacity: .5; }
 .switch:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 
-.reader-body { position: relative; padding-top: 22px; font: var(--verse-size)/2.05 "Noto Serif", "Source Serif Pro", Georgia, serif;
+.reader-body { position: relative; padding-top: 6px; font: var(--verse-size)/1.9 "Noto Serif", "Source Serif Pro", Georgia, serif;
   user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; touch-action: pan-y; }
-.verse { display: block; }
-.verse.para { margin-top: .55em; }
+.verse { display: block; position: relative; padding-left: 1.5em; margin-bottom: .5em; }
+.verse.para { margin-top: 1em; }
 .verse.flash { animation: flash 1.6s ease-out; }
 @keyframes flash { from { background: color-mix(in srgb, var(--primary) 25%, transparent); } to { background: transparent; } }
-.vnum { font: 600 .68em Roboto, system-ui, sans-serif; color: var(--primary); margin-right: .3em; vertical-align: .12em; cursor: pointer; }
+.vnum { position: absolute; left: 0; top: 0; width: 1.4em; font: 400 .62em/calc(var(--verse-size) * 1.9) "Noto Serif", Georgia, serif;
+  color: var(--muted); cursor: pointer; font-variant-numeric: tabular-nums; }
 .w, .g { padding: .3em 0; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
 .w[data-c], .g[data-c] { color: var(--on-bg); }
 [data-c="yellow"] { background: var(--hl-yellow); }
@@ -286,7 +287,11 @@ button.c-label:focus-visible { outline: 2px solid var(--primary); outline-offset
 /* Read page: fixed title and chapter navigation, Bible text scrolls on its own */
 .reader-page { height: 100dvh; display: flex; flex-direction: column; overflow: hidden;
   padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px)); }
-.r-head { flex: none; padding-bottom: 10px; border-bottom: 1px solid var(--divider); }
-.r-head h1 { margin: 12px 0 14px; }
+.r-head { flex: none; padding: 14px 0 8px; }
+.r-head h1 { margin: 0; font-size: 17px; font-weight: 500; }
+.r-title { background: none; border: 0; padding: 6px 0; color: var(--primary); font: inherit; display: inline-flex; gap: 1.1em; }
+.r-title:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 4px; }
 .r-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 4px 2px 32px; }
-.r-scroll .hint { margin: 10px 0 0; }
+
+.reader-body.slide-from-right { animation: slide-r .22s ease-out; }
+.reader-body.slide-from-left { animation: slide-l .22s ease-out; }
