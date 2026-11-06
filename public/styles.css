@@ -527,7 +527,7 @@ body.bars-hidden .to-top.page-top { bottom: calc(20px + env(safe-area-inset-bott
   box-shadow: 0 3px 10px rgba(0,0,0,.25); transition: transform .22s ease, opacity .22s ease; }
 .toc-btn svg { width: 24px; height: 24px; }
 body.bars-hidden .toc-btn { transform: translateY(calc(100px + env(safe-area-inset-bottom, 0px))); opacity: 0; pointer-events: none; }
-.toc-page { position: fixed; inset: 0; z-index: 40; background: var(--bg); display: flex; flex-direction: column; }
+.toc-page { position: fixed; inset: 0; z-index: 28; background: var(--bg); display: flex; flex-direction: column; }
 .toc-head { flex: none; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--divider);
   padding: calc(10px + env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px)) 10px max(8px, env(safe-area-inset-left, 0px)); }
 .toc-head h2 { margin: 0; font-size: 19px; font-weight: 600; flex: none; }
