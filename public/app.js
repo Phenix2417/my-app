@@ -802,7 +802,8 @@ function setAudioSource(badge, src) {
 function refreshAudioBadge(badge) {
   if (!badge?.dataset.src) return;
   const ph = badge.parentElement?.querySelector('.ph-src:not(.au-src)');
-  badge.hidden = !!(ph && ph.dataset.src === badge.dataset.src); // compares the real source, even when its badge is hidden
+  // Hidden for Youdao recordings (the default), and when it matches the phonetic's source.
+  badge.hidden = badge.dataset.src === 'youdao' || !!(ph && ph.dataset.src === badge.dataset.src);
 }
 function setPhSource(badge, src) {
   const s = PH_SOURCES[src];
