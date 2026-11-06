@@ -289,7 +289,7 @@ function openSheet(build, { label } = {}) {
   const onKey = (e) => { if (e.key === 'Escape') close(); };
   scrim.addEventListener('click', (e) => { if (e.target === scrim) close(); });
   document.addEventListener('keydown', onKey);
-  sheet.append(...[build(close)].flat());
+  sheet.append(...[build(close)].flat().filter((x) => x != null && x !== false));
   document.body.append(scrim);
   sheet.querySelector('[autofocus]')?.focus();
   return close;
@@ -316,13 +316,23 @@ function noteTime(n) {
     : { year: 'numeric', month: 'short', day: 'numeric' };
   return h('span', { class: 'note-time', title: t.toLocaleString() }, `${edited ? 'Edited ' : ''}${today ? (edited ? 'today, ' : 'Today, ') : ''}${t.toLocaleString(undefined, opts)}`);
 }
+// Delete a note (Bible or book) after asking; then refresh what's on screen.
+function confirmDeleteNote(n, after) {
+  if (!confirm(n.body ? 'Delete this note?' : 'Delete this highlight?')) return false;
+  (n.lib ? deleteBookNote : deleteNote)(n.id);
+  rerender(); toast(n.body ? 'Note deleted' : 'Highlight deleted');
+  after?.();
+  return true;
+}
+const deleteNoteBtn = (onclick) => h('button', { class: 'icon-btn edit-note delete-note', type: 'button', 'aria-label': 'Delete', title: 'Delete',
+  onclick: (e) => { e.stopPropagation(); onclick(); } }, svg(ICONS.close));
 const editNoteBtn = (onclick) => h('button', { class: 'icon-btn edit-note', type: 'button', 'aria-label': 'Edit note', title: 'Edit note',
   onclick: (e) => { e.stopPropagation(); onclick(); } }, svg(ICONS.pencil));
-function noteCard(n, { onClick, friend, onEdit, title } = {}) {
+function noteCard(n, { onClick, friend, onEdit, onDelete, title } = {}) {
   return h('div', { class: 'card' + (onClick ? ' clickable' : ''), onclick: onClick, tabindex: onClick ? 0 : null,
     onkeydown: onClick ? (e) => { if (e.key === 'Enter') onClick(); } : null },
   h('div', { class: 'card-head' }, h('span', { class: 'note-title' }, title || ref(n), noteTime(n)), friend ? h('span', { class: 'who', title: '@' + n.author.username }, dn(n.author)) : null,
-    onEdit ? editNoteBtn(onEdit) : null),
+    onEdit || onDelete ? h('span', { class: 'note-actions' }, onEdit ? editNoteBtn(onEdit) : null, onDelete ? deleteNoteBtn(onDelete) : null) : null),
   h('div', { class: 'quote', dataset: { c: n.color } }, n.quote),
   n.body ? h('p', { class: 'note-body' }, noteBodyNodes(n.body)) : null);
 }
@@ -375,7 +385,8 @@ async function openQuotedCommentary(q) {
 // An existing note opens to read (quotes are links); the pencil switches to the editor.
 function noteViewer(note) {
   openSheet((close) => [
-    h('div', { class: 'title-row note-view-head' }, h('h2', {}, ref(note), noteTime(note)), editNoteBtn(() => { close(); noteEditor(note); })),
+    h('div', { class: 'title-row note-view-head' }, h('h2', {}, ref(note), noteTime(note)),
+      h('span', { class: 'note-actions' }, editNoteBtn(() => { close(); noteEditor(note); }), deleteNoteBtn(() => confirmDeleteNote(note, close)))),
     h('div', { class: 'quote', dataset: { c: note.color } }, note.quote),
     note.body ? h('p', { class: 'note-body' }, noteBodyNodes(note.body)) : null,
   ], { label: 'Note' });
@@ -1504,7 +1515,7 @@ function showNotesAt(p) {
   if (mine.length === 1 && !friends.length) return noteViewer(mine[0]);
   openSheet((close) => [
     h('h2', {}, 'Notes here'),
-    ...mine.map((n) => noteCard(n, { onEdit: () => { close(); noteEditor(n); } })),
+    ...mine.map((n) => { const card = noteCard(n, { onEdit: () => { close(); noteEditor(n); }, onDelete: () => confirmDeleteNote(n, () => { card.remove(); if (!document.querySelector('.sheet .card')) close(); }) }); return card; }),
     ...friends.map((n) => noteCard(n, { friend: true })),
   ], { label: 'Notes on this passage' });
 }
@@ -2549,7 +2560,8 @@ async function renderBookReader() {
     const onKey = (e) => { if (e.key === 'Escape') close(); };
     const go = (n) => { close(); show(n.chapter, { block: n.start.verse }); };
     const list = h('div', { class: 'toc-list b-notes-list' }, ...(notes.length
-      ? notes.map((n) => noteCard(n, { title: book.chapterTitle(n.chapter) || `Chapter ${n.chapter + 1}`, onClick: () => go(n), onEdit: () => { close(); noteEditor(n); } }))
+      ? notes.map((n) => { const card = noteCard(n, { title: book.chapterTitle(n.chapter) || `Chapter ${n.chapter + 1}`, onClick: () => go(n),
+        onEdit: () => { close(); noteEditor(n); }, onDelete: () => confirmDeleteNote(n, () => card.remove()) }); return card; })
       : [h('p', { class: 'empty-inline' }, 'No highlights or notes in this book yet. Hold a word to select text, then pick a colour or Note.')]));
     const page = h('div', { class: 'toc-page', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Notes' },
       h('header', { class: 'toc-head' },

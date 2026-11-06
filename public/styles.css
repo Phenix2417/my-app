@@ -590,3 +590,9 @@ body.bars-hidden .b-size-panel { display: none; }
 .b-notes-list { display: grid; align-content: start; gap: 12px; padding: 14px max(16px, env(safe-area-inset-right, 0px)) calc(20px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); }
 .book-body .flash { animation: flash 1.6s ease-out; border-radius: 4px; }
 .b-notes-list .card { margin: 0; }
+
+/* Edit and delete buttons on a note */
+.note-actions { display: flex; gap: 6px; flex: none; margin-left: auto; }
+.card .note-actions { margin: -6px -6px -6px auto; }
+.card .note-actions .edit-note { margin: 0; }
+.delete-note { color: var(--error); }
