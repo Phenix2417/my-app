@@ -128,8 +128,11 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
     myLibrary: q('SELECT * FROM library_books WHERE user_id = ? ORDER BY MAX(opened_at, created_at) DESC'),
     libraryBook: q('SELECT * FROM library_books WHERE id = ? AND user_id = ?'),
     libraryBytes: q('SELECT COALESCE(SUM(size), 0) AS total FROM library_books WHERE user_id = ?'),
-    addLibraryBook: q(`INSERT INTO library_books (id, user_id, title, author, format, size, created_at, updated_at)
-      VALUES (:id, :user_id, :title, :author, :format, :size, :now, :now)`),
+    addLibraryBook: q(`INSERT INTO library_books (id, user_id, title, author, format, size, sha256, created_at, updated_at)
+      VALUES (:id, :user_id, :title, :author, :format, :size, :sha256, :now, :now)`),
+    // Books that may be the same file: same fingerprint, or no fingerprint yet and the same size.
+    sameBookCandidates: q('SELECT * FROM library_books WHERE user_id = ? AND (sha256 = ? OR (sha256 IS NULL AND size = ?))'),
+    setLibrarySha: q('UPDATE library_books SET sha256 = ? WHERE id = ?'),
     setLibraryTitle: q('UPDATE library_books SET title = ?, updated_at = ? WHERE id = ? AND user_id = ?'),
     setLibraryPosition: q('UPDATE library_books SET position = ?, opened_at = ? WHERE id = ? AND user_id = ?'),
     setLibraryCover: q('UPDATE library_books SET has_cover = 1 WHERE id = ? AND user_id = ?'),
@@ -247,10 +250,16 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
       const up = await library.receive(req, me.id, room).catch(libraryErr);
       const format = up.size ? sniffFormat(up.head, declared) : null;
       if (!format) { await library.discard(up.tmp); throw new HttpError(415, 'Only EPUB, PDF and text files can be added.'); }
+      // The same book (byte for byte, whatever its name) is kept only once.
+      for (const b of stmt.sameBookCandidates.all(me.id, up.sha256, up.size)) {
+        const sha = b.sha256 || await library.fingerprint(me.id, b.id);
+        if (sha && !b.sha256) stmt.setLibrarySha.run(sha, b.id);
+        if (sha === up.sha256) { await library.discard(up.tmp); return { status: 200, body: { book: libraryOut(stmt.libraryBook.get(b.id, me.id)), duplicate: true } }; }
+      }
       const id = crypto.randomBytes(12).toString('base64url');
       const title = cleanText(query.get('title'), 200) || 'Untitled', author = cleanText(query.get('author'), 120);
       await library.keep(up.tmp, me.id, id);
-      stmt.addLibraryBook.run({ id, user_id: me.id, title, author, format, size: up.size, now: now() });
+      stmt.addLibraryBook.run({ id, user_id: me.id, title, author, format, size: up.size, sha256: up.sha256, now: now() });
       return { status: 201, body: { book: libraryOut(stmt.libraryBook.get(id, me.id)) } };
     }, true, { raw: true }],
     ['PUT', /^\/api\/library\/([\w-]{16})\/cover$/, async ({ me, params: [id], req }) => {

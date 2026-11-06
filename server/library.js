@@ -40,11 +40,13 @@ export function createLibraryStore({ dir }) {
     await fs.promises.mkdir(userDir(userId), { recursive: true });
     const tmp = path.join(userDir(userId), `.upload-${crypto.randomBytes(8).toString('hex')}`);
     let size = 0, head = Buffer.alloc(0);
+    const hash = crypto.createHash('sha256'); // the file's fingerprint, to spot the same book uploaded twice
     const counter = new Transform({
       transform(chunk, _enc, cb) {
         size += chunk.length;
         if (size > limit) return cb(new LibraryError(413, 'That file is too large.'));
         if (head.length < 4096) head = Buffer.concat([head, chunk.subarray(0, 4096 - head.length)]);
+        hash.update(chunk);
         cb(null, chunk);
       },
     });
@@ -52,7 +54,7 @@ export function createLibraryStore({ dir }) {
       await fs.promises.rm(tmp, { force: true });
       throw e instanceof LibraryError ? e : new LibraryError(400, 'The upload was interrupted.');
     }
-    return { tmp, size, head };
+    return { tmp, size, head, sha256: hash.digest('hex') };
   }
 
   return {
@@ -73,6 +75,11 @@ export function createLibraryStore({ dir }) {
       try { return JSON.parse(await fs.promises.readFile(path.join(userDir(userId), 'versions', versionId, `${book}.json`), 'utf8')); } catch { return null; }
     },
     async removeVersion(userId, versionId) { await fs.promises.rm(path.join(userDir(userId), 'versions', versionId), { recursive: true, force: true }); },
+    // Fingerprint of a book already kept (for books uploaded before fingerprints were recorded).
+    async fingerprint(userId, id) {
+      const h = crypto.createHash('sha256');
+      try { await pipeline(fs.createReadStream(fileOf(userId, id)), h); return h.digest('hex'); } catch { return null; }
+    },
     async read(userId, id, { cover = false } = {}) {
       const file = cover ? coverOf(userId, id) : fileOf(userId, id);
       try { const st = await fs.promises.stat(file); return { file, size: st.size }; } catch { return null; }

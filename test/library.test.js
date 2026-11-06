@@ -104,3 +104,31 @@ test("a Bible added from a person's own ebook is private to them", async () => {
   assert.equal((await json('DELETE', `/api/my-versions/${version.id}`, ann)).status, 200);
   assert.equal((await read(ann)).status, 404);
 });
+
+test('the same book is kept once, recognised by its content rather than its name', async () => {
+  const db = openDb(':memory:');
+  const dir2 = fs.mkdtempSync(path.join(os.tmpdir(), 'library-dup-'));
+  const srv = createServer(db, { library: createLibraryStore({ dir: dir2 }) });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  const base2 = `http://127.0.0.1:${srv.address().port}`;
+  const token = (await (await fetch(base2 + '/api/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'dee', password: 'password1' }) })).json()).token;
+  const up = (title, bytes) => fetch(`${base2}/api/library?format=pdf&title=${encodeURIComponent(title)}`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: bytes });
+  const count = async () => (await (await fetch(base2 + '/api/library', { headers: { Authorization: `Bearer ${token}` } })).json()).books.length;
+  const a = Buffer.concat([Buffer.from('%PDF-1.4\n'), Buffer.alloc(3000, 65)]);
+  const first = await (await up('My Bible', a)).json();
+  let res = await up('A different name.pdf', a);
+  assert.equal(res.status, 200);
+  const again = await res.json();
+  assert.equal(again.duplicate, true);
+  assert.equal(again.book.id, first.book.id);
+  assert.equal(await count(), 1);
+  // Same name but different content is a different book.
+  res = await up('My Bible', Buffer.concat([a, Buffer.from('x')]));
+  assert.equal(res.status, 201);
+  assert.equal(await count(), 2);
+  // A book uploaded before fingerprints existed is still recognised.
+  db.prepare('UPDATE library_books SET sha256 = NULL').run();
+  assert.equal((await (await up('Old copy', a)).json()).duplicate, true);
+  assert.equal(await count(), 2);
+  srv.close(); fs.rmSync(dir2, { recursive: true, force: true });
+});

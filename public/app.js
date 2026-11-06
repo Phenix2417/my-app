@@ -2311,7 +2311,7 @@ async function deleteMyVersion(v, closePicker) {
 // Add a Bible version from an EPUB the person owns: read it on the phone, show what was found, then keep it privately.
 async function addBibleFromEpub() {
   const books = (await loadLibrary().catch(() => lib.books || [])).filter((b) => b.format === 'epub');
-  const input = h('input', { type: 'file', accept: '.epub,application/epub+zip', hidden: true, onchange: () => { const f = input.files[0]; if (f) { close(); checkBibleEpub(f.arrayBuffer(), f.name); } } });
+  const input = h('input', { type: 'file', accept: '.epub,application/epub+zip', hidden: true, onchange: () => { const f = input.files[0]; if (f) { close(); checkBibleEpub(f.arrayBuffer(), f.name, f); } } });
   const close = openSheet(() => [
     h('h2', {}, 'Add a Bible'),
     h('p', { class: 'confirm-text' }, 'Choose the EPUB of a Bible you own, from your phone, Google Drive or Dropbox, or one in your Books. The app reads its books, chapters and verses and shows you what it found before adding it.'),
@@ -2327,7 +2327,8 @@ async function addBibleFromEpub() {
 
 const KNOWN_VERSIONS = [[/english standard/i, 'ESV'], [/new international/i, 'NIV'], [/new american standard/i, 'NASB'], [/new king james/i, 'NKJV'],
   [/christian standard/i, 'CSB'], [/new living/i, 'NLT'], [/new revised standard/i, 'NRSV'], [/revised standard/i, 'RSV'], [/king james/i, 'KJV'], [/amplified/i, 'AMP'], [/message/i, 'MSG']];
-async function checkBibleEpub(bufPromise, fileName) {
+// file: set when the EPUB came from the phone (not from Books); it's then also put in Books, unless it's already there.
+async function checkBibleEpub(bufPromise, fileName, file = null) {
   const status = h('p', { class: 'confirm-text' }, 'Reading your Bible…');
   const body = h('div', {}, status);
   const close = openSheet(() => [h('h2', {}, 'Add a Bible'), body], { label: 'Check Bible' });
@@ -2383,6 +2384,7 @@ async function checkBibleEpub(bufPromise, fileName) {
           close();
           await loadVersions();
           setVersion(version.id);
+          if (file) addBooks([file]); // also keep the ebook in Books (the server spots it if it's already there)
         } catch (err) {
           // Don't leave a half-saved version behind.
           if (version) await api('DELETE', `/api/my-versions/${version.id}`).catch(() => {});
@@ -2731,7 +2733,8 @@ async function addBooks(files) {
     toast(`Adding “${title}”…`);
     try {
       const q = new URLSearchParams({ format, title, author });
-      const { book } = await (await authFetch(`/api/library?${q}`, { method: 'POST', body: file })).json();
+      const { book, duplicate } = await (await authFetch(`/api/library?${q}`, { method: 'POST', body: file })).json();
+      if (duplicate) { toast(`“${book.title}” is already in your books`); continue; } // same file, whatever its name
       if (cover) await authFetch(`/api/library/${book.id}/cover`, { method: 'PUT', body: cover }).catch(() => {});
       toast(`Added “${book.title}”`);
     } catch (e) { toast(e instanceof OfflineError ? "You're offline. Try again when you're connected." : `${title}: ${e.message}`); }

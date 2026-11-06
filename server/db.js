@@ -108,6 +108,8 @@ export function openDb(file) {
   const cols = db.prepare('PRAGMA table_info(users)').all().map((c) => c.name);
   if (!cols.includes('display_name')) db.exec("ALTER TABLE users ADD COLUMN display_name TEXT NOT NULL DEFAULT ''");
   if (!cols.includes('commentary_prefs')) db.exec("ALTER TABLE users ADD COLUMN commentary_prefs TEXT NOT NULL DEFAULT ''");
+  // Books uploaded before fingerprints were recorded get theirs when it's first needed.
+  if (!db.prepare('PRAGMA table_info(library_books)').all().some((c) => c.name === 'sha256')) db.exec('ALTER TABLE library_books ADD COLUMN sha256 TEXT');
   // Notes made before Bible versions existed are on the World English Bible.
   if (!db.prepare('PRAGMA table_info(notes)').all().some((c) => c.name === 'version')) db.exec("ALTER TABLE notes ADD COLUMN version TEXT NOT NULL DEFAULT 'web'");
   return db;
