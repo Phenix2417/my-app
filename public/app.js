@@ -39,6 +39,9 @@ const svg = (d) => {
 // text with a speech bubble, and Edit commentary list the same pages with a pen.
 // The same purpose always uses the same icon.
 const ICONS = {
+  plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
+  search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+  send: '<path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"/><path d="m21.854 2.147-10.94 10.939"/>',
   message: '<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/>',
   read: '<path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/>',
   notes: '<path d="M15.6 3.9H5.7a1.8 1.8 0 0 0-1.8 1.8v12.6a1.8 1.8 0 0 0 1.8 1.8h12.6a1.8 1.8 0 0 0 1.8-1.8V8.4Z"/><path d="M14.7 3.9v3.6a1.8 1.8 0 0 0 1.8 1.8h3.6"/>', // Lucide sticky-note at 90%, so its closed square isn't heavier than the open icons beside it
@@ -98,6 +101,7 @@ const state = {
   mine: { notes: {}, queue: [] }, // my notes + pending sync ops
   friendNotes: [], // for the current chapter
   friendsFeed: store.get('friendsFeed', []),
+  chats: store.get('chats', null), // conversations: { chats, incoming, outgoing }
   friends: store.get('friends', null),
   friendsError: false,
   notesError: false,
@@ -1112,6 +1116,11 @@ function showToolbar() {
       const text = selectionHasFullSentence() ? `${selectedQuote()} — ${ref(draft('yellow'))}` : selectedQuote();
       try { await navigator.clipboard.writeText(text); toast('Copied'); } catch { toast("Couldn't copy"); }
       clearSelection();
+    }),
+    bubbleBtn('Share to chat', ICONS.message, () => {
+      const verse = { book: state.pos.book, chapter: state.pos.chapter, start: Math.floor(start.v), end: Math.floor(end.v), version: textVersion, text: selectedQuote().slice(0, 2000) };
+      clearSelection();
+      shareVerse(verse);
     }),
     bubbleBtn('Commentary', ICONS.commentaryBooks, () => { const sel = inAlt ? null : { start, end }; clearSelection(); openCommentaryPage(Math.floor(start.v), sel); }),
     // One word: its dictionary entry. Several words: the selection translated, then each word to look up.
@@ -3038,34 +3047,217 @@ async function renderNotes() {
 }
 
 /* ---------------- Friends tab ---------------- */
-// A conversation with a friend: the messages, newest at the bottom, and a box to write one (prefill: a draft to start from).
-async function openChat(u, prefill = '') {
-  const list = h('div', { class: 'chat-list', 'aria-live': 'polite' }, h('p', { class: 'empty-inline' }, 'Loading…'));
-  const input = h('textarea', { class: 'chat-input', rows: 3, maxlength: 2000, placeholder: 'Write a message' });
-  input.value = prefill;
-  const bubble = (m) => h('div', { class: 'chat-msg' + (m.mine ? ' mine' : '') },
-    h('p', { class: 'note-body' }, m.body), h('span', { class: 'note-time' }, new Date(m.createdAt).toLocaleString(LANG === 'zh' ? 'zh-CN' : undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })));
-  const show = (messages) => {
-    list.replaceChildren(...(messages.length ? messages.map(bubble) : [h('p', { class: 'empty-inline' }, 'No messages yet.')]));
-    list.scrollTop = list.scrollHeight;
+// Open a conversation with a friend (prefill: a draft to start from).
+function openChat(u, prefill = '') { openChatPage({ kind: 'friend', id: u.id, name: dn(u), user: u }, prefill); }
+
+/* ---------------- Chat ---------------- */
+async function refreshChats() {
+  try { state.chats = await api('GET', '/api/chats'); store.set('chats', state.chats); state.chatsError = false; }
+  catch { state.chatsError = true; state.chats ??= store.get('chats', null); }
+}
+// A round avatar: the person's first letter on a soft colour (always the same for the same name), or a group icon.
+const AVATAR_COLORS = ['var(--hl-pink)', 'var(--hl-blue)', 'var(--hl-yellow)', 'var(--hl-green)', 'var(--hl-purple)'];
+function avatar(u, groupName = null) {
+  const name = groupName || dn(u) || '?';
+  let n = 0; for (const ch of name) n = (n * 31 + ch.codePointAt(0)) >>> 0;
+  return h('span', { class: 'avatar' + (groupName ? ' group' : ''), 'aria-hidden': 'true', style: `background:${AVATAR_COLORS[n % AVATAR_COLORS.length]}` },
+    groupName ? svg(ICONS.friends) : [...name][0].toUpperCase());
+}
+// 19:02 today; 昨天 / Yesterday; a weekday this week; else the date.
+function chatTime(at) {
+  const t = new Date(at), now = new Date(), day = 86400000;
+  const locale = LANG === 'zh' ? 'zh-CN' : undefined;
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  if (at >= startOfToday) return t.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit', hour12: false });
+  if (at >= startOfToday - day) return LANG === 'zh' ? '昨天' : 'Yesterday';
+  if (at >= startOfToday - 6 * day) return t.toLocaleDateString(locale, { weekday: 'short' });
+  return t.toLocaleDateString(locale, { month: 'numeric', day: 'numeric' });
+}
+const verseRef = (v) => `${bookName(v.book)} ${v.chapter}:${v.start}${v.end > v.start ? `–${v.end}` : ''}`;
+
+// A shared verse in a conversation: the reference, the text, and a link to read it.
+function verseCard(v) {
+  const known = (state.versions || []).some((x) => x.id === v.version);
+  return h('div', { class: 'verse-card' },
+    h('div', { class: 'verse-card-head' }, `${tr('Shared verse')} · ${verseRef(v)}`),
+    h('p', { class: 'verse-card-text', lang: isChineseVersion(v.version) ? 'zh-Hans' : 'en' }, v.text),
+    h('button', { class: 'text-btn verse-card-open', type: 'button', onclick: () => {
+      if (known) setVersion(v.version, { quiet: true });
+      goTo({ book: v.book, chapter: v.chapter }, v.start);
+    } }, 'Open in Read →'));
+}
+
+// Send a verse (from the reading bubble): to the chat it was picked for, or to one chosen now.
+async function shareVerse(verse) {
+  const target = state.shareTarget;
+  if (target) {
+    state.shareTarget = null;
+    await sendToChat(target, { ref: verse });
+    return openChatPage(target);
+  }
+  await refreshChats();
+  const chats = state.chats?.chats || [];
+  openSheet((close) => [
+    h('h2', {}, `Share ${verseRef(verse)}`),
+    chats.length ? h('div', { class: 'chat-rows' }, ...chats.map((x) => h('button', { class: 'chat-row', type: 'button', onclick: async () => {
+      close();
+      if (await sendToChat(x, { ref: verse })) toast(`Sent to ${x.name}`);
+    } }, x.kind === 'group' ? avatar(null, x.name) : avatar(x.user), h('div', { class: 'chat-main' }, h('div', { class: 'chat-name' }, x.name)))))
+      : h('p', { class: 'empty-inline' }, 'No chats yet. Add a friend in Chat first.'),
+  ], { label: 'Share to chat' });
+}
+async function sendToChat(chat, body) {
+  try { return (await api('POST', chat.kind === 'group' ? `/api/groups/${chat.id}/messages` : `/api/messages/${chat.id}`, body)).message; }
+  catch (e) { toast(e instanceof OfflineError ? "You're offline. Try again when connected." : e.message); return null; }
+}
+
+// Choosing friends: for a new group (with its name), or to add to a group.
+function groupMembersSheet({ group = null, onDone } = {}) {
+  const friends = (state.friends?.friends || []).filter((u) => !group?.members.some((m) => m.id === u.id));
+  const nameIn = h('input', { maxlength: 40, placeholder: 'e.g. 周三查经小组' });
+  const picks = new Set();
+  openSheet((close) => [
+    h('h2', {}, group ? 'Add members' : 'New group chat'),
+    group ? null : h('label', { class: 'field' }, h('span', {}, 'Group name'), nameIn),
+    h('div', { class: 'section-label' }, 'Friends'),
+    friends.length ? h('div', { class: 'chat-rows' }, ...friends.map((u) => h('label', { class: 'chat-row pick' }, avatar(u),
+      h('div', { class: 'chat-main' }, h('div', { class: 'chat-name' }, dn(u)), h('div', { class: 'chat-last' }, `@${u.username}`)),
+      h('input', { type: 'checkbox', onchange: (e) => { if (e.target.checked) picks.add(u.id); else picks.delete(u.id); } }))))
+      : h('p', { class: 'empty-inline' }, group ? 'All your friends are already in this group.' : 'Add friends first, then start a group with them.'),
+    h('div', { class: 'sheet-actions' }, h('span', { class: 'spacer' }),
+      h('button', { class: 'text-btn', type: 'button', onclick: close }, 'Cancel'),
+      h('button', { class: 'filled-btn', type: 'button', onclick: async () => {
+        try {
+          const r = group ? await api('POST', `/api/groups/${group.id}/members`, { members: [...picks] })
+            : await api('POST', '/api/groups', { name: nameIn.value, members: [...picks] });
+          close(); onDone?.(r.group);
+          if (!group) openChatPage({ kind: 'group', id: r.group.id, name: r.group.name, members: r.group.members.length });
+        } catch (e) { toast(e.message); }
+      } }, group ? 'Add' : 'Create')),
+  ].filter(Boolean), { label: group ? 'Add members' : 'New group chat' });
+}
+
+function openChatPage(chat, prefill = '') {
+  state.chat = chat; state.chatDraft = prefill;
+  clearSelection();
+  state.tab = 'chat';
+  render();
+}
+
+// One conversation: header, messages (with date separators and, in groups, who wrote each), and a box to write.
+let chatPoll = null;
+async function renderChatPage() {
+  const chat = state.chat;
+  if (!chat) { state.tab = 'friends'; return render(); }
+  clearInterval(chatPoll);
+  const list = h('div', { class: 'chat-msgs', 'aria-live': 'polite' }, h('p', { class: 'empty-inline' }, 'Loading…'));
+  const sub = h('div', { class: 'chat-sub' }, chat.kind === 'group' ? `${chat.members || ''} ${tr('members')}` : chat.user ? `@${chat.user.username}` : '');
+  const input = h('textarea', { class: 'chat-input', rows: 1, maxlength: 2000, placeholder: 'Say something…',
+    oninput: () => { input.style.height = 'auto'; input.style.height = `${Math.min(input.scrollHeight, 140)}px`; } });
+  input.value = state.chatDraft || ''; state.chatDraft = '';
+  let shown = [];
+  const draw = (messages) => {
+    const atBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 40;
+    shown = messages;
+    const kids = [];
+    let prev = null;
+    for (const m of messages) {
+      if (!prev || m.createdAt - prev.createdAt > 30 * 60000 || new Date(m.createdAt).toDateString() !== new Date(prev.createdAt).toDateString()) {
+        const t = new Date(m.createdAt);
+        const today = t.toDateString() === new Date().toDateString();
+        kids.push(h('div', { class: 'chat-day' }, `${today ? (LANG === 'zh' ? '今天' : 'Today') : chatTime(m.createdAt)} ${t.toLocaleTimeString(LANG === 'zh' ? 'zh-CN' : undefined, { hour: '2-digit', minute: '2-digit', hour12: false })}`));
+      }
+      const content = [m.body.trim() ? h('div', { class: 'bubble-text note-body' }, m.body) : null, m.ref ? verseCard(m.ref) : null].filter(Boolean);
+      if (m.mine) kids.push(h('div', { class: 'chat-line mine' }, h('div', { class: 'chat-bubble' }, ...content)));
+      else {
+        const from = m.from || chat.user;
+        kids.push(h('div', { class: 'chat-line' }, from ? avatar(from) : h('span', { class: 'avatar' }, '?'),
+          h('div', { class: 'chat-col' }, chat.kind === 'group' ? h('div', { class: 'chat-from' }, from ? dn(from) : '—') : null,
+            h('div', { class: 'chat-bubble' }, ...content))));
+      }
+      prev = m;
+    }
+    list.replaceChildren(...(kids.length ? kids : [h('p', { class: 'empty-inline' }, 'No messages yet.')]));
+    if (atBottom || !shown.length || list.dataset.first !== '1') { list.scrollTop = list.scrollHeight; list.dataset.first = '1'; }
   };
-  const send = h('button', { class: 'filled-btn', type: 'button', onclick: async () => {
+  const path = chat.kind === 'group' ? `/api/groups/${chat.id}/messages` : `/api/messages/${chat.id}`;
+  const load = async () => {
+    try {
+      const { messages } = await api('GET', path);
+      if (state.tab !== 'chat' || state.chat !== chat) return clearInterval(chatPoll);
+      if (messages.length !== shown.length || messages.at(-1)?.id !== shown.at(-1)?.id) draw(messages);
+    } catch (e) { if (!shown.length) list.replaceChildren(h('p', { class: 'error' }, e instanceof OfflineError ? "You're offline. Try again when connected." : e.message)); }
+  };
+  const send = async () => {
     const text = input.value.trim();
     if (!text) return;
-    send.disabled = true;
-    try {
-      const { message } = await api('POST', `/api/messages/${u.id}`, { body: text });
-      if (!list.querySelector('.chat-msg')) list.replaceChildren();
-      list.append(bubble(message)); list.scrollTop = list.scrollHeight;
-      input.value = '';
-    } catch (e) { toast(e instanceof OfflineError ? "You're offline. Try again when connected." : e.message); }
-    send.disabled = false;
-  } }, 'Send');
-  openSheet(() => [h('h2', {}, `Messages with ${dn(u)}`), list, input,
-    h('div', { class: 'sheet-actions' }, h('span', { class: 'spacer' }), send)], { label: 'Messages', onClose: () => { refreshFriends().then(updateBadge); } });
-  try { show((await api('GET', `/api/messages/${u.id}`)).messages); refreshFriends().then(updateBadge); }
-  catch (e) { list.replaceChildren(h('p', { class: 'error' }, e instanceof OfflineError ? "You're offline. Try again when connected." : e.message)); }
-  if (prefill) input.focus();
+    sendBtn.disabled = true;
+    const m = await sendToChat(chat, { body: text });
+    if (m) { input.value = ''; input.style.height = ''; draw([...shown, m]); list.scrollTop = list.scrollHeight; }
+    sendBtn.disabled = false;
+  };
+  const sendBtn = h('button', { class: 'chat-send', type: 'button', 'aria-label': 'Send', title: 'Send', onclick: send }, svg(ICONS.send));
+  const verseBtn = h('button', { class: 'chat-verse', type: 'button', 'aria-label': 'Share a verse', title: 'Share a verse', onclick: () => {
+    openSheet((close) => [h('h2', {}, 'Share a verse'),
+      h('p', { class: 'confirm-text' }, 'In Read, select the verses, then tap Share to chat in the bubble: they come back to this chat.'),
+      h('div', { class: 'sheet-actions' }, h('span', { class: 'spacer' }), h('button', { class: 'text-btn', type: 'button', onclick: close }, 'Cancel'),
+        h('button', { class: 'filled-btn', type: 'button', onclick: () => { close(); state.shareTarget = chat; state.tab = 'read'; render(); toast('Select the verses to share'); } }, 'Go to Read'))],
+    { label: 'Share a verse' });
+  } }, svg(ICONS.read));
+  const menu = chat.kind === 'group'
+    ? moreMenu([
+      { id: 'group-members', label: 'Members', icon: ICONS.friends, action: () => groupMembers() },
+      { id: 'group-rename', label: 'Rename group', icon: ICONS.pencil, action: () => renameGroup() },
+      { id: 'group-leave', label: 'Leave group', icon: ICONS.close, action: () => leaveGroup() },
+    ])
+    : moreMenu([
+      { id: 'friend-share', label: 'Can see my notes', icon: ICONS.notes, toggle: { get: () => !!friendOf(chat.id)?.sharing, set: (on) => setSharing(on) } },
+      { id: 'friend-remove', label: 'Remove friend', icon: ICONS.close, action: () => removeFriend() },
+    ]);
+  mount(h('main', { class: 'screen chat-screen' },
+    h('header', { class: 'chat-head' },
+      h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Back to Chat', title: 'Back to Chat', onclick: () => { clearInterval(chatPoll); state.tab = 'friends'; render(); } }, svg(ICONS.back)),
+      chat.kind === 'group' ? avatar(null, chat.name) : avatar(chat.user),
+      h('div', { class: 'chat-title' }, h('div', { class: 'chat-name' }, chat.name), sub),
+      menu),
+    list,
+    h('div', { class: 'chat-bar' }, verseBtn, input, sendBtn)));
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && matchMedia('(pointer: fine)').matches) { e.preventDefault(); send(); } });
+  if (input.value) input.focus();
+  await load();
+  chatPoll = setInterval(() => { if (document.visibilityState === 'visible') load(); }, 5000);
+  refreshChats().then(updateBadge);
+  if (chat.kind === 'group') api('GET', `/api/groups/${chat.id}`).then(({ group }) => { chat.group = group; chat.members = group.members.length; chat.name = group.name; sub.textContent = `${group.members.length} ${tr('members')}`; }).catch(() => {});
+
+  function friendOf(id) { return state.friends?.friends.find((u) => u.id === id); }
+  async function setSharing(on) {
+    try { state.friends = await api('PUT', `/api/friends/${chat.id}/sharing`, { enabled: on }); store.set('friends', state.friends); toast(on ? `${chat.name} can read all your notes` : `Your notes are hidden from ${chat.name}`); }
+    catch (e) { toast(e.message); }
+  }
+  async function removeFriend() {
+    if (!await confirmSheet({ title: `Remove ${chat.name} as a friend?`, message: `@${chat.user?.username} · You'll stop seeing each other's notes.`, action: 'Remove' })) return;
+    try { await api('DELETE', `/api/friends/${chat.id}`); await refreshFriends(); state.tab = 'friends'; render(); } catch (e) { toast(e.message); }
+  }
+  function groupMembers() {
+    const g = chat.group;
+    openSheet((close) => [h('h2', {}, chat.name),
+      h('div', { class: 'chat-rows' }, ...(g?.members || []).map((u) => h('div', { class: 'chat-row' }, avatar(u), h('div', { class: 'chat-main' }, h('div', { class: 'chat-name' }, dn(u)), h('div', { class: 'chat-last' }, `@${u.username}`))))),
+      h('div', { class: 'sheet-actions' }, h('span', { class: 'spacer' }), h('button', { class: 'text-btn', type: 'button', onclick: close }, 'Done'),
+        h('button', { class: 'filled-btn', type: 'button', onclick: () => { close(); groupMembersSheet({ group: g, onDone: (ng) => { chat.group = ng; chat.members = ng.members.length; sub.textContent = `${ng.members.length} ${tr('members')}`; } }); } }, 'Add members'))],
+    { label: 'Members' });
+  }
+  function renameGroup() {
+    const nameIn = h('input', { value: chat.name, maxlength: 40 });
+    openSheet((close) => [h('h2', {}, 'Rename group'), h('label', { class: 'field' }, h('span', {}, 'Group name'), nameIn),
+      h('div', { class: 'sheet-actions' }, h('span', { class: 'spacer' }), h('button', { class: 'text-btn', type: 'button', onclick: close }, 'Cancel'),
+        h('button', { class: 'filled-btn', type: 'button', onclick: async () => {
+          try { const { group } = await api('PUT', `/api/groups/${chat.id}`, { name: nameIn.value }); chat.name = group.name; close(); render(); } catch (e) { toast(e.message); }
+        } }, 'Save'))], { label: 'Rename group' });
+  }
+  async function leaveGroup() {
+    if (!await confirmSheet({ title: `Leave ${chat.name}?`, message: "You won't see this group's messages any more.", action: 'Leave' })) return;
+    try { await api('DELETE', `/api/groups/${chat.id}/members/me`); clearInterval(chatPoll); state.tab = 'friends'; render(); } catch (e) { toast(e.message); }
+  }
 }
 
 // A friend's note made in a Bible this person doesn't have: read the verse in their own translation, or ask the friend
@@ -3089,66 +3281,78 @@ async function friendNoteChoice(n) {
 }
 
 async function renderFriends() {
-  const content = h('div');
-  mount(h('main', { class: 'screen' },
-    h('div', { class: 'title-row' }, h('h1', {}, 'Friends'),
+  // Chat: private chats with friends and group chats, newest first; friend requests on top.
+  const content = h('div', { class: 'chat-rows' });
+  const search = h('input', { class: 'chat-search', type: 'search', placeholder: 'Search friends or groups', oninput: () => draw() });
+  let filter = state.chatFilter || 'all';
+  const chip = (id, label) => h('button', { class: 'chip-btn', type: 'button', 'aria-pressed': String(filter === id), onclick: (e) => {
+    filter = state.chatFilter = id;
+    e.currentTarget.parentElement.querySelectorAll('.chip-btn').forEach((b) => b.setAttribute('aria-pressed', String(b === e.currentTarget)));
+    draw();
+  } }, label);
+  mount(h('main', { class: 'screen chat-page' },
+    h('div', { class: 'title-row' }, h('h1', {}, 'Chat'),
+      h('span', { class: 'spacer' }),
+      h('button', { class: 'round-add', type: 'button', 'aria-label': 'New chat', title: 'New chat', onclick: () => newChatMenu() }, svg(ICONS.plus)),
       moreMenu([
         { id: 'side-add-friend', label: 'Add a friend', icon: ICONS.personAdd, action: () => openAddFriend() },
+        { id: 'side-new-group', label: 'New group chat', icon: ICONS.friends, action: () => openNewGroup() },
         { id: 'side-account', label: 'Account', icon: ICONS.account, action: () => openAccount() },
       ])),
+    h('label', { class: 'chat-search-box' }, svg(ICONS.search), search),
+    h('div', { class: 'chips-row' }, chip('all', 'All'), chip('friend', 'Private'), chip('group', 'Groups')),
     content));
 
-  const draw = () => {
-    const f = state.friends;
+  const act = async (method, path, body, okMsg) => {
+    try { await api(method, path, body); if (okMsg) toast(okMsg); }
+    catch (e) { toast(e instanceof OfflineError ? "You're offline. Try again when connected." : e.message); }
+    await refreshChats(); await refreshFriends(); draw(); updateBadge();
+  };
+  function draw() {
+    const c = state.chats;
     const kids = [];
-    if (state.friendsError) kids.push(h('p', { class: 'error' }, f ? "Couldn't refresh. Showing your saved friends list." : "Couldn't load friends. Check your connection."));
-    if (!f) return content.replaceChildren(...kids);
-    const act = async (method, path, body, okMsg) => {
-      try { state.friends = await api(method, path, body); store.set('friends', state.friends); state.friendsError = false; if (okMsg) toast(okMsg); }
-      catch (e) { toast(e instanceof OfflineError ? "You're offline. Try again when connected." : e.message); }
-      draw();
-      updateBadge();
-    };
-    if (f.incoming.length) {
-      kids.push(h('div', { class: 'section-label' }, 'Friend requests'));
-      for (const u of f.incoming) kids.push(h('div', { class: 'card' },
-        personName(u),
-        h('div', { class: 'hint', style: 'margin:0' }, 'wants to be friends'),
-        h('div', { class: 'row-actions' },
-          h('button', { class: 'text-btn', onclick: () => act('DELETE', `/api/friends/${u.id}`) }, 'Decline'),
-          h('button', { class: 'filled-btn', onclick: () => act('POST', `/api/friends/${u.id}/accept`, null, `You and ${dn(u)} are friends`) }, 'Accept'))));
+    if (state.chatsError) kids.push(h('p', { class: 'error' }, c ? "Couldn't refresh. Showing your saved chats." : "Couldn't load chats. Check your connection."));
+    if (!c) return content.replaceChildren(...kids, h('p', { class: 'empty-inline' }, 'Loading…'));
+    for (const u of c.incoming) kids.push(h('div', { class: 'chat-row request' }, avatar(u),
+      h('div', { class: 'chat-main' }, h('div', { class: 'chat-name' }, dn(u)), h('div', { class: 'chat-last' }, `@${u.username} · wants to be friends`)),
+      h('div', { class: 'row-actions' },
+        h('button', { class: 'text-btn', onclick: () => act('DELETE', `/api/friends/${u.id}`) }, 'Decline'),
+        h('button', { class: 'filled-btn small-btn', onclick: () => act('POST', `/api/friends/${u.id}/accept`, null, `You and ${dn(u)} are friends`) }, 'Accept'))));
+    const q = search.value.trim().toLowerCase();
+    const rows = c.chats.filter((x) => (filter === 'all' || x.kind === filter) && (!q || x.name.toLowerCase().includes(q) || x.user?.username.toLowerCase().includes(q)));
+    for (const x of rows) {
+      const last = x.last ? `${x.kind === 'group' && x.last.from ? `${dn(x.last.from)}：` : x.last.mine ? (LANG === 'zh' ? '我：' : 'You: ') : ''}${x.last.verse ? `${tr('Shared')} ${verseRef(x.last.verse)}` : x.last.body}` : '';
+      kids.push(h('button', { class: 'chat-row', type: 'button', onclick: () => openChatPage(x) },
+        x.kind === 'group' ? avatar(null, x.name) : avatar(x.user),
+        h('div', { class: 'chat-main' },
+          h('div', { class: 'chat-name' }, h('span', { class: 'person-name' }, x.name), x.kind === 'group' ? h('span', { class: 'group-tag' }, `${tr('Group')} · ${x.members}`) : null),
+          h('div', { class: 'chat-last' }, last || (x.kind === 'group' ? tr('No messages yet.') : `@${x.user.username}`))),
+        h('div', { class: 'chat-side' }, h('span', { class: 'chat-time' }, x.last ? chatTime(x.last.at) : ''),
+          x.unread ? h('span', { class: 'unread-count' }, String(x.unread)) : null)));
     }
-    kids.push(h('div', { class: 'section-label' }, 'Friends'));
-    if (!f.friends.length) kids.push(h('p', { class: 'empty' }, 'No friends yet. Tap Add and enter a username.'));
-    for (const u of f.friends) {
-      const id = `share-${u.id}`;
-      const sw = h('input', { type: 'checkbox', class: 'switch', id, checked: u.sharing, onchange: (e) => {
-        sw.disabled = true;
-        act('PUT', `/api/friends/${u.id}/sharing`, { enabled: e.target.checked });
-      } });
-      kids.push(h('div', { class: 'card' },
-        personName(u, h('button', { class: 'text-btn danger', style: 'font-size:15px', onclick: async () => {
-          if (await confirmSheet({ title: `Remove ${dn(u)} as a friend?`, message: `@${u.username} · You'll stop seeing each other's notes.`, action: 'Remove' })) act('DELETE', `/api/friends/${u.id}`);
-        } }, 'Remove')),
-        h('div', { class: 'share-row' },
-          h('label', { for: id }, h('div', { class: 'label' }, 'Can see my notes'),
-            h('div', { class: 'sub' }, u.sharing ? `${dn(u)} can read all your notes` : `Your notes are hidden from ${dn(u)}`)),
-          sw),
-        h('div', { class: 'status-line' }, u.sharesWithMe ? `You can see ${dn(u)}'s notes` : `${dn(u)} hasn't shared notes with you yet`),
-        h('button', { class: 'tonal-btn small-btn chat-btn', type: 'button', onclick: () => openChat(u) }, svg(ICONS.message), 'Messages',
-          u.unread ? h('span', { class: 'unread-count' }, String(u.unread)) : null)));
-    }
-    if (f.outgoing.length) {
+    if (!c.chats.length && !c.incoming.length) kids.push(h('p', { class: 'empty' }, 'No chats yet. Tap + to add a friend or start a group chat.'));
+    else if (!rows.length && q) kids.push(h('p', { class: 'empty-inline' }, 'Nothing found.'));
+    if (c.outgoing.length) {
       kids.push(h('div', { class: 'section-label' }, 'Sent requests'));
-      for (const u of f.outgoing) kids.push(h('div', { class: 'card' },
-        personName(u, h('button', { class: 'text-btn', style: 'font-size:15px', onclick: () => act('DELETE', `/api/friends/${u.id}`) }, 'Cancel'))));
+      for (const u of c.outgoing) kids.push(h('div', { class: 'chat-row request' }, avatar(u),
+        h('div', { class: 'chat-main' }, h('div', { class: 'chat-name' }, dn(u)), h('div', { class: 'chat-last' }, `@${u.username}`)),
+        h('button', { class: 'text-btn', onclick: () => act('DELETE', `/api/friends/${u.id}`) }, 'Cancel')));
     }
     content.replaceChildren(...kids);
-  };
+  }
   draw();
-  await refreshFriends();
+  await Promise.all([refreshChats(), refreshFriends()]);
   if (state.tab === 'friends') { draw(); updateBadge(); }
 
+  function newChatMenu() {
+    openSheet((close) => [
+      h('h2', {}, 'New chat'),
+      h('div', { class: 'add-bible-choices' },
+        h('button', { class: 'filled-btn', type: 'button', onclick: () => { close(); openAddFriend(); } }, svg(ICONS.personAdd), 'Add a friend'),
+        h('button', { class: 'tonal-btn', type: 'button', onclick: () => { close(); openNewGroup(); } }, svg(ICONS.friends), 'New group chat')),
+    ], { label: 'New chat' });
+  }
+  function openNewGroup() { groupMembersSheet({ onDone: () => { refreshChats().then(draw); } }); }
   function openAddFriend() {
     openSheet((close) => {
       const input = h('input', { autofocus: true, autocomplete: 'off', autocapitalize: 'none', spellcheck: false, placeholder: 'username', required: true });
@@ -3159,7 +3363,7 @@ async function renderFriends() {
           state.friends = await api('POST', '/api/friends/requests', { username: input.value });
           store.set('friends', state.friends);
           const name = input.value.trim().replace(/^@/, '').toLowerCase();
-          close(); draw();
+          close(); await refreshChats(); draw(); updateBadge();
           toast(state.friends.friends.some((u) => u.username.toLowerCase() === name) ? 'You are now friends' : 'Request sent');
         } catch (ex) { err.textContent = tr(ex instanceof OfflineError ? "You're offline." : ex.message); }
       } },
@@ -3252,6 +3456,7 @@ function signOut(expired) {
   state.auth = null;
   store.del('auth'); store.del('friends'); store.del('friendsFeed');
   state.friends = null; state.friendsFeed = [];
+  state.chats = null; store.del('chats'); state.chat = null; clearInterval(chatPoll);
   // The account's own Bibles go with it: the next account starts on a version everyone has.
   if (/^u/.test(state.version || '')) { state.version = 'web'; store.set('version', 'web'); }
   if (/^u/.test(state.parallel || '')) { state.parallel = null; store.set('parallel', null); }
@@ -3699,19 +3904,19 @@ function mount(screen) {
   $app.replaceChildren(screen, navEl);
 }
 function buildNav() {
-  const item = (tab, label) => h('button', { 'aria-current': state.tab === tab || (tab === 'read' && state.tab === 'commentary') || (tab === 'books' && state.tab === 'book') ? 'page' : null, dataset: { tab },
+  const item = (tab, label) => h('button', { 'aria-current': state.tab === tab || (tab === 'read' && state.tab === 'commentary') || (tab === 'books' && state.tab === 'book') || (tab === 'friends' && state.tab === 'chat') ? 'page' : null, dataset: { tab },
     onclick: () => {
       if (state.tab === tab && tab === 'read') return;
       if (state.tab === 'book') saveBookPosition(true);
       clearSelection(); state.tab = tab; render(); window.scrollTo(0, 0); // re-tapping Notes/Books/Friends refreshes
     } },
-  h('span', { class: 'icon badge' }, svg(ICONS[tab])), label);
-  navEl = h('nav', { class: 'bottom-nav', 'aria-label': 'Main' }, item('read', 'Read'), item('notes', 'Notes'), item('books', 'Shelf'), item('friends', 'Friends'));
+  h('span', { class: 'icon badge' }, svg(tab === 'friends' ? ICONS.message : ICONS[tab])), label);
+  navEl = h('nav', { class: 'bottom-nav', 'aria-label': 'Main' }, item('read', 'Read'), item('notes', 'Notes'), item('books', 'Shelf'), item('friends', 'Chat'));
 }
 function updateBadge() {
   const b = navEl?.querySelector('[data-tab="friends"] .badge');
   // Friend requests and unread messages.
-  const n = (state.friends?.incoming.length || 0) + (state.friends?.friends || []).reduce((sum, f) => sum + (f.unread || 0), 0);
+  const n = (state.friends?.incoming.length || 0) + (state.chats?.chats || []).reduce((sum, c) => sum + (c.unread || 0), 0);
   if (b) { if (n) b.dataset.count = n; else delete b.dataset.count; }
 }
 function rerender() { if (state.tab === 'read' || state.tab === 'book') paint(); else if (state.tab !== 'commentary') render(); }
@@ -3738,6 +3943,8 @@ async function render() {
   if (state.tab === 'notes') return renderNotes();
   if (state.tab === 'books') return renderLibrary();
   if (state.tab === 'book') return renderBookReader();
+  if (state.tab === 'chat') return renderChatPage();
+  if (state.tab !== 'chat') clearInterval(chatPoll);
   return renderFriends();
 }
 
@@ -3746,7 +3953,7 @@ function start() {
   loadVersions();
   render();
   refreshMine().then(() => { if (state.tab === 'read') paint(); });
-  refreshFriends().then(updateBadge);
+  Promise.all([refreshFriends(), refreshChats()]).then(updateBadge);
   // Detects revoked sessions and picks up display-name changes made on another device.
   api('GET', '/api/me').then(({ user }) => {
     if (!state.auth) return;
@@ -3760,8 +3967,10 @@ document.addEventListener('visibilitychange', async () => {
   if (document.visibilityState !== 'visible' || !state.auth) return;
   flush().catch(() => {});
   if (state.tab === 'read' && state.showFriends) { await refreshChapterFriendNotes(); paint(); }
-  refreshFriends().then(updateBadge);
+  Promise.all([refreshFriends(), refreshChats()]).then(updateBadge);
 });
+// New messages show on the Chat tab's badge within a minute.
+setInterval(() => { if (document.visibilityState === 'visible' && state.auth && state.tab !== 'chat') refreshChats().then(updateBadge); }, 60000);
 setInterval(async () => {
   if (document.visibilityState !== 'visible' || !state.auth || state.tab !== 'read' || !state.showFriends || state.selection) return;
   await refreshChapterFriendNotes(); paint();

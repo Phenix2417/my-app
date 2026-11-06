@@ -155,3 +155,40 @@ test('test accounts are created once, as friends who share notes', async () => {
     assert.deepEqual(f.friends.map((x) => [x.username, x.sharing, x.sharesWithMe]), [['james', true, true]]);
   } finally { srv.close(); }
 });
+
+test('chats: private and group conversations, shared verses, unread counts', async () => {
+  const reg = async (u) => (await api('POST', '/api/register', { body: { username: u, password: 'password1' } })).data;
+  const [wang, li, chen, stranger] = [await reg('wang'), await reg('li_s'), await reg('chen'), await reg('stranger')];
+  const befriend = async (a, b) => { await api('POST', '/api/friends/requests', { token: a.token, body: { username: b.user.username } }); await api('POST', `/api/friends/${a.user.id}/accept`, { token: b.token }); };
+  await befriend(wang, li); await befriend(wang, chen);
+
+  // A group of friends; a stranger can't be added.
+  assert.equal((await api('POST', '/api/groups', { token: wang.token, body: { name: '周三查经小组', members: [li.user.id, stranger.user.id] } })).status, 404);
+  const { group } = (await api('POST', '/api/groups', { token: wang.token, body: { name: '  周三查经小组 ', members: [li.user.id, chen.user.id] } })).data;
+  assert.equal(group.name, '周三查经小组');
+  assert.deepEqual(group.members.map((m) => m.username), ['wang', 'li_s', 'chen']);
+  assert.equal((await api('GET', `/api/groups/${group.id}`, { token: stranger.token })).status, 404);
+
+  // A shared verse in the group, and a plain message.
+  const verse = { book: 'psalms', chapter: 23, start: 4, end: 4, version: 'web', text: 'Even though I walk through the valley…' };
+  assert.equal((await api('POST', `/api/groups/${group.id}/messages`, { token: li.token, body: { ref: { ...verse, book: 'nope' } } })).status, 400);
+  assert.equal((await api('POST', `/api/groups/${group.id}/messages`, { token: li.token, body: { ref: verse } })).status, 201);
+  await api('POST', `/api/groups/${group.id}/messages`, { token: wang.token, body: { body: '阿们！' } });
+
+  let chats = (await api('GET', '/api/chats', { token: chen.token })).data.chats;
+  const g = chats.find((c) => c.kind === 'group');
+  assert.deepEqual([g.name, g.members, g.unread, g.last.body, g.last.from.username], ['周三查经小组', 3, 2, '阿们！', 'wang']);
+  const msgs = (await api('GET', `/api/groups/${group.id}/messages`, { token: chen.token })).data.messages;
+  assert.deepEqual(msgs.map((m) => [m.from.username, m.ref?.chapter ?? m.body]), [['li_s', 23], ['wang', '阿们！']]);
+  assert.equal((await api('GET', '/api/chats', { token: chen.token })).data.chats.find((c) => c.kind === 'group').unread, 0);
+
+  // Private chats are listed too (newest first), with verses.
+  await api('POST', `/api/messages/${chen.user.id}`, { token: wang.token, body: { ref: verse } });
+  chats = (await api('GET', '/api/chats', { token: chen.token })).data.chats;
+  assert.deepEqual([chats[0].kind, chats[0].user.username, chats[0].unread, chats[0].last.verse.start], ['friend', 'wang', 1, 4]);
+
+  // Renaming, leaving; the last one out removes the group.
+  assert.equal((await api('PUT', `/api/groups/${group.id}`, { token: chen.token, body: { name: '查经小组' } })).data.group.name, '查经小组');
+  for (const u of [chen, li, wang]) await api('DELETE', `/api/groups/${group.id}/members/me`, { token: u.token });
+  assert.equal((await api('GET', '/api/chats', { token: wang.token })).data.chats.filter((c) => c.kind === 'group').length, 0);
+});

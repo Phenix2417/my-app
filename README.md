@@ -66,9 +66,14 @@ Read the Bible, highlight passages, write notes, and see the notes your friends 
 - **Friends and imported Bibles** — a note made in one of your own imported Bibles is shared like any other, quoted text
   included, labelled with that Bible's short name. A friend who has that Bible too (imported from the same ebook, or a version
   with the same short name and language) sees it in their copy.
-- **Messages** — friends can message each other (Friends → a friend → Messages); unread messages are counted on the
-  Friends tab. Tapping a friend's note made in a Bible you don't have asks whether to read that verse in your current
-  translation or to ask the friend about that Bible (a message already drafted: where did you get the EPUB?).
+- **Chat** (was Friends) — private chats with friends and group chats, newest first, with search, 全部 / 私聊 / 群聊 filters,
+  avatars, the last message, time and unread count (also on the tab's badge). A conversation has date separators, the
+  sender's name in groups, and a box to write; it checks for new messages every few seconds while open. Verses are
+  shared as cards (分享经文 · 诗篇 23:4, the text, 在读经中打开 →): select them in Read and tap **Share to chat**, or tap
+  the book button in a chat to pick them in Read. A friend's ⋯ menu has "Can see my notes" and Remove; a group's has
+  Members (and Add members), Rename and Leave. New groups are made from friends with + → New group chat. Tapping a
+  friend's note made in a Bible you don't have asks whether to read that verse in your translation or to ask them
+  about that Bible (a message already drafted).
 - **Imported Bibles on the shelf** — opening an EPUB on the shelf that was imported as a Bible version opens the Bible
   reader instead, with all its translations side by side, in the book's own order. Versions remember the ebook's
   fingerprint when imported; older ones are recognised from the title ("HOLY BIBLE (ESV-CUV)" → ESV and 和合本) and linked

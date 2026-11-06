@@ -106,7 +106,28 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
     conversation: q(`SELECT * FROM (SELECT * FROM messages WHERE (from_id = :me AND to_id = :other) OR (from_id = :other AND to_id = :me)
       ORDER BY id DESC LIMIT 200) ORDER BY id`),
     markRead: q('UPDATE messages SET read_at = ? WHERE from_id = ? AND to_id = ? AND read_at IS NULL'),
-    addMessage: q('INSERT INTO messages (from_id, to_id, body, created_at) VALUES (?, ?, ?, ?)'),
+    addMessage: q('INSERT INTO messages (from_id, to_id, body, created_at, ref) VALUES (?, ?, ?, ?, ?)'),
+    lastMessage: q(`SELECT * FROM messages WHERE (from_id = :me AND to_id = :other) OR (from_id = :other AND to_id = :me) ORDER BY id DESC LIMIT 1`),
+    // Group chats
+    addGroup: q('INSERT INTO chat_groups (name, created_by, created_at) VALUES (?, ?, ?)'),
+    renameGroup: q('UPDATE chat_groups SET name = ? WHERE id = ?'),
+    group: q('SELECT * FROM chat_groups WHERE id = ?'),
+    addMember: q('INSERT OR IGNORE INTO chat_group_members (group_id, user_id, joined_at, last_read) VALUES (?, ?, ?, (SELECT COALESCE(MAX(id), 0) FROM chat_group_messages WHERE group_id = ?))'),
+    removeMember: q('DELETE FROM chat_group_members WHERE group_id = ? AND user_id = ?'),
+    member: q('SELECT * FROM chat_group_members WHERE group_id = ? AND user_id = ?'),
+    members: q(`SELECT u.id, u.username, u.display_name FROM chat_group_members m JOIN users u ON u.id = m.user_id WHERE m.group_id = ? ORDER BY m.joined_at`),
+    memberCount: q('SELECT COUNT(*) AS n FROM chat_group_members WHERE group_id = ?'),
+    myGroups: q(`SELECT g.*, m.last_read,
+        (SELECT COUNT(*) FROM chat_group_messages WHERE group_id = g.id AND id > m.last_read AND (from_id IS NULL OR from_id != :me)) AS unread,
+        (SELECT COUNT(*) FROM chat_group_members WHERE group_id = g.id) AS member_count
+      FROM chat_group_members m JOIN chat_groups g ON g.id = m.group_id WHERE m.user_id = :me`),
+    lastGroupMessage: q(`SELECT gm.*, u.username, u.display_name FROM chat_group_messages gm LEFT JOIN users u ON u.id = gm.from_id
+      WHERE gm.group_id = ? ORDER BY gm.id DESC LIMIT 1`),
+    groupMessages: q(`SELECT * FROM (SELECT gm.*, u.username, u.display_name FROM chat_group_messages gm LEFT JOIN users u ON u.id = gm.from_id
+      WHERE gm.group_id = ? ORDER BY gm.id DESC LIMIT 200) ORDER BY id`),
+    addGroupMessage: q('INSERT INTO chat_group_messages (group_id, from_id, body, ref, created_at) VALUES (?, ?, ?, ?, ?)'),
+    markGroupRead: q('UPDATE chat_group_members SET last_read = MAX(last_read, ?) WHERE group_id = ? AND user_id = ?'),
+    deleteGroupIfEmpty: q('DELETE FROM chat_groups WHERE id = ? AND NOT EXISTS (SELECT 1 FROM chat_group_members WHERE group_id = ?)'),
     share: q('INSERT OR IGNORE INTO shares (owner_id, viewer_id) VALUES (?, ?)'),
     unshare: q('DELETE FROM shares WHERE owner_id = ? AND viewer_id = ?'),
     canView: q(`SELECT 1 FROM shares s JOIN friendships f
@@ -242,6 +263,25 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
     return out;
   }
 
+  // A shared verse, checked: { book, chapter, start, end, version, text }.
+  function cleanRef(ref) {
+    if (!ref) return null;
+    const n = (x, max) => (Number.isInteger(x) && x >= 1 && x <= max ? x : null);
+    const book = BOOK_IDS.has(ref.book) ? ref.book : null, chapter = n(ref.chapter, 150), start = n(ref.start, 176);
+    const end = n(ref.end, 176) || start, text = String(ref.text ?? '').trim().slice(0, 2000);
+    if (!book || !chapter || !start || end < start || !text) throw new HttpError(400, 'Invalid verse');
+    return { book, chapter, start, end, version: /^[\w-]{2,20}$/.test(ref.version || '') ? ref.version : 'web', text };
+  }
+  const messageOut = (m, me) => ({ id: m.id, mine: m.from_id === me, body: m.body, createdAt: m.created_at,
+    ...(m.ref ? { ref: JSON.parse(m.ref) } : {}),
+    ...(m.username !== undefined && m.from_id !== me ? { from: m.username ? userOut(m.from_id, m.username, m.display_name) : null } : {}) });
+  const messageText = (body) => String(body ?? '').replace(/\r\n?/g, '\n').trim().slice(0, 2000);
+  function groupFor(me, id) {
+    const g = stmt.group.get(Number(id));
+    if (!g || !stmt.member.get(g.id, me)) throw new HttpError(404, 'Group not found');
+    return g;
+  }
+  const groupOut = (g) => ({ id: g.id, name: g.name, members: stmt.members.all(g.id).map((u) => userOut(u.id, u.username, u.display_name)) });
   function acceptedFriend(me, id) {
     const other = stmt.userById.get(Number(id));
     const f = other && stmt.friendship.get(Math.min(me, other.id), Math.max(me, other.id));
@@ -600,14 +640,69 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
       const other = acceptedFriend(me.id, id);
       const rows = stmt.conversation.all({ me: me.id, other: other.id });
       stmt.markRead.run(now(), other.id, me.id);
-      return { messages: rows.map((m) => ({ id: m.id, mine: m.from_id === me.id, body: m.body, createdAt: m.created_at })) };
+      return { messages: rows.map((m) => messageOut(m, me.id)) };
     }, true],
     ['POST', /^\/api\/messages\/(\d+)$/, ({ me, params: [id], body }) => {
       const other = acceptedFriend(me.id, id);
-      const text = String(body.body ?? '').replace(/\r\n?/g, '\n').trim().slice(0, 2000);
+      const ref = cleanRef(body.ref), text = messageText(body.body) || (ref ? ' ' : '');
       if (!text) throw new HttpError(400, 'Write a message first');
-      const r = stmt.addMessage.run(me.id, other.id, text, now());
-      return { status: 201, body: { message: { id: Number(r.lastInsertRowid), mine: true, body: text, createdAt: now() } } };
+      const at = now(), r = stmt.addMessage.run(me.id, other.id, text, at, ref ? JSON.stringify(ref) : null);
+      return { status: 201, body: { message: { id: Number(r.lastInsertRowid), mine: true, body: text, createdAt: at, ...(ref ? { ref } : {}) } } };
+    }, true],
+
+    // All conversations, newest first: friends (private chats) and groups, with the last message and unread count.
+    ['GET', /^\/api\/chats$/, ({ me }) => {
+      const f = friendsPayload(me.id);
+      const preview = (m) => (m ? { body: m.body, verse: m.ref ? JSON.parse(m.ref) : null, mine: m.from_id === me.id, at: m.created_at,
+        from: m.username && m.from_id !== me.id ? userOut(m.from_id, m.username, m.display_name) : null } : null);
+      const chats = [
+        ...f.friends.map((u) => ({ kind: 'friend', id: u.id, user: u, name: u.displayName, unread: u.unread, last: preview(stmt.lastMessage.get({ me: me.id, other: u.id })) })),
+        ...stmt.myGroups.all({ me: me.id }).map((g) => ({ kind: 'group', id: g.id, name: g.name, members: g.member_count, unread: g.unread,
+          last: preview(stmt.lastGroupMessage.get(g.id)), createdAt: g.created_at })),
+      ].sort((a, b) => (b.last?.at || b.createdAt || 0) - (a.last?.at || a.createdAt || 0));
+      return { chats, incoming: f.incoming, outgoing: f.outgoing };
+    }, true],
+
+    // Group chats: create (with friends), see, rename, add members, leave; read and send messages.
+    ['POST', /^\/api\/groups$/, ({ me, body }) => {
+      const name = cleanText(body.name, 40);
+      if (!name) throw new HttpError(400, 'Please give the group a name');
+      const ids = [...new Set((Array.isArray(body.members) ? body.members : []).map(Number))].filter((id) => id !== me.id).slice(0, 200);
+      for (const id of ids) acceptedFriend(me.id, id);
+      const at = now(), gid = Number(stmt.addGroup.run(name, me.id, at).lastInsertRowid);
+      for (const id of [me.id, ...ids]) stmt.addMember.run(gid, id, at, gid);
+      return { status: 201, body: { group: groupOut(stmt.group.get(gid)) } };
+    }, true],
+    ['GET', /^\/api\/groups\/(\d+)$/, ({ me, params: [id] }) => ({ group: groupOut(groupFor(me.id, id)) }), true],
+    ['PUT', /^\/api\/groups\/(\d+)$/, ({ me, params: [id], body }) => {
+      const g = groupFor(me.id, id), name = cleanText(body.name, 40);
+      if (!name) throw new HttpError(400, 'Please give the group a name');
+      stmt.renameGroup.run(name, g.id);
+      return { group: groupOut(stmt.group.get(g.id)) };
+    }, true],
+    ['POST', /^\/api\/groups\/(\d+)\/members$/, ({ me, params: [id], body }) => {
+      const g = groupFor(me.id, id);
+      for (const uid of (Array.isArray(body.members) ? body.members : []).map(Number).slice(0, 200)) { acceptedFriend(me.id, uid); stmt.addMember.run(g.id, uid, now(), g.id); }
+      return { group: groupOut(g) };
+    }, true],
+    ['DELETE', /^\/api\/groups\/(\d+)\/members\/me$/, ({ me, params: [id] }) => {
+      const g = groupFor(me.id, id);
+      stmt.removeMember.run(g.id, me.id);
+      stmt.deleteGroupIfEmpty.run(g.id, g.id);
+      return { ok: true };
+    }, true],
+    ['GET', /^\/api\/groups\/(\d+)\/messages$/, ({ me, params: [id] }) => {
+      const g = groupFor(me.id, id), rows = stmt.groupMessages.all(g.id);
+      if (rows.length) stmt.markGroupRead.run(rows[rows.length - 1].id, g.id, me.id);
+      return { messages: rows.map((m) => messageOut(m, me.id)) };
+    }, true],
+    ['POST', /^\/api\/groups\/(\d+)\/messages$/, ({ me, params: [id], body }) => {
+      const g = groupFor(me.id, id);
+      const ref = cleanRef(body.ref), text = messageText(body.body) || (ref ? ' ' : '');
+      if (!text) throw new HttpError(400, 'Write a message first');
+      const at = now(), mid = Number(stmt.addGroupMessage.run(g.id, me.id, text, ref ? JSON.stringify(ref) : null, at).lastInsertRowid);
+      stmt.markGroupRead.run(mid, g.id, me.id);
+      return { status: 201, body: { message: { id: mid, mine: true, body: text, createdAt: at, ...(ref ? { ref } : {}) } } };
     }, true],
 
     ['POST', /^\/api\/friends\/requests$/, ({ me, body }) => {

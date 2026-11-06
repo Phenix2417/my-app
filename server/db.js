@@ -105,6 +105,30 @@ export function openDb(file) {
     );
     CREATE INDEX IF NOT EXISTS messages_pair ON messages (from_id, to_id, id);
 
+    -- Group chats: a name, members (each with the last message they've read), and the group's messages.
+    CREATE TABLE IF NOT EXISTS chat_groups (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS chat_group_members (
+      group_id INTEGER NOT NULL REFERENCES chat_groups(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      last_read INTEGER NOT NULL DEFAULT 0,
+      joined_at INTEGER NOT NULL,
+      PRIMARY KEY (group_id, user_id)
+    );
+    CREATE TABLE IF NOT EXISTS chat_group_messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      group_id INTEGER NOT NULL REFERENCES chat_groups(id) ON DELETE CASCADE,
+      from_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      body TEXT NOT NULL,
+      ref TEXT,
+      created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS chat_group_messages_group ON chat_group_messages (group_id, id);
+
     -- Bible versions a person added from an ebook they own (text kept privately in their library folder).
     CREATE TABLE IF NOT EXISTS user_versions (
       id TEXT PRIMARY KEY,
@@ -123,6 +147,8 @@ export function openDb(file) {
   if (!db.prepare('PRAGMA table_info(library_books)').all().some((c) => c.name === 'sha256')) db.exec('ALTER TABLE library_books ADD COLUMN sha256 TEXT');
   // Notes made before Bible versions existed are on the World English Bible.
   // Which ebook a Bible version was imported from (its SHA-256), so opening that ebook on the shelf opens the Bible reader.
+  // A shared verse in a message: { book, chapter, start, end, version, text }.
+  if (!db.prepare('PRAGMA table_info(messages)').all().some((c) => c.name === 'ref')) db.exec('ALTER TABLE messages ADD COLUMN ref TEXT');
   if (!db.prepare('PRAGMA table_info(user_versions)').all().some((c) => c.name === 'year')) db.exec('ALTER TABLE user_versions ADD COLUMN year INTEGER');
   if (!db.prepare('PRAGMA table_info(user_versions)').all().some((c) => c.name === 'source_sha')) db.exec('ALTER TABLE user_versions ADD COLUMN source_sha TEXT');
   if (!db.prepare('PRAGMA table_info(notes)').all().some((c) => c.name === 'version')) db.exec("ALTER TABLE notes ADD COLUMN version TEXT NOT NULL DEFAULT 'web'");
