@@ -46,6 +46,7 @@ const ICONS = {
   friendsNotes: '<path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M15 18a3 3 0 1 0-6 0"/><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"/><circle cx="12" cy="13" r="2"/>',
   commentaryBooks: '<path d="M3.5 8v11a3 3 0 0 0 3 3H16"/><path d="M11.5 3H9a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2v-4.5"/><path d="M10.5 12h1.5M10.5 15.5h6"/><path d="M13.5 4.5A1.5 1.5 0 0 1 15 3h5.5A1.5 1.5 0 0 1 22 4.5v4a1.5 1.5 0 0 1-1.5 1.5H18l-2.5 2.5V10H15a1.5 1.5 0 0 1-1.5-1.5z"/><path d="M16.5 6.5h3"/>', // pages of text with a speech bubble
   editShelf: '<path d="M3.5 8v11a3 3 0 0 0 3 3H16"/><path d="M12 3H9a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2v-5"/><path d="M10.5 15.5h6"/><path d="M21.4 6.6a1 1 0 0 0-3-3l-4.5 4.5a2 2 0 0 0-.5.9l-.8 2.9a.5.5 0 0 0 .6.6l2.9-.8a2 2 0 0 0 .8-.5z"/>', // the same pages with a pen
+  noteLink: '<path d="M20.1 8.4 15.6 3.9H5.7a1.8 1.8 0 0 0-1.8 1.8v12.6a1.8 1.8 0 0 0 1.8 1.8h5.8"/><path d="M20.1 8.4v3.1"/><path d="M14.7 3.9v3.6a1.8 1.8 0 0 0 1.8 1.8h3.6"/><g transform="translate(12.6 12.6) scale(.5)" stroke-width="3.5"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></g>', // the note with Lucide's link in its corner: a note that links to the quoted commentary
   copy: '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
   dictionary: '<path d="M12 21V7"/><circle cx="17" cy="10" r="3"/><path d="m19.2 12.2 2.8 2.8"/><path d="M22 6V4a1 1 0 0 0-1-1h-5a4 4 0 0 0-4 4 4 4 0 0 0-4-4H3a1 1 0 0 0-1 1v13a1 1 0 0 0 1 1h6a3 3 0 0 1 3 3 3 3 0 0 1 3-3h6a1 1 0 0 0 1-1v-1.3"/>',
   pencil: '<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/>',
@@ -2161,7 +2162,7 @@ function showCommentaryToolbar() {
   const bar = h('div', { class: 'sel-toolbar', role: 'toolbar', 'aria-label': 'Selection actions' },
     h('div', { class: 'row' }, ...COLORS.map((c) => h('button', { class: 'swatch', dataset: { c }, 'aria-label': `Highlight ${c} in the Bible text, with this quote`, onclick: () => toBible(c) })),
     h('span', { class: 'sel-divider', 'aria-hidden': 'true' }),
-    bubbleBtn('Note on the Bible text', ICONS.notes, () => {
+    bubbleBtn('Note on the Bible text, linking to this quote', ICONS.noteLink, () => {
       const { note, isNew, body } = commentaryTarget();
       noteEditor({ ...note, body: body.slice(0, 10000) }, { isNew });
     }),
