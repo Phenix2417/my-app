@@ -12,14 +12,14 @@ const CODES = ['GEN', 'EXO', 'LEV', 'NUM', 'DEU', 'JOS', 'JDG', 'RUT', '1SA', '2
 const CODE = new Map(BOOKS.map((b, i) => [b.id, CODES[i]]));
 
 export const VERSIONS = [
-  { id: 'web', short: 'WEB', name: 'World English Bible', lang: 'en', builtIn: true, credit: 'World English Bible (public domain)' },
-  { id: 'BSB', short: 'BSB', name: 'Berean Standard Bible', lang: 'en', credit: 'Berean Standard Bible (public domain)' },
-  { id: 'eng_kjv', short: 'KJV', name: 'King James Version', lang: 'en', credit: 'King James Version (public domain)' },
-  { id: 'eng_net', short: 'NET', name: 'NET Bible', lang: 'en', credit: 'NET Bible® copyright ©1996–2017 Biblical Studies Press, L.L.C. (netbible.com). Used by permission.' },
-  { id: 'eng_asv', short: 'ASV', name: 'American Standard Version (1901)', lang: 'en', credit: 'American Standard Version (public domain)' },
-  { id: 'cmn_cu1', short: '和合本', name: '新标点和合本（简体）', lang: 'zh-Hans', credit: '新标点和合本（公有领域）' },
-  { id: 'cmn_cuv', short: '和合本(繁)', name: '新標點和合本（繁體）', lang: 'zh-Hant', credit: '新標點和合本（公有領域）' },
-  { id: 'cmn_cbs', short: '当代译本', name: '圣经当代译本（简体）', lang: 'zh-Hans', credit: 'Biblica® 圣经当代译本开放资源 (CC BY-SA 4.0)' },
+  { id: 'web', short: 'WEB', name: 'World English Bible', year: 2000, lang: 'en', builtIn: true, credit: 'World English Bible (public domain)' },
+  { id: 'BSB', short: 'BSB', name: 'Berean Standard Bible', year: 2016, lang: 'en', credit: 'Berean Standard Bible (public domain)' },
+  { id: 'eng_kjv', short: 'KJV', name: 'King James Version', year: 1611, lang: 'en', credit: 'King James Version (public domain)' },
+  { id: 'eng_net', short: 'NET', name: 'NET Bible', year: 2005, lang: 'en', credit: 'NET Bible® copyright ©1996–2017 Biblical Studies Press, L.L.C. (netbible.com). Used by permission.' },
+  { id: 'eng_asv', short: 'ASV', name: 'American Standard Version', year: 1901, lang: 'en', credit: 'American Standard Version (public domain)' },
+  { id: 'cmn_cu1', short: '和合本', name: '新标点和合本（简体）', year: 1988, lang: 'zh-Hans', credit: '新标点和合本（公有领域）' },
+  { id: 'cmn_cuv', short: '和合本(繁)', name: '新標點和合本（繁體）', year: 1988, lang: 'zh-Hant', credit: '新標點和合本（公有領域）' },
+  { id: 'cmn_cbs', short: '当代译本', name: '圣经当代译本（简体）', year: 2011, lang: 'zh-Hans', credit: 'Biblica® 圣经当代译本开放资源 (CC BY-SA 4.0)' },
 ];
 export const VERSION_IDS = new Set(VERSIONS.map((v) => v.id));
 

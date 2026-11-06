@@ -705,3 +705,4 @@ body.bars-hidden .b-size-panel { display: none; }
 .dict-origin .origin-word { font-size: 15px; color: var(--on-bg); }
 .version-incomplete .handle-sub { display: flex; align-items: center; gap: 8px; margin: 2px 0 8px 12px; color: var(--error); }
 .reader-body .row-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.version-year { color: var(--muted); font-size: .9em; white-space: nowrap; }

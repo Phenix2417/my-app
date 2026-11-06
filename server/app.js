@@ -367,7 +367,7 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
     ['GET', /^\/api\/books$/, () => ({ books: BOOKS })],
     // Bible versions; the World English Bible is built in, the others are fetched once per chapter and kept.
     ['GET', /^\/api\/versions$/, async ({ me }) => ({ versions: [
-      ...VERSIONS.map(({ id, short, name, lang, credit }) => ({ id, short, name, lang, credit })),
+      ...VERSIONS.map(({ id, short, name, year, lang, credit }) => ({ id, short, name, year, lang, credit })),
       // The person's own versions, from ebooks they own: private to them. `missing`: Bible books not saved (an import
       // that stopped partway), so the app can offer to complete it.
       ...(me ? await Promise.all(stmt.myVersions.all(me.id).map(async (v) => {

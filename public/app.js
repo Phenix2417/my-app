@@ -239,7 +239,11 @@ async function loadBook(id) {
   return bookCache.get(id);
 }
 // The Bible versions on offer (the server's list, remembered for offline use).
-const FALLBACK_VERSIONS = [{ id: 'web', short: 'WEB', name: 'World English Bible', lang: 'en', credit: 'World English Bible (public domain)' }];
+const FALLBACK_VERSIONS = [{ id: 'web', short: 'WEB', name: 'World English Bible', year: 2000, lang: 'en', credit: 'World English Bible (public domain)' }];
+// When a translation was first published, for the person's own Bibles (by their short name).
+const VERSION_YEARS = { ESV: 2001, NIV: 1978, NASB: 1971, NKJV: 1982, CSB: 2017, NLT: 1996, NRSV: 1989, RSV: 1952, KJV: 1611, AMP: 1965, MSG: 2002,
+  和合本: 1919, 新译本: 1992, 当代译本: 1979, 思高本: 1968 };
+const versionYear = (v) => v?.year || (v?.mine ? VERSION_YEARS[v.short] : null) || null;
 async function loadVersions() {
   try { state.versions = (await api('GET', '/api/versions')).versions; store.set('versions', state.versions); } catch { /* keep the saved list */ }
   return state.versions || FALLBACK_VERSIONS;
@@ -2736,7 +2740,7 @@ async function openVersionPicker() {
   };
   const item = (v) => {
     const btn = h('button', { class: 'version-item', type: 'button', role: 'checkbox', 'aria-checked': 'false', lang: v.lang, onclick: () => toggle(v.id) },
-      h('span', { class: 'version-short' }, v.short), h('span', { class: 'version-name' }, v.name), h('span', { class: 'pick-n', 'aria-hidden': 'true' }));
+      h('span', { class: 'version-short' }, v.short), h('span', { class: 'version-name' }, v.name, versionYear(v) ? h('span', { class: 'version-year' }, /^zh/.test(v.lang) ? `（${versionYear(v)}）` : ` (${versionYear(v)})`) : null), h('span', { class: 'pick-n', 'aria-hidden': 'true' }));
     rows.set(v.id, btn);
     const row = h('div', { class: 'version-row' }, btn, v.mine ? deleteNoteBtn(() => deleteMyVersion(v, closeSheet), `Delete ${v.short}`) : null);
     // One of the person's own Bibles that didn't finish saving: say so, and offer to complete it.
