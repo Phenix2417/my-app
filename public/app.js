@@ -439,7 +439,7 @@ function noteTime(n) {
   return h('span', { class: 'note-time', title: t.toLocaleString(locale) }, `${edited ? 'Edited ' : ''}${today ? (edited ? 'today, ' : 'Today, ') : ''}${t.toLocaleString(locale, opts)}`);
 }
 // A yes/no question in the app's own sheet (never the browser's grey dialog). Resolves true if confirmed.
-function confirmSheet({ title, message = '', action = 'Delete' }) {
+function confirmSheet({ title, message = '', action = 'Delete', danger = true }) {
   return new Promise((resolve) => {
     let answered = false;
     const done = (yes, close) => { if (answered) return; answered = true; close(); resolve(yes); };
@@ -449,7 +449,7 @@ function confirmSheet({ title, message = '', action = 'Delete' }) {
       h('div', { class: 'sheet-actions' },
         h('span', { class: 'spacer' }),
         h('button', { class: 'text-btn', type: 'button', onclick: () => done(false, close) }, 'Cancel'),
-        h('button', { class: 'filled-btn danger-btn', type: 'button', autofocus: true, onclick: () => done(true, close) }, action)),
+        h('button', { class: 'filled-btn' + (danger ? ' danger-btn' : ''), type: 'button', autofocus: true, onclick: () => done(true, close) }, action)),
     ], { label: 'Confirm', onClose: () => { if (!answered) { answered = true; resolve(false); } } }); // closed any other way: no
   });
 }
@@ -2845,7 +2845,8 @@ const KNOWN_VERSIONS = [[/english standard|\bESV\b/i, 'ESV', 'English Standard V
   [/king james|\bKJV\b/i, 'KJV', 'King James Version'], [/amplified/i, 'AMP', 'Amplified Bible'], [/the message/i, 'MSG', 'The Message']];
 const KNOWN_CHINESE = [[/和合|\bCUV\b/i, '和合本', '和合本'], [/新译本|\bCNV\b/i, '新译本', '新译本'], [/当代|\bCCB\b/i, '当代译本', '当代译本'], [/思高/, '思高本', '思高本']];
 // file: set when the EPUB came from the phone (not from the shelf); it's then also put on the shelf, unless it's already there.
-async function checkBibleEpub(bufPromise, fileName, file = null, repair = null) {
+// onAdded: what to do once the Bible is added (e.g. open the shelf book in the Bible reader).
+async function checkBibleEpub(bufPromise, fileName, file = null, repair = null, onAdded = null) {
   const status = h('p', { class: 'confirm-text' }, 'Reading your Bible…');
   const body = h('div', {}, status);
   const close = openSheet(() => [h('h2', {}, 'Add a Bible'), body], { label: 'Check Bible' });
@@ -2949,6 +2950,7 @@ async function checkBibleEpub(bufPromise, fileName, file = null, repair = null) 
           close();
           await loadVersions();
           if (repair) { chapterCacheClear(repair.id); toast(`${repair.short} repaired`); if (state.tab === 'read') renderReader(); }
+          else if (onAdded) onAdded(added);
           else setVersion(added[0].id, { quiet: true }), goTo(state.pos);
         } catch (err) {
           // Don't leave half-saved versions behind (a repair keeps its version: try again).
@@ -3621,8 +3623,14 @@ async function makeCover(bytes) {
 
 function bookOptions(b, { onSaved = renderLibrary, onDeleted = renderLibrary } = {}) {
   // Open in the Bible reader: only for an ebook imported as Bible versions (shown once that's known).
-  const bibleRow = h('button', { class: 'option-row', type: 'button', hidden: true }, svg(ICONS.read), h('span', {}, 'Open in Bible reader'));
-  if (b.format === 'epub') bibleVersionsOf(b).then((found) => { if (found.length) { bibleRow.hidden = false; bibleRow.onclick = () => { closeSheet(); openLibraryBook(b); }; } });
+  // Not imported yet: offer to import it as a Bible, then open it there.
+  const bibleRow = h('button', { class: 'option-row', type: 'button', onclick: async () => {
+    const found = await bibleVersionsOf(b);
+    closeSheet();
+    if (found.length) return openLibraryBook(b);
+    if (!await confirmSheet({ title: 'Open in Bible reader', message: `“${b.title}” isn't in the Bible reader yet. Import it as a Bible? The app reads its books, chapters and verses and shows you what it found first.`, action: 'Import as a Bible', danger: false })) return;
+    checkBibleEpub(authFetch(`/api/library/${b.id}/file`).then((r) => r.arrayBuffer()), b.title, null, null, () => openLibraryBook(b));
+  } }, svg(ICONS.read), h('span', {}, 'Open in Bible reader'));
   // A new cover: any picture, shrunk to a small JPEG.
   const coverInput = h('input', { type: 'file', accept: 'image/*', hidden: true, onchange: async () => {
     const f = coverInput.files[0];
