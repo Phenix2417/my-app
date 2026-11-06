@@ -398,3 +398,6 @@ body.bars-hidden .bottom-nav { transform: translateY(100%); }
   font: 600 12px var(--font-ui, Roboto, system-ui, sans-serif); cursor: pointer; }
 .bd-jump:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .bd.flash { animation: flash 1.6s ease-out; border-radius: 8px; }
+
+.bd-term-en { text-transform: capitalize; }
+.bd-english .bd-text { font-family: "Noto Serif", Georgia, serif; line-height: 1.6; }

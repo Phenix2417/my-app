@@ -1003,21 +1003,25 @@ function bibleEntryFor(word) {
   }
   return bibleCache.get(w);
 }
-function bibleSection(found) {
-  const LIMIT = 260;
-  return h('section', { class: 'bd', lang: 'zh-Hans' },
-    h('div', { class: 'bd-head' }, '圣经辞典', h('span', { class: 'bd-src' }, ` · ${found.source}`)),
-    ...found.entries.map((entry) => {
-      const full = entry.text;
+// Cut a long entry at a word boundary, without leaving an empty bullet line at the end.
+const shorten = (full, limit) => `${full.slice(0, limit).replace(/\s+\S*$/, '').replace(/\n[•·\s]*$/, '')}…`;
+function bibleSection(found, { english = false } = {}) {
+  const LIMIT = english ? 360 : 260;
+  return h('section', { class: 'bd' + (english ? ' bd-english' : ''), lang: english ? 'en' : 'zh-Hans' },
+    h('div', { class: 'bd-head' }, english ? 'Bible Dictionary' : '圣经辞典', h('span', { class: 'bd-src' }, ` · ${english ? found.englishSource : found.source}`)),
+    ...found.entries.filter((entry) => !english || entry.englishText).map((entry) => {
+      const full = english ? entry.englishText : entry.text;
       const long = full.length > LIMIT;
-      const text = h('p', { class: 'bd-text' }, long ? `${full.slice(0, LIMIT).replace(/\s+\S*$/, '')}…` : full);
+      const text = h('p', { class: 'bd-text' }, long ? shorten(full, LIMIT) : full);
       const more = long ? h('button', { class: 'text-btn bd-more', type: 'button', onclick: () => {
         const open = more.textContent === 'More';
-        text.textContent = open ? full : `${full.slice(0, LIMIT).replace(/\s+\S*$/, '')}…`;
+        text.textContent = open ? full : shorten(full, LIMIT);
         more.textContent = open ? 'Less' : 'More';
         positionToolbar();
       } }, 'More') : null;
-      return h('div', { class: 'bd-entry' }, h('div', { class: 'bd-term' }, entry.term, h('span', { class: 'bd-en', lang: 'en' }, ` ${String(entry.english).toLowerCase()}`)), text, more);
+      return h('div', { class: 'bd-entry' }, english
+        ? h('div', { class: 'bd-term bd-term-en' }, String(entry.english).toLowerCase())
+        : h('div', { class: 'bd-term' }, entry.term, h('span', { class: 'bd-en', lang: 'en' }, ` ${String(entry.english).toLowerCase()}`)), text, more);
     }));
 }
 
@@ -1084,14 +1088,20 @@ function toggleDictionary(bar, btn) {
     // Also look the word (or its base form) up in the Bible dictionary, and add the entry if there is one.
     const found = (await bibleEntryFor(w)) || (e?.base ? await bibleEntryFor(e.base.word) : null);
     if (!found || !bibleSlot.isConnected) return; // another word was tapped meanwhile
-    bibleSlot.replaceChildren(bibleSection(found));
-    // A button after the word that scrolls down to its Bible dictionary entry.
-    body.querySelector('.dict-head')?.append(h('button', { class: 'bd-jump', type: 'button', 'aria-label': 'Go to the Bible dictionary entry', onclick: () => {
+    const hasEnglish = found.entries.some((x) => x.englishText);
+    bibleSlot.replaceChildren(...[bibleSection(found), hasEnglish ? bibleSection(found, { english: true }) : null].filter(Boolean));
+    // Buttons after the word that scroll down to its Bible dictionary entry, in Chinese or English.
+    const jump = (selector) => () => {
       const box = body.closest('.dict');
-      const target = bibleSlot.querySelector('.bd') || bibleSlot;
+      const target = bibleSlot.querySelector(selector);
+      if (!target) return;
       if (box) box.scrollBy({ top: target.getBoundingClientRect().top - box.getBoundingClientRect().top - 6, behavior: 'smooth' });
       target.classList.remove('flash'); void target.offsetWidth; target.classList.add('flash');
-    } }, '圣经辞典 ↓'));
+    };
+    body.querySelector('.dict-head')?.append(...[
+      h('button', { class: 'bd-jump', type: 'button', 'aria-label': 'Go to the Chinese Bible dictionary entry', onclick: jump('.bd:not(.bd-english)') }, '圣经辞典 ↓'),
+      hasEnglish ? h('button', { class: 'bd-jump', type: 'button', lang: 'en', 'aria-label': 'Go to the English Bible dictionary entry', onclick: jump('.bd-english') }, 'Bible Dictionary ↓') : null,
+    ].filter(Boolean));
     positionToolbar();
   };
   bar.append(h('div', { class: 'dict' }, trans, body,

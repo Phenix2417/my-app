@@ -24,7 +24,7 @@ function fakeFhl() {
   const fetchImpl = async (url) => {
     const p = Object.fromEntries(new URL(url).searchParams); calls.push(p);
     const body = (record) => new Response(JSON.stringify({ status: 'success', record_count: record.length, record }).replace('"book":0', '"book":'));
-    if (p.N === '0' && p.keyword === 'grace') return body([{ book: 0, id: 'T0000250', topic: 'Grace', text: '...' }]);
+    if (p.N === '0' && p.keyword === 'grace') return body([{ book: 0, id: 'T0000250', topic: 'Grace', text: ' - God is the Giver of\r\n   #Ps 84:11|' }]);
     if (p.N === '1' && p.keyword === 'grace') return body([{ book: 1, id: 'T0002071', topic: 'GRACE OF GOD', text: '...' }, { book: 1, id: 'T0002072', topic: 'GRACES', text: '...' }]);
     if (p.N === '2' && p.k === '0000250') return body([{ book: 2, id: 'T0000250', topic: '恩典', text: ' - 上帝是恩典的赐予者\r\n  #诗 84:11|' }]);
     if (p.N === '3' && p.k === '0002071') return body([{ book: 3, id: 'T0002071', topic: '上帝的恩典', text: ' -一般经文\r\n  #创 15:6|' }]);
@@ -39,6 +39,7 @@ test('finds the Chinese topics for an English word, once', async () => {
   const r = await look('Grace');
   assert.deepEqual(r.entries.map((e) => [e.term, e.english]), [['恩典', 'Grace'], ['上帝的恩典', 'GRACE OF GOD']]);
   assert.equal(r.entries[0].text, '• 上帝是恩典的赐予者 （诗 84:11）');
+  assert.equal(r.entries[0].englishText, '• God is the Giver of (Ps 84:11)');
   const n = f.calls.length;
   await look('grace');
   assert.equal(f.calls.length, n, 'cached');
