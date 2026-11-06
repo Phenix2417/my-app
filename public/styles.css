@@ -633,3 +633,12 @@ body.bars-hidden .b-size-panel { display: none; }
 .version-note { color: var(--muted); font-size: 13px; margin: 8px 0 4px; }
 .version-credit { color: var(--muted); font: 12px/1.4 Roboto, system-ui, sans-serif; margin: 20px 0 0; }
 .reader-body:lang(zh) { letter-spacing: .02em; }
+
+/* Your own Bibles */
+.version-row { display: flex; align-items: center; gap: 6px; }
+.version-row .version-item { flex: 1; }
+.add-version { display: flex; align-items: center; gap: 10px; margin: 6px 0 2px; padding-left: 10px; }
+.add-version svg { width: 22px; height: 22px; }
+.bible-found { font-size: 16px; line-height: 1.5; margin: 0 0 8px; }
+.bible-sample { font: 16px/1.55 "Noto Serif", Georgia, serif; margin: 6px 0; padding-left: 10px; border-left: 3px solid var(--divider); }
+.bible-sample b { font: 600 13px/1 Roboto, system-ui, sans-serif; color: var(--primary); }

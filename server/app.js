@@ -141,6 +141,11 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
       ON CONFLICT (id) DO UPDATE SET chapter = :chapter, block_start = :block_start, word_start = :word_start, block_end = :block_end,
         word_end = :word_end, color = :color, quote = :quote, body = :body, updated_at = :now`),
     deleteLibraryNote: q('DELETE FROM library_notes WHERE id = ? AND user_id = ?'),
+    myVersions: q('SELECT * FROM user_versions WHERE user_id = ? ORDER BY created_at'),
+    userVersion: q('SELECT * FROM user_versions WHERE id = ? AND user_id = ?'),
+    addUserVersion: q('INSERT INTO user_versions (id, user_id, short, name, lang, created_at) VALUES (?, ?, ?, ?, ?, ?)'),
+    deleteUserVersion: q('DELETE FROM user_versions WHERE id = ? AND user_id = ?'),
+    deleteVersionNotes: q('DELETE FROM notes WHERE version = ? AND user_id = ?'),
     deleteLibraryBookNotes: q('DELETE FROM library_notes WHERE book_id = ? AND user_id = ?'),
   });
   const libraryNoteOut = (n) => ({ id: n.id, lib: n.book_id, chapter: n.chapter, start: { verse: n.block_start, word: n.word_start },
@@ -184,7 +189,8 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
     ...(n.username ? { author: userOut(n.user_id, n.username, n.display_name) } : {}),
   });
 
-  function validateNote(b) {
+  const ownVersion = (me, id) => !!(me && /^u[\w-]{6,20}$/.test(String(id)) && stmt.userVersion.get(id, me.id));
+  function validateNote(b, me) {
     const book = BOOKS.find((x) => x.id === b.book);
     if (!book) throw new HttpError(400, 'Unknown book');
     const int = (v, min, max) => Number.isInteger(v) && v >= min && v <= max;
@@ -201,7 +207,7 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
     if (typeof body !== 'string' || body.length > 10000) throw new HttpError(400, 'Note is too long');
     return { book: book.id, chapter: b.chapter, verse_start: b.start.verse, word_start: b.start.word,
       verse_end: b.end.verse, word_end: b.end.word, color: b.color, quote: b.quote.trim(), body,
-      version: b.version == null ? 'web' : VERSION_IDS.has(b.version) ? b.version : (() => { throw new HttpError(400, 'Unknown Bible version'); })() };
+      version: b.version == null ? 'web' : VERSION_IDS.has(b.version) || ownVersion(me, b.version) ? b.version : (() => { throw new HttpError(400, 'Unknown Bible version'); })() };
   }
 
   function friendsPayload(me) {
@@ -336,8 +342,51 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
 
     ['GET', /^\/api\/books$/, () => ({ books: BOOKS })],
     // Bible versions; the World English Bible is built in, the others are fetched once per chapter and kept.
-    ['GET', /^\/api\/versions$/, () => ({ versions: VERSIONS.map(({ id, short, name, lang, credit }) => ({ id, short, name, lang, credit })) })],
-    ['GET', /^\/api\/bible\/([\w-]{2,20})\/([a-z0-9]{1,20})\/(\d{1,3})$/, async ({ params: [version, book, chapter] }) => {
+    ['GET', /^\/api\/versions$/, ({ me }) => ({ versions: [
+      ...VERSIONS.map(({ id, short, name, lang, credit }) => ({ id, short, name, lang, credit })),
+      // The person's own versions, from ebooks they own: private to them.
+      ...(me ? stmt.myVersions.all(me.id).map((v) => ({ id: v.id, short: v.short, name: v.name, lang: v.lang, mine: true, credit: `${v.name} (from your own copy)` })) : []),
+    ] })],
+    ['POST', /^\/api\/my-versions$/, ({ me, body }) => {
+      needLibrary();
+      if (stmt.myVersions.all(me.id).length >= 5) throw new HttpError(400, 'You can add up to 5 Bibles of your own.');
+      const short = cleanText(body.short, 12), name = cleanText(body.name, 80);
+      if (!short || !name) throw new HttpError(400, 'Please give the version a name and a short name.');
+      const lang = /^zh(-Hans|-Hant)?$/.test(body.lang) ? body.lang : 'en';
+      const id = 'u' + crypto.randomBytes(9).toString('base64url');
+      stmt.addUserVersion.run(id, me.id, short, name, lang, now());
+      return { status: 201, body: { version: { id, short, name, lang, mine: true } } };
+    }, true],
+    ['PUT', /^\/api\/my-versions\/(u[\w-]{6,20})\/([a-z0-9]{1,20})$/, async ({ me, params: [id, book], req }) => {
+      needLibrary();
+      if (!stmt.userVersion.get(id, me.id)) throw new HttpError(404, 'Version not found');
+      const meta = BOOKS.find((b) => b.id === book);
+      if (!meta) throw new HttpError(404, 'Unknown book');
+      let size = 0; const chunks = [];
+      for await (const c of req) { size += c.length; if (size > 4 * 1024 * 1024) throw new HttpError(413, 'That book is too large.'); chunks.push(c); }
+      let data;
+      try { data = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { throw new HttpError(400, 'Invalid book data'); }
+      // [[ [text, 1?], ... ] per chapter]
+      const ok = Array.isArray(data) && data.length <= meta.chapters && data.every((ch) => Array.isArray(ch) && ch.length <= 200
+        && ch.every((v) => Array.isArray(v) && typeof v[0] === 'string' && v[0].length <= 4000 && (v.length === 1 || v[1] === 1)));
+      if (!ok) throw new HttpError(400, 'Invalid book data');
+      await library.saveVersionBook(me.id, id, book, JSON.stringify(data));
+      return { ok: true };
+    }, true, { raw: true }],
+    ['DELETE', /^\/api\/my-versions\/(u[\w-]{6,20})$/, async ({ me, params: [id] }) => {
+      if (!stmt.userVersion.get(id, me.id)) throw new HttpError(404, 'Version not found');
+      stmt.deleteUserVersion.run(id, me.id);
+      stmt.deleteVersionNotes.run(id, me.id);
+      if (library) await library.removeVersion(me.id, id);
+      return { ok: true };
+    }, true],
+    ['GET', /^\/api\/bible\/([\w-]{2,20})\/([a-z0-9]{1,20})\/(\d{1,3})$/, async ({ me, params: [version, book, chapter] }) => {
+      if (/^u[\w-]{6,20}$/.test(version)) { // the person's own version: only they can read it
+        if (!ownVersion(me, version) || !library) throw new HttpError(404, 'Version not found');
+        const verses = (await library.readVersionBook(me.id, version, book))?.[Number(chapter) - 1];
+        if (!verses?.length) throw new HttpError(404, 'This version has no text for this chapter.');
+        return { status: 200, body: { version, book, chapter: Number(chapter), verses }, headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'private, no-store' } };
+      }
       if (!versions) throw new HttpError(503, 'Bible versions are not set up on this server');
       try {
         return { status: 200, body: await versions(version, book, Number(chapter)), headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'public, max-age=86400' } };
@@ -444,7 +493,7 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
     ['PUT', /^\/api\/notes\/([\w-]{8,64})$/, ({ me, body, params: [id] }) => {
       const existing = stmt.note.get(id);
       if (existing && existing.user_id !== me.id) throw new HttpError(404, 'Note not found');
-      const n = validateNote(body);
+      const n = validateNote(body, me);
       const createdAt = Number.isInteger(body.createdAt) ? Math.min(body.createdAt, now()) : now();
       stmt.upsertNote.run({ id, user_id: me.id, ...n, now: now() });
       if (!existing) db.prepare('UPDATE notes SET created_at = ? WHERE id = ?').run(createdAt, id);

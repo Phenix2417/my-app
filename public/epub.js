@@ -240,3 +240,113 @@ export function openText(buf, fallbackTitle = '') {
       return frag;
     } };
 }
+
+/* ----- A Bible ebook the person owns, read into books / chapters / verses ----- */
+// OSIS book codes in the app's book order (Genesis … Revelation).
+const OSIS = ['Gen', 'Exod', 'Lev', 'Num', 'Deut', 'Josh', 'Judg', 'Ruth', '1Sam', '2Sam', '1Kgs', '2Kgs', '1Chr', '2Chr', 'Ezra',
+  'Neh', 'Esth', 'Job', 'Ps', 'Prov', 'Eccl', 'Song', 'Isa', 'Jer', 'Lam', 'Ezek', 'Dan', 'Hos', 'Joel', 'Amos', 'Obad', 'Jonah',
+  'Mic', 'Nah', 'Hab', 'Zeph', 'Hag', 'Zech', 'Mal', 'Matt', 'Mark', 'Luke', 'John', 'Acts', 'Rom', '1Cor', '2Cor', 'Gal', 'Eph',
+  'Phil', 'Col', '1Thess', '2Thess', '1Tim', '2Tim', 'Titus', 'Phlm', 'Heb', 'Jas', '1Pet', '2Pet', '1John', '2John', '3John', 'Jude', 'Rev'];
+// "The Gospel According to John", "First Letter of Paul to the Corinthians", "Psalm" … -> a key for matching book names.
+function bookKey(name) {
+  return String(name).toLowerCase()
+    .replace(/\bfirst\b|\bi\b(?=\s)/g, '1').replace(/\bsecond\b|\bii\b(?=\s)/g, '2').replace(/\bthird\b|\biii\b(?=\s)/g, '3')
+    .replace(/\b(the|book|of|gospel|according|to|letter|letters|epistle|general|paul|apostle|st|saint|prophet|prophecy)\b/g, ' ')
+    .replace(/\bpsalm\b/g, 'psalms').replace(/\bsong\s+songs\b|\bcanticles?\b|\bsong\s+solomon\b/g, 'songofsolomon')
+    .replace(/\bqoheleth\b/g, 'ecclesiastes').replace(/\bapocalypse\b|\brevelations\b/g, 'revelation')
+    .replace(/[^a-z0-9]/g, '');
+}
+const BLOCK = /^(p|div|li|blockquote|section|article|table|tr|td|dd|dt|ul|ol|pre|figure|h[1-6])$/;
+const SKIP_CLASS = /foot|note|xref|cross|crossref|ref-?list|annotation|chapter-?title|psalm-?title|superscription|subtitle|heading|^title|\btitle\b|toc|copyright/i;
+
+// books: [{ id, name, chapters }] in Bible order. Returns { title, lang, data: { bookId: [[ [text, 1?], … ] per chapter] }, report }.
+export async function parseBibleEpub(buf, books) {
+  const ep = await openEpub(buf);
+  const byKey = new Map(books.map((b) => [bookKey(b.name), b]));
+  byKey.set('psalms', books.find((b) => b.id === 'psalms')); byKey.set('songofsolomon', books.find((b) => b.id === 'songofsolomon'));
+  const findBook = (text) => {
+    const k = bookKey(text);
+    if (!k || k.length > 24) return null;
+    return byKey.get(k) || books.find((b) => bookKey(b.name) === k.replace(/s$/, '')) || null;
+  };
+  const osis = new Map(OSIS.map((c, i) => [c.toLowerCase(), books[i]]));
+  const tocBook = new Map(); // spine file -> book named in the table of contents
+  for (const t of ep.toc) { const b = findBook(t.label); if (b && t.anchor === '' && !tocBook.has(ep.chapters[t.chapter]?.href)) tocBook.set(ep.chapters[t.chapter].href, b); }
+
+  const data = {};
+  let book = null, ch = 0, v = 0, blockStart = true, byIds = 0, byMarkers = 0;
+  const setVerse = (b, c, n) => {
+    if (b !== book) { book = b; }
+    ch = c; v = n;
+    const chapters = (data[book.id] ||= []);
+    const verses = (chapters[ch - 1] ||= []);
+    if (!verses[v - 1]) verses[v - 1] = blockStart || v === 1 ? ['', 1] : [''];
+    blockStart = false;
+  };
+  const append = (t) => { if (book && ch && v) data[book.id][ch - 1][v - 1][0] += t; };
+  const num = (el) => { const m = /^\s*(\d{1,3})\s*$/.exec(el.textContent || ''); return m ? +m[1] : 0; };
+  const cls = (el) => `${el.getAttribute('class') || ''} ${el.getAttribute('epub:type') || el.getAttributeNS?.('http://www.idpf.org/2007/ops', 'type') || ''}`;
+
+  const walk = (node) => {
+    if (node.nodeType === 3) { append(node.nodeValue); return; }
+    if (node.nodeType !== 1) return;
+    const tag = node.localName.toLowerCase(), c = cls(node), id = node.getAttribute('id') || '';
+    if (/^(script|style|head|nav|aside|title|meta|link)$/.test(tag)) return;
+    // 1. Exact verse ids: v43003016, 43003016, John.3.16, JHN_3_16 …
+    let m = /^v?(\d{1,2})(\d{3})(\d{3})$/.exec(id);
+    if (m && +m[1] >= 1 && +m[1] <= 66 && +m[3] >= 1) { setVerse(books[+m[1] - 1], +m[2], +m[3]); byIds++; }
+    else if ((m = /^(?:v-?)?([1-3]?[A-Za-z]{2,6})[._](\d{1,3})[._](\d{1,3})$/.exec(id)) && osis.has(m[1].toLowerCase())) { setVerse(osis.get(m[1].toLowerCase()), +m[2], +m[3]); byIds++; }
+    // Footnotes, cross references and section headings aren't Bible text.
+    if (tag === 'a' && /^#/.test(node.getAttribute('href') || '') && !/^\s*\d{1,3}\s*$/.test(node.textContent)) return;
+    if (SKIP_CLASS.test(c) && !/verse|chapter/i.test(c)) return;
+    if (/^h[1-6]$/.test(tag)) {
+      const text = node.textContent.replace(/\s+/g, ' ').trim();
+      const b = findBook(text);
+      if (b) { book = b; ch = 0; v = 0; return; }
+      const cm = /^(?:chapter|psalm)\s+(\d{1,3})$/i.exec(text) || /^(\d{1,3})$/.exec(text);
+      if (cm && book && !byIds) { setVerse(book, +cm[1], 1); byMarkers++; }
+      blockStart = true;
+      return;
+    }
+    // 2. Chapter and verse number markers.
+    const n = num(node);
+    if (n && !byIds && book && (/chapter|chap-?num|chapnum|drop-?cap|\bc-?num/i.test(c))) { setVerse(book, n, 1); byMarkers++; return; }
+    if (n && !byIds && book && ch && (/verse|vnum|v-?num|versenum|\bv\b/i.test(c) || (tag === 'sup' && !node.querySelector('a')))) {
+      if (n === 1 && v > 1) setVerse(book, ch + 1, 1); // a new chapter without a chapter marker
+      else if (n > v) setVerse(book, ch, n);
+      byMarkers++;
+      return;
+    }
+    if (n && byIds && (/verse|vnum|chapter|chap/i.test(c) || tag === 'sup' || n === v || n === ch)) return; // the number shown for an id'd verse
+    if (BLOCK.test(tag)) { blockStart = true; if (book && v) append(' '); }
+    for (const k of node.childNodes) walk(k);
+    if (BLOCK.test(tag)) { blockStart = true; if (book && v) append(' '); }
+  };
+
+  for (const { href } of ep.chapters) {
+    const text = await ep.zip.text(href);
+    if (!text) continue;
+    let doc = new DOMParser().parseFromString(text, 'application/xhtml+xml');
+    if (doc.getElementsByTagName('parsererror').length) doc = new DOMParser().parseFromString(text, 'text/html');
+    if (tocBook.has(href) && !byIds) { book = tocBook.get(href); ch = 0; v = 0; }
+    blockStart = true;
+    const body = doc.getElementsByTagNameNS('*', 'body')[0] || doc.documentElement;
+    walk(body);
+  }
+
+  // Tidy the text; fill gaps so verse numbers line up.
+  let verses = 0, cjk = 0, letters = 0;
+  for (const chapters of Object.values(data)) {
+    for (let c = 0; c < chapters.length; c++) {
+      const vs = (chapters[c] ||= []);
+      for (let i = 0; i < vs.length; i++) {
+        vs[i] ||= [''];
+        vs[i][0] = vs[i][0].replace(/\s+/g, ' ').replace(/ ([,.;:!?’”)\]，。；：！？、」』）])/g, '$1').replace(/([(\[“‘「『（]) /g, '$1').trim();
+        if (vs[i][0]) verses++;
+        for (const ch of vs[i][0].slice(0, 40)) { if (/[㐀-鿿]/.test(ch)) cjk++; else if (/[a-z]/i.test(ch)) letters++; }
+      }
+    }
+  }
+  const lang = cjk > letters ? (/[們這說來為與們對]/.test(JSON.stringify(data).slice(0, 20000)) ? 'zh-Hant' : 'zh-Hans') : 'en';
+  return { title: ep.title, lang, data, report: { verses, byIds, byMarkers, books: Object.keys(data).length } };
+}

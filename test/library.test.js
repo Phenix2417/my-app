@@ -82,3 +82,25 @@ test('books are private, checked by content, and can be read, renamed, positione
   assert.equal((await json('GET', '/api/library', ann)).data.books.length, 1);
   assert.equal(fs.readdirSync(path.join(dir, String(1))).filter((f) => f.startsWith(book.id)).length, 0);
 });
+
+test("a Bible added from a person's own ebook is private to them", async () => {
+  const ann = await register('ann2'), bob = await register('bob2');
+  const { version } = (await json('POST', '/api/my-versions', ann, { short: 'ESV', name: 'English Standard Version', lang: 'en' })).data;
+  assert.match(version.id, /^u/);
+  const put = (token, book, body) => fetch(`${base}/api/my-versions/${version.id}/${book}`, { method: 'PUT', headers: { Authorization: `Bearer ${token}` }, body });
+  assert.equal((await put(ann, 'john', JSON.stringify([[['In the beginning was the Word.', 1]]]))).status, 200);
+  assert.equal((await put(ann, 'john', JSON.stringify([[[42]]]))).status, 400);
+  assert.equal((await put(bob, 'john', JSON.stringify([[['x']]]))).status, 404);
+  const read = (token) => fetch(`${base}/api/bible/${version.id}/john/1`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  assert.deepEqual((await (await read(ann)).json()).verses, [['In the beginning was the Word.', 1]]);
+  assert.equal((await read(bob)).status, 404);
+  assert.equal((await read(null)).status, 404);
+  assert.ok((await json('GET', '/api/versions', ann)).data.versions.some((v) => v.id === version.id && v.mine));
+  assert.ok(!(await json('GET', '/api/versions', bob)).data.versions.some((v) => v.id === version.id));
+  // Notes can be made in it by its owner only.
+  const note = { book: 'john', chapter: 1, version: version.id, start: { verse: 1, word: 0 }, end: { verse: 1, word: 1 }, color: 'pink', quote: 'In the', body: '' };
+  assert.equal((await json('PUT', '/api/notes/note-esv-1', ann, note)).status, 200);
+  assert.equal((await json('PUT', '/api/notes/note-esv-2', bob, note)).status, 400);
+  assert.equal((await json('DELETE', `/api/my-versions/${version.id}`, ann)).status, 200);
+  assert.equal((await read(ann)).status, 404);
+});

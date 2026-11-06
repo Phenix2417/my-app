@@ -1,5 +1,5 @@
 // Bible Study — single-page app. No build step, no dependencies.
-import { openEpub, openText, ANCHOR_PREFIX } from './epub.js';
+import { openEpub, openText, parseBibleEpub, ANCHOR_PREFIX } from './epub.js';
 
 const COLORS = ['yellow', 'green', 'blue', 'pink', 'purple'];
 const LONG_PRESS_MS = 400;
@@ -243,7 +243,7 @@ async function loadChapter(book, chapter, version = state.version) {
   if (!chapterCache.has(key)) {
     const p = (async () => {
       let res;
-      try { res = await fetch(`/api/bible/${encodeURIComponent(version)}/${book}/${chapter}`); } catch { throw new OfflineError('You seem to be offline.'); }
+      try { res = await fetch(`/api/bible/${encodeURIComponent(version)}/${book}/${chapter}`, { headers: state.auth ? { Authorization: `Bearer ${state.auth.token}` } : {} }); } catch { throw new OfflineError('You seem to be offline.'); }
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Couldn't load this chapter.");
       return (await res.json()).verses;
     })();
@@ -2278,16 +2278,113 @@ function setVersion(id, { quiet = false } = {}) {
 }
 async function openVersionPicker() {
   const versions = await loadVersions();
-  const group = (title, list) => list.length ? [h('div', { class: 'section-label' }, title), h('div', { class: 'version-list', role: 'radiogroup', 'aria-label': title },
-    ...list.map((v) => h('button', { class: 'version-item', type: 'button', role: 'radio', 'aria-checked': String(v.id === state.version), lang: v.lang,
+  const item = (v) => h('div', { class: 'version-row' },
+    h('button', { class: 'version-item', type: 'button', role: 'radio', 'aria-checked': String(v.id === state.version), lang: v.lang,
       onclick: () => { closeSheet(); setVersion(v.id); } },
-      h('span', { class: 'version-short' }, v.short), h('span', { class: 'version-name' }, v.name), svg(ICONS.check))))] : [];
+    h('span', { class: 'version-short' }, v.short), h('span', { class: 'version-name' }, v.name), svg(ICONS.check)),
+    v.mine ? deleteNoteBtn(() => deleteMyVersion(v, closeSheet), `Delete ${v.short}`) : null);
+  const group = (title, list) => list.length ? [h('div', { class: 'section-label' }, title),
+    h('div', { class: 'version-list', role: 'radiogroup', 'aria-label': title }, ...list.map(item))] : [];
+  const builtIn = versions.filter((v) => !v.mine);
   const closeSheet = openSheet(() => [
     h('h2', {}, 'Bible version'),
-    ...group('English', versions.filter((v) => !/^zh/.test(v.lang))),
-    ...group('中文', versions.filter((v) => /^zh/.test(v.lang))),
-    h('p', { class: 'version-note' }, 'Highlights and notes stay with the version they were made in.'),
+    ...group('English', builtIn.filter((v) => !/^zh/.test(v.lang))),
+    ...group('中文', builtIn.filter((v) => /^zh/.test(v.lang))),
+    ...group('Your Bibles', versions.filter((v) => v.mine)),
+    h('button', { class: 'text-btn add-version', type: 'button', onclick: () => { closeSheet(); addBibleFromEpub(); } }, svg(ICONS.addBook), 'Add a Bible from an EPUB you own'),
+    h('p', { class: 'version-note' }, 'Highlights and notes stay with the version they were made in. A Bible you add is kept privately in your account; friends can\'t read it.'),
   ], { label: 'Bible version' });
+}
+
+async function deleteMyVersion(v, closePicker) {
+  if (!await confirmSheet({ title: `Delete ${v.short}?`, message: `${v.name}, and the highlights and notes you made in it, will be removed from your account.` })) return;
+  try {
+    await api('DELETE', `/api/my-versions/${v.id}`);
+    for (const [id, n] of Object.entries(state.mine.notes)) if (n.version === v.id) delete state.mine.notes[id];
+    saveMine();
+    closePicker();
+    await loadVersions();
+    if (state.version === v.id) setVersion('web'); else toast(`${v.short} deleted`);
+  } catch (e) { toast(e.message); }
+}
+
+// Add a Bible version from an EPUB the person owns: read it on the phone, show what was found, then keep it privately.
+async function addBibleFromEpub() {
+  const books = (await loadLibrary().catch(() => lib.books || [])).filter((b) => b.format === 'epub');
+  const input = h('input', { type: 'file', accept: '.epub,application/epub+zip', hidden: true, onchange: () => { const f = input.files[0]; if (f) { close(); checkBibleEpub(f.arrayBuffer(), f.name); } } });
+  const close = openSheet(() => [
+    h('h2', {}, 'Add a Bible'),
+    h('p', { class: 'confirm-text' }, 'Choose the EPUB of a Bible you own, from your phone, Google Drive or Dropbox, or one in your Books. The app reads its books, chapters and verses and shows you what it found before adding it.'),
+    h('button', { class: 'filled-btn', type: 'button', onclick: () => input.click() }, 'Choose an EPUB file'),
+    input,
+    books.length ? h('div', { class: 'section-label' }, 'From your books') : null,
+    ...books.map((b) => h('button', { class: 'version-item', type: 'button', onclick: () => {
+      close();
+      checkBibleEpub(authFetch(`/api/library/${b.id}/file`).then((r) => r.arrayBuffer()), b.title);
+    } }, svg(ICONS.books), h('span', { class: 'version-name' }, b.title))),
+  ], { label: 'Add a Bible' });
+}
+
+const KNOWN_VERSIONS = [[/english standard/i, 'ESV'], [/new international/i, 'NIV'], [/new american standard/i, 'NASB'], [/new king james/i, 'NKJV'],
+  [/christian standard/i, 'CSB'], [/new living/i, 'NLT'], [/new revised standard/i, 'NRSV'], [/revised standard/i, 'RSV'], [/king james/i, 'KJV'], [/amplified/i, 'AMP'], [/message/i, 'MSG']];
+async function checkBibleEpub(bufPromise, fileName) {
+  const status = h('p', { class: 'confirm-text' }, 'Reading your Bible…');
+  const body = h('div', {}, status);
+  const close = openSheet(() => [h('h2', {}, 'Add a Bible'), body], { label: 'Check Bible' });
+  let parsed;
+  try { parsed = await parseBibleEpub(await bufPromise, await loadBooks()); } catch (e) {
+    status.textContent = `This file couldn't be read as an EPUB (${e.message}).`; return;
+  }
+  const { data, report, lang } = parsed;
+  // Compare with the usual verse numbering (the built-in WEB) to see how well the layout was understood.
+  status.textContent = 'Checking chapters and verses…';
+  let chapters = 0, matched = 0;
+  const missing = [];
+  for (const b of state.books) {
+    const mine = data[b.id];
+    if (!mine?.some((c) => c?.length)) { missing.push(b.name); continue; }
+    const web = await loadBook(b.id).catch(() => null);
+    mine.forEach((vs, i) => {
+      if (!vs?.some((x) => x?.[0])) return;
+      chapters++;
+      const want = web?.[i]?.length || 0;
+      if (want && Math.abs(vs.length - want) <= 2) matched++;
+    });
+  }
+  const pct = chapters ? Math.round((matched / chapters) * 100) : 0;
+  const title = (parsed.title || fileName || 'My Bible').replace(/\.epub$/i, '');
+  const short = (KNOWN_VERSIONS.find(([re]) => re.test(title))?.[1]) || title.replace(/[^A-Za-z ]/g, '').split(/\s+/).filter((w) => w.length > 2).map((w) => w[0]).join('').toUpperCase().slice(0, 6) || 'MINE';
+  const sample = (book, c, v) => { const t = data[book]?.[c - 1]?.[v - 1]?.[0]; return t ? h('p', { class: 'bible-sample' }, h('b', {}, `${bookName(book)} ${c}:${v} `), t) : null; };
+  const nameIn = h('input', { value: title.slice(0, 80), maxlength: 80 });
+  const shortIn = h('input', { value: short, maxlength: 12 });
+  const good = report.verses > 0;
+  body.replaceChildren(...[
+    h('p', { class: 'bible-found' }, good
+      ? `Found ${66 - missing.length} of 66 books, ${chapters.toLocaleString()} chapters and ${report.verses.toLocaleString()} verses. ${pct}% of chapters match the usual verse numbering.`
+      : 'No Bible verses were found in this EPUB.'),
+    missing.length > 0 && missing.length < 66 ? h('p', { class: 'handle-sub' }, `Missing: ${missing.slice(0, 12).join(', ')}${missing.length > 12 ? '…' : ''}`) : null,
+    good && pct < 90 ? h('p', { class: 'error' }, "This ebook's layout wasn't fully understood, so some verses may be in the wrong place. Check the samples below.") : null,
+    ...(good ? [sample('genesis', 1, 1), sample('psalms', 23, 1), sample('john', 3, 16), sample('romans', 8, 28)].filter(Boolean) : []),
+    good ? h('label', { class: 'field' }, h('span', {}, 'Name'), nameIn) : null,
+    good ? h('label', { class: 'field' }, h('span', {}, 'Short name'), shortIn) : null,
+    h('div', { class: 'sheet-actions' },
+      h('span', { class: 'spacer' }),
+      h('button', { class: 'text-btn', type: 'button', onclick: close }, 'Cancel'),
+      good ? h('button', { class: 'filled-btn', type: 'button', onclick: async (e) => {
+        const btn = e.currentTarget; btn.disabled = true;
+        try {
+          const { version } = await api('POST', '/api/my-versions', { short: shortIn.value, name: nameIn.value, lang });
+          const ids = Object.keys(data);
+          for (let i = 0; i < ids.length; i++) {
+            btn.textContent = `Saving ${i + 1} / ${ids.length}…`;
+            await authFetch(`/api/my-versions/${version.id}/${ids[i]}`, { method: 'PUT', body: JSON.stringify(data[ids[i]].map((c) => c || [])) });
+          }
+          close();
+          await loadVersions();
+          setVersion(version.id);
+        } catch (err) { btn.disabled = false; btn.textContent = 'Add version'; toast(err.message); }
+      } }, 'Add version') : null),
+  ].filter((x) => x != null && x !== false && x !== 0)); // leave out the parts that don't apply
 }
 
 async function openPicker({ chapters = false } = {}) {

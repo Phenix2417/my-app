@@ -63,6 +63,16 @@ export function createLibraryStore({ dir }) {
       await fs.promises.rm(fileOf(userId, id), { force: true });
       await fs.promises.rm(coverOf(userId, id), { force: true });
     },
+    // A Bible version added from the person's own ebook: one JSON file per Bible book.
+    async saveVersionBook(userId, versionId, book, json) {
+      const dir = path.join(userDir(userId), 'versions', versionId);
+      await fs.promises.mkdir(dir, { recursive: true });
+      await fs.promises.writeFile(path.join(dir, `${book}.json`), json);
+    },
+    async readVersionBook(userId, versionId, book) {
+      try { return JSON.parse(await fs.promises.readFile(path.join(userDir(userId), 'versions', versionId, `${book}.json`), 'utf8')); } catch { return null; }
+    },
+    async removeVersion(userId, versionId) { await fs.promises.rm(path.join(userDir(userId), 'versions', versionId), { recursive: true, force: true }); },
     async read(userId, id, { cover = false } = {}) {
       const file = cover ? coverOf(userId, id) : fileOf(userId, id);
       try { const st = await fs.promises.stat(file); return { file, size: st.size }; } catch { return null; }

@@ -93,6 +93,16 @@ export function openDb(file) {
       updated_at INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS library_notes_by_book ON library_notes (user_id, book_id);
+
+    -- Bible versions a person added from an ebook they own (text kept privately in their library folder).
+    CREATE TABLE IF NOT EXISTS user_versions (
+      id TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      short TEXT NOT NULL,
+      name TEXT NOT NULL,
+      lang TEXT NOT NULL DEFAULT 'en',
+      created_at INTEGER NOT NULL
+    );
   `);
   // Databases created before display names existed get the column added.
   const cols = db.prepare('PRAGMA table_info(users)').all().map((c) => c.name);

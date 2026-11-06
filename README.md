@@ -20,6 +20,10 @@ Read the Bible, highlight passages, write notes, and see the notes your friends 
   NET, ASV, 新标点和合本 (简/繁) and 当代译本. The server fetches each chapter once and keeps it (`server/versions.js`).
   Highlights and notes remember the version they were made in. ESV and NIV aren't included: their publishers don't
   offer an open licence.
+  **Add a Bible from an EPUB you own** (in the version list) reads a Bible ebook on the phone — by verse ids such as
+  `v43003016` / `John.3.16` when the ebook has them, otherwise by its chapter and verse number markup — shows how many
+  books, chapters and verses were found and how well they match the usual numbering, with sample verses, then keeps it
+  privately in the person's account (`user_versions`, files in the library folder). Only its owner can read it.
 - **Dictionary** — select one word and tap **Dictionary** (or double-tap the word) for its pronunciation,
   Chinese meanings and English definitions. With several words selected, the selection is translated into Chinese
   (Youdao), with a button per word for its dictionary entry; inflected words also show their base form.
