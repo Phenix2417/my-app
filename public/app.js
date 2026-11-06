@@ -2075,9 +2075,20 @@ function toggleDictionary(bar, btn) {
 
 // Place the selection bubble just above the selected words (or below them if there's no room),
 // centred on the selection and kept on screen. Hidden while the selection is scrolled out of view.
+// The dictionary panel is sized to its content without the source credits, which wait just below: scroll down to see them.
+function fitDictionary(bar) {
+  const box = bar?.querySelector('.dict'), credit = box?.querySelector('.dict-credit');
+  if (!box || !credit) return;
+  box.style.maxHeight = '';
+  const cssMax = parseFloat(getComputedStyle(box).maxHeight) || Infinity;
+  const creditRoom = credit.offsetHeight + (parseFloat(getComputedStyle(credit).marginTop) || 0) + (parseFloat(getComputedStyle(credit).marginBottom) || 0);
+  const content = box.scrollHeight - creditRoom;
+  if (content < cssMax) box.style.maxHeight = `${Math.max(60, content)}px`;
+}
 function positionToolbar() {
   const bar = reader.toolbar;
   if (!bar || !state.selection) return;
+  fitDictionary(bar);
   const startEl = wordEl(state.selection.start), endEl = wordEl(state.selection.end);
   const area = visibleTextArea();
   if (!startEl || !endEl || !area) return;
