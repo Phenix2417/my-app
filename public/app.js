@@ -245,7 +245,17 @@ async function loadBook(id) {
   return bookCache.get(id);
 }
 // The Bible versions on offer (the server's list, remembered for offline use).
-const FALLBACK_VERSIONS = [{ id: 'web', short: 'WEB', name: 'World English Bible', year: 2000, lang: 'en', credit: 'World English Bible (public domain)' }];
+// The built-in versions (as the server lists them), so their names show even before the list has loaded.
+const FALLBACK_VERSIONS = [
+  { id: 'web', short: 'WEB', name: 'World English Bible', year: 2000, lang: 'en', credit: 'World English Bible (public domain)' },
+  { id: 'BSB', short: 'BSB', name: 'Berean Standard Bible', year: 2016, lang: 'en' },
+  { id: 'eng_kjv', short: 'KJV', name: 'King James Version', year: 1611, lang: 'en' },
+  { id: 'eng_net', short: 'NET', name: 'NET Bible', year: 2005, lang: 'en' },
+  { id: 'eng_asv', short: 'ASV', name: 'American Standard Version', year: 1901, lang: 'en' },
+  { id: 'cmn_cu1', short: '和合本', name: '新标点和合本（简体）', year: 1988, lang: 'zh-Hans' },
+  { id: 'cmn_cuv', short: '和合本(繁)', name: '新標點和合本（繁體）', year: 1988, lang: 'zh-Hant' },
+  { id: 'cmn_cbs', short: '当代译本', name: '圣经当代译本（简体）', year: 2011, lang: 'zh-Hans' },
+];
 // When a translation was first published, for the person's own Bibles (by their short name).
 const VERSION_YEARS = { ESV: 2001, NIV: 1978, NASB: 1971, NKJV: 1982, CSB: 2017, NLT: 1996, NRSV: 1989, RSV: 1952, KJV: 1611, AMP: 1965, MSG: 2002,
   和合本: 1919, 新译本: 1992, 当代译本: 1979, 思高本: 1968 };
@@ -258,12 +268,16 @@ async function loadVersions() {
     const has = (id) => state.versions.some((v) => v.id === id);
     if (!has(state.version)) { state.version = 'web'; store.set('version', 'web'); if (state.tab === 'read') renderReader(); }
     if (state.parallel && !has(state.parallel)) { state.parallel = null; store.set('parallel', null); if (state.tab === 'read') renderReader(); }
+    // The names may have been shown before the list arrived: show them as listed.
+    const label = document.querySelector('.r-version');
+    if (label) label.textContent = state.parallel && state.parallel !== state.version ? `${versionInfo().short} + ${versionInfo(state.parallel).short}` : versionInfo().short;
   } catch { /* keep the saved list */ }
   return state.versions || FALLBACK_VERSIONS;
 }
 // A version not in the list (not loaded yet, or not this account's) never shows its internal id.
-const versionInfo = (id = state.version) => (state.versions || FALLBACK_VERSIONS).find((v) => v.id === id)
-  || (/^u/.test(id) ? { id, short: tr('Bible'), name: tr('Bible'), lang: 'en' } : { id, short: id.toUpperCase(), name: id, lang: 'en' });
+const versionInfo = (id = state.version) => (state.versions || []).find((v) => v.id === id) || FALLBACK_VERSIONS.find((v) => v.id === id)
+  || (/^u/.test(id) ? { id, short: tr('Bible'), name: tr('Bible'), lang: 'en' }
+    : { id, short: String(id).replace(/^[a-z]{2,3}_/i, '').toUpperCase(), name: id, lang: /^(cmn|zho|zh)_/i.test(id) ? 'zh-Hans' : 'en' });
 const isChineseVersion = (id = state.version) => /^zh/.test(versionInfo(id).lang || '');
 // A chapter's verses ([[text, para?], ...]) in a version: the built-in World English Bible, or fetched (and kept by the server).
 const chapterCache = new Map();
