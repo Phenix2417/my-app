@@ -2342,7 +2342,7 @@ async function addBibleFromEpub() {
     const f = input.files[0];
     if (!f) return;
     close();
-    const bytes = f.arrayBuffer(); // read once: used to check the Bible and to put the file in Books
+    const bytes = f.arrayBuffer(); // read once: used to check the Bible and to put the file in the library
     checkBibleEpub(bytes, f.name, { name: f.name, type: f.type, size: f.size, bytes });
   } });
   const close = openSheet(() => [
@@ -2350,18 +2350,18 @@ async function addBibleFromEpub() {
     h('p', { class: 'confirm-text' }, 'Choose the EPUB of a Bible you own. The app reads its books, chapters and verses and shows you what it found before adding it.'),
     h('div', { class: 'add-bible-choices' },
       h('button', { class: 'filled-btn', type: 'button', onclick: () => input.click() }, svg(ICONS.addBook), 'From your phone or cloud'),
-      h('button', { class: 'tonal-btn', type: 'button', onclick: () => { close(); chooseBibleFromBooks(); } }, svg(ICONS.books), 'From your Books')),
+      h('button', { class: 'tonal-btn', type: 'button', onclick: () => { close(); chooseBibleFromBooks(); } }, svg(ICONS.books), 'From your library')),
     input,
   ], { label: 'Add a Bible' });
 }
-// Pick one of the EPUBs already in Books.
+// Pick one of the EPUBs already in the library.
 async function chooseBibleFromBooks() {
-  const grid = h('div', { class: 'lib-grid pick-grid' }, h('p', { class: 'empty-inline' }, 'Loading your books…'));
-  const close = openSheet(() => [h('h2', {}, 'Choose from your Books'), grid], { label: 'Choose from Books' });
+  const grid = h('div', { class: 'lib-grid pick-grid' }, h('p', { class: 'empty-inline' }, 'Loading your library…'));
+  const close = openSheet(() => [h('h2', {}, 'Choose from your library'), grid], { label: 'Choose from library' });
   let books;
   try { books = (await loadLibrary()).filter((b) => b.format === 'epub'); } catch { books = (lib.books || []).filter((b) => b.format === 'epub'); }
   if (!books.length) {
-    grid.replaceChildren(h('p', { class: 'empty-inline' }, 'There are no EPUB books in your library yet. Add the Bible from your phone or cloud instead; it will also be added to your Books.'));
+    grid.replaceChildren(h('p', { class: 'empty-inline' }, 'There are no EPUB books in your library yet. Add the Bible from your phone or cloud instead; it will also be added to your library.'));
     return;
   }
   grid.replaceChildren(...books.map((b) => h('button', { class: 'lib-open', type: 'button', 'aria-label': `Use ${b.title}`, onclick: () => {
@@ -2376,7 +2376,7 @@ const KNOWN_VERSIONS = [[/english standard|\bESV\b/i, 'ESV', 'English Standard V
   [/new revised standard|\bNRSV\b/i, 'NRSV', 'New Revised Standard Version'], [/revised standard|\bRSV\b/i, 'RSV', 'Revised Standard Version'],
   [/king james|\bKJV\b/i, 'KJV', 'King James Version'], [/amplified/i, 'AMP', 'Amplified Bible'], [/the message/i, 'MSG', 'The Message']];
 const KNOWN_CHINESE = [[/和合|\bCUV\b/i, '和合本', '和合本'], [/新译本|\bCNV\b/i, '新译本', '新译本'], [/当代|\bCCB\b/i, '当代译本', '当代译本'], [/思高/, '思高本', '思高本']];
-// file: set when the EPUB came from the phone (not from Books); it's then also put in Books, unless it's already there.
+// file: set when the EPUB came from the phone (not from the library); it's then also put in the library, unless it's already there.
 async function checkBibleEpub(bufPromise, fileName, file = null) {
   const status = h('p', { class: 'confirm-text' }, 'Reading your Bible…');
   const body = h('div', {}, status);
@@ -2461,7 +2461,7 @@ async function checkBibleEpub(bufPromise, fileName, file = null) {
           close();
           await loadVersions();
           setVersion(added[0].id);
-          if (file) addBooks([{ ...file, bytes: await file.bytes }]); // also keep the ebook in Books (unless it's already there)
+          if (file) addBooks([{ ...file, bytes: await file.bytes }]); // also keep the ebook in the library (unless it's already there)
         } catch (err) {
           // Don't leave half-saved versions behind.
           for (const v of added) await api('DELETE', `/api/my-versions/${v.id}`).catch(() => {});
@@ -2726,7 +2726,7 @@ function signOut(expired) {
   if (expired) toast('Please sign in again');
 }
 
-/* ---------------- Books: the person's own digital books ---------------- */
+/* ---------------- Library: the person's own digital books ---------------- */
 const BOOK_ACCEPT = '.epub,.pdf,.txt,application/epub+zip,application/pdf,text/plain';
 const lib = { books: null, opened: new Map(), covers: new Map(), current: null, saveTimer: null, notes: new Map(), chapter: 0, blocks: [] };
 const authHeaders = () => (state.auth ? { Authorization: `Bearer ${state.auth.token}` } : {});
@@ -2772,10 +2772,10 @@ async function renderLibrary() {
   const input = h('input', { type: 'file', accept: BOOK_ACCEPT, multiple: true, hidden: true, onchange: () => { addBooks([...input.files]); input.value = ''; } });
   const pick = () => input.click();
   mount(h('main', { class: 'screen library-page' },
-    h('div', { class: 'title-row' }, h('h1', {}, 'Books'), moreMenu([{ id: 'side-add-book', label: 'Add a book', icon: ICONS.addBook, action: pick }])),
+    h('div', { class: 'title-row' }, h('h1', {}, 'Library'), moreMenu([{ id: 'side-add-book', label: 'Add a book', icon: ICONS.addBook, action: pick }])),
     status, grid, input));
   const draw = (books, failed) => {
-    status.replaceChildren(failed ? h('p', { class: 'error' }, "Couldn't refresh your books. Showing the saved list.") : '');
+    status.replaceChildren(failed ? h('p', { class: 'error' }, "Couldn't refresh your library. Showing the saved list.") : '');
     if (!books?.length) {
       grid.replaceChildren(h('div', { class: 'lib-empty' },
         h('p', {}, 'Add EPUB, PDF or text books from your phone, Google Drive or Dropbox. They’re kept in your account, so they open on any device you sign in on.'),
@@ -2816,17 +2816,17 @@ async function addBooks(files) {
         if (book.coverPath) cover = await makeCover(await book.zip.read(book.coverPath));
       } catch { toast(`${file.name} couldn't be opened as an EPUB book.`); continue; }
     }
-    // Already in Books (the same file, whatever its name)? Then don't upload it again.
+    // Already in the library (the same file, whatever its name)? Then don't upload it again.
     try {
       const sha = await fingerprint(bytes);
       const { book: same } = sha ? await api('GET', `/api/library/find?sha=${sha}&size=${bytes.byteLength}`) : { book: null };
-      if (same) { toast(`“${same.title}” is already in your books`); continue; }
+      if (same) { toast(`“${same.title}” is already in your library`); continue; }
     } catch { /* couldn't check: the server still spots a duplicate on upload */ }
     toast(`Adding “${title}”…`);
     try {
       const q = new URLSearchParams({ format, title, author });
       const { book, duplicate } = await (await authFetch(`/api/library?${q}`, { method: 'POST', body: bytes })).json();
-      if (duplicate) { toast(`“${book.title}” is already in your books`); continue; } // same file, whatever its name
+      if (duplicate) { toast(`“${book.title}” is already in your library`); continue; } // same file, whatever its name
       if (cover) await authFetch(`/api/library/${book.id}/cover`, { method: 'PUT', body: cover }).catch(() => {});
       toast(`Added “${book.title}”`);
     } catch (e) { toast(e instanceof OfflineError ? "You're offline. Try again when you're connected." : `${title}: ${e.message}`); }
@@ -2855,7 +2855,7 @@ function bookOptions(b, { onSaved = renderLibrary, onDeleted = renderLibrary } =
       h('p', { class: 'handle-sub' }, `${b.format.toUpperCase()} · ${(b.size / 1048576).toFixed(b.size < 10485760 ? 1 : 0)} MB`),
       h('div', { class: 'sheet-actions' },
         h('button', { class: 'text-btn danger', type: 'button', onclick: async () => {
-          if (!await confirmSheet({ title: 'Delete this book?', message: `“${b.title}” and its highlights and notes will be removed from your books.` })) return;
+          if (!await confirmSheet({ title: 'Delete this book?', message: `“${b.title}” and its highlights and notes will be removed from your library.` })) return;
           try { await api('DELETE', `/api/library/${b.id}`); close(); toast('Book deleted'); onDeleted(); } catch (e) { toast(e.message); }
         } }, 'Delete'),
         h('span', { class: 'spacer' }),
@@ -2899,7 +2899,7 @@ async function renderBookReader() {
   const sizeBtn = barBtn('Text size', ICONS.sliders, () => { sizePanel.hidden = !sizePanel.hidden; sizeBtn.setAttribute('aria-expanded', String(!sizePanel.hidden)); });
   sizeBtn.setAttribute('aria-expanded', 'false');
   const topBar = h('header', { class: 'b-topbar' },
-    barBtn('Back to books', ICONS.back, toLibrary), h('span', { class: 'spacer' }),
+    barBtn('Back to library', ICONS.back, toLibrary), h('span', { class: 'spacer' }),
     barBtn('Book options', ICONS.more, () => bookOptions(b, { onSaved: () => { runEl.textContent = runEl.textContent.replace(/^[^·]*/, b.title + ' '); }, onDeleted: toLibrary })));
   const toolbar = h('nav', { class: 'b-toolbar', 'aria-label': 'Book' }, barBtn('Contents', ICONS.contents, () => showContents()),
     barBtn('Notes', ICONS.notes, () => showBookNotes()), sizeBtn);
@@ -2915,7 +2915,7 @@ async function renderBookReader() {
       lib.opened.set(b.id, book);
     }
   } catch (e) {
-    body.replaceChildren(h('p', { class: 'error' }, e instanceof OfflineError ? "You're offline. Books need a connection to open." : `This book couldn't be opened (${e.message}).`));
+    body.replaceChildren(h('p', { class: 'error' }, e instanceof OfflineError ? "You're offline. Books in your library need a connection to open." : `This book couldn't be opened (${e.message}).`));
     return;
   }
   if (state.tab !== 'book' || lib.current !== b) return;
@@ -3119,7 +3119,7 @@ function buildNav() {
       clearSelection(); state.tab = tab; render(); window.scrollTo(0, 0); // re-tapping Notes/Books/Friends refreshes
     } },
   h('span', { class: 'icon badge' }, svg(ICONS[tab])), label);
-  navEl = h('nav', { class: 'bottom-nav', 'aria-label': 'Main' }, item('read', 'Read'), item('notes', 'Notes'), item('books', 'Books'), item('friends', 'Friends'));
+  navEl = h('nav', { class: 'bottom-nav', 'aria-label': 'Main' }, item('read', 'Read'), item('notes', 'Notes'), item('books', 'Library'), item('friends', 'Friends'));
 }
 function updateBadge() {
   const b = navEl?.querySelector('[data-tab="friends"] .badge');
