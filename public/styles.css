@@ -492,3 +492,8 @@ body.bars-hidden .to-top.page-top { bottom: calc(20px + env(safe-area-inset-bott
 .mark.mine { color: var(--primary); }
 .mark svg { width: .8em; height: .8em; }
 .mark svg.line-icon { stroke-width: 2.2; }
+
+/* When a note was made or last edited, after its reference */
+.note-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; }
+.note-time { color: var(--muted); font-size: 14px; font-weight: 400; }
+.note-view-head h2 { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; }

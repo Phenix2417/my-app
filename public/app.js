@@ -293,12 +293,22 @@ function swatchRow(selected, onPick) {
   return row;
 }
 
+// "Today, 2:41 PM", "Nov 6, 2:41 PM" this year, "Nov 6, 2025" before; "Edited …" once changed after it was made.
+function noteTime(n) {
+  const edited = n.updatedAt && n.createdAt && n.updatedAt - n.createdAt > 60000;
+  const t = new Date((edited ? n.updatedAt : n.createdAt) || n.updatedAt || Date.now()), now = new Date();
+  const today = t.toDateString() === now.toDateString();
+  const opts = today ? { hour: 'numeric', minute: '2-digit' }
+    : t.getFullYear() === now.getFullYear() ? { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }
+    : { year: 'numeric', month: 'short', day: 'numeric' };
+  return h('span', { class: 'note-time', title: t.toLocaleString() }, `${edited ? 'Edited ' : ''}${today ? (edited ? 'today, ' : 'Today, ') : ''}${t.toLocaleString(undefined, opts)}`);
+}
 const editNoteBtn = (onclick) => h('button', { class: 'icon-btn edit-note', type: 'button', 'aria-label': 'Edit note', title: 'Edit note',
   onclick: (e) => { e.stopPropagation(); onclick(); } }, svg(ICONS.pencil));
 function noteCard(n, { onClick, friend, onEdit } = {}) {
   return h('div', { class: 'card' + (onClick ? ' clickable' : ''), onclick: onClick, tabindex: onClick ? 0 : null,
     onkeydown: onClick ? (e) => { if (e.key === 'Enter') onClick(); } : null },
-  h('div', { class: 'card-head' }, h('span', {}, ref(n)), friend ? h('span', { class: 'who', title: '@' + n.author.username }, dn(n.author)) : null,
+  h('div', { class: 'card-head' }, h('span', { class: 'note-title' }, ref(n), noteTime(n)), friend ? h('span', { class: 'who', title: '@' + n.author.username }, dn(n.author)) : null,
     onEdit ? editNoteBtn(onEdit) : null),
   h('div', { class: 'quote', dataset: { c: n.color } }, n.quote),
   n.body ? h('p', { class: 'note-body' }, noteBodyNodes(n.body)) : null);
@@ -352,7 +362,7 @@ async function openQuotedCommentary(q) {
 // An existing note opens to read (quotes are links); the pencil switches to the editor.
 function noteViewer(note) {
   openSheet((close) => [
-    h('div', { class: 'title-row note-view-head' }, h('h2', {}, ref(note)), editNoteBtn(() => { close(); noteEditor(note); })),
+    h('div', { class: 'title-row note-view-head' }, h('h2', {}, ref(note), noteTime(note)), editNoteBtn(() => { close(); noteEditor(note); })),
     h('div', { class: 'quote', dataset: { c: note.color } }, note.quote),
     note.body ? h('p', { class: 'note-body' }, noteBodyNodes(note.body)) : null,
   ], { label: 'Note' });
