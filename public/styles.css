@@ -153,7 +153,7 @@ h1 { font-size: 28px; font-weight: 500; margin: 18px 0 24px; }
 .scrim { position: fixed; inset: 0; z-index: 30; background: var(--scrim); display: flex; align-items: flex-end; justify-content: center; animation: fade .15s; }
 .sheet { width: 100%; max-width: 680px; max-height: 88vh; overflow: auto; background: var(--surface-2); border-radius: 28px 28px 0 0;
   padding: 10px 20px calc(24px + env(safe-area-inset-bottom)); animation: up .2s ease-out; }
-.sheet::before { content: ""; display: block; width: 32px; height: 4px; border-radius: 2px; background: var(--muted); opacity: .5; margin: 4px auto 14px; }
+.sheet::before { content: ""; display: block; width: 36px; height: 5px; border-radius: 3px; background: var(--muted); opacity: .5; margin: 2px auto 14px; cursor: grab; }
 .sheet h2 { font-size: 22px; font-weight: 500; margin: 4px 0 16px; }
 .sheet .card { background: var(--surface); }
 @keyframes fade { from { opacity: 0; } }

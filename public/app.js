@@ -322,6 +322,46 @@ function toast(msg) {
 }
 
 const openSheets = new Map(); // label -> close(); a sheet is never stacked on a copy of itself
+// Slide a sheet down to close it: from its top bar at any time, or from anywhere once it's scrolled to the top.
+function enableSwipeToClose(sheet, scrim, close) {
+  let g = null;
+  const scrolledInside = (el) => { for (; el && el !== sheet; el = el.parentElement) if (el.scrollTop > 0) return true; return sheet.scrollTop > 0; };
+  const start = (y, target) => {
+    const onBar = y - sheet.getBoundingClientRect().top < 40;
+    g = { y, t: performance.now(), dy: 0, onBar, ok: onBar || !scrolledInside(target), dragging: false };
+  };
+  const move = (y) => {
+    if (!g || !g.ok) return false;
+    g.dy = y - g.y;
+    if (!g.dragging) { if (g.dy < 8) return false; g.dragging = true; sheet.style.transition = 'none'; }
+    const d = Math.max(0, g.dy);
+    sheet.style.transform = `translateY(${d}px)`;
+    scrim.style.backgroundColor = `color-mix(in srgb, var(--scrim) ${Math.max(0, 100 - d / 4)}%, transparent)`;
+    return true;
+  };
+  const end = () => {
+    if (!g?.dragging) { g = null; return; }
+    const fast = g.dy / Math.max(1, performance.now() - g.t) > 0.6;
+    const far = g.dy > Math.min(140, sheet.offsetHeight * 0.3);
+    sheet.style.transition = 'transform .2s ease';
+    if (fast || far) { sheet.style.transform = 'translateY(100%)'; setTimeout(close, 180); }
+    else { sheet.style.transform = ''; scrim.style.backgroundColor = ''; }
+    g = null;
+  };
+  sheet.addEventListener('touchstart', (e) => start(e.touches[0].clientY, e.target), { passive: true });
+  sheet.addEventListener('touchmove', (e) => { if (move(e.touches[0].clientY)) e.preventDefault(); }, { passive: false });
+  sheet.addEventListener('touchend', end);
+  sheet.addEventListener('touchcancel', end);
+  // With a mouse: drag the top bar.
+  sheet.addEventListener('pointerdown', (e) => {
+    if (e.pointerType !== 'mouse' || e.clientY - sheet.getBoundingClientRect().top >= 40) return;
+    start(e.clientY, e.target);
+    const mm = (ev) => move(ev.clientY);
+    const up = () => { end(); window.removeEventListener('pointermove', mm); window.removeEventListener('pointerup', up); };
+    window.addEventListener('pointermove', mm); window.addEventListener('pointerup', up);
+  });
+}
+
 function openSheet(build, { label, onClose } = {}) {
   const key = label || 'Dialog';
   openSheets.get(key)?.();
@@ -338,6 +378,7 @@ function openSheet(build, { label, onClose } = {}) {
   scrim.addEventListener('click', (e) => { if (e.target === scrim) close(); });
   document.addEventListener('keydown', onKey);
   sheet.append(...[build(close)].flat().filter((x) => x != null && x !== false));
+  enableSwipeToClose(sheet, scrim, close);
   document.body.append(scrim);
   sheet.querySelector('[autofocus]')?.focus();
   return close;
