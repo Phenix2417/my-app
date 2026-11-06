@@ -39,6 +39,7 @@ const svg = (d) => {
 // text with a speech bubble, and Edit commentary list the same pages with a pen.
 // The same purpose always uses the same icon.
 const ICONS = {
+  crown: '<path d="M11.562 3.266a.5.5 0 0 1 .876 0L15.39 8.87a1 1 0 0 0 1.516.294L21.183 5.5a.5.5 0 0 1 .798.519l-2.834 10.246a1 1 0 0 1-.956.734H5.81a1 1 0 0 1-.957-.734L2.02 6.02a.5.5 0 0 1 .798-.519l4.276 3.664a1 1 0 0 0 1.516-.294z"/><path d="M5 21h14"/>',
   read: '<path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/>',
   notes: '<path d="M15.6 3.9H5.7a1.8 1.8 0 0 0-1.8 1.8v12.6a1.8 1.8 0 0 0 1.8 1.8h12.6a1.8 1.8 0 0 0 1.8-1.8V8.4Z"/><path d="M14.7 3.9v3.6a1.8 1.8 0 0 0 1.8 1.8h3.6"/>', // Lucide sticky-note at 90%, so its closed square isn't heavier than the open icons beside it
   books: '<path d="M2 21h20"/><rect width="5" height="13" x="3" y="5" rx="1"/><rect width="5" height="15" x="8" y="3" rx="1"/><path d="M8 7h5"/><path d="M21.3 16.7c.1.5-.2 1.1-.7 1.2l-2 .5c-.5.1-1.1-.2-1.2-.7L14.2 5.6c-.1-.5.2-1.1.7-1.2l2-.5c.5-.1 1.1.2 1.2.7Z"/>', // a bookshelf (Lucide's library, standing on a shelf)
@@ -91,7 +92,8 @@ const state = {
   parallel: store.get('parallel', null), // a second version shown under each verse (reading only), or null
   versions: store.get('versions', null),
   showFriends: store.get('showFriends', true),
-  markWords: store.get('markWords', true), // colour words with a Bible dictionary entry / Bible wiki article
+  markWords: store.get('markWords', true),
+  divineNames: store.get('divineNames', true), // colour God's names and titles // colour words with a Bible dictionary entry / Bible wiki article
   fontSize: store.get('fontSize', 22),
   notesTab: 'mine',
   mine: { notes: {}, queue: [] }, // my notes + pending sync ops
@@ -580,6 +582,7 @@ async function renderReader() {
       { id: 'show-friends', label: "Friends' notes", icon: ICONS.friendsNotes, toggle: { get: () => state.showFriends, set: setShowFriends } },
       { id: 'open-commentary', label: 'Commentary', icon: ICONS.commentaryBooks, action: () => openCommentaryPage(topVisibleVerse()) },
       { id: 'bible-version', label: 'Bible versions', icon: ICONS.versions, action: () => openVersionPicker() },
+      { id: 'divine-names', label: 'Divine names', icon: ICONS.crown, toggle: { get: () => state.divineNames, set: (on) => { state.divineNames = on; store.set('divineNames', on); markDivineNames(); } } },
       { id: 'word-marks', label: 'Dictionary counts', icon: ICONS.dictionary, toggle: { get: () => state.markWords, set: (on) => { state.markWords = on; store.set('markWords', on); markBibleWords(); } } },
       { id: 'text-size', label: 'Text size', icon: ICONS.serifAa, popover: textSizeControl },
     ])),
@@ -619,9 +622,55 @@ async function renderReader() {
   if (state.pos.book !== book || state.pos.chapter !== chapter || state.tab !== 'read' || state.version !== version) return;
   buildVerses(data || [], alt, parallel);
   paint();
+  markDivineNames();
   markBibleWords();
   if (reader.slideFrom) { body.classList.add(reader.slideFrom > 0 ? 'slide-from-right' : 'slide-from-left'); reader.slideFrom = 0; }
   refreshChapterFriendNotes().then(() => { if (reader.body === body) paint(); });
+}
+
+// God's names and titles, coloured in the text (English and Chinese). Phrases are matched word by word within a verse.
+const DIVINE_WORDS = new Set(('God LORD Lord GOD Yahweh YAHWEH Jehovah JEHOVAH Jesus Christ Messiah Immanuel Emmanuel Almighty Spirit Father Son '
+  + 'Word Lamb Redeemer Savior Saviour Comforter Counselor Counsellor Advocate Alpha Omega Elohim Adonai Shaddai').split(' '));
+const DIVINE_PHRASES = ['Holy One', 'Most High', 'Son of Man', 'Son of God', 'I AM', 'King of kings', 'Lord of lords', 'Prince of Peace',
+  'Ancient of Days', 'Mighty God', 'Everlasting Father', 'Good Shepherd', 'Lion of the tribe of Judah', 'Bright and Morning Star',
+  'Holy One of Israel', 'Lord of Armies', 'LORD of Armies', 'Yahweh of Armies', 'God Almighty'].map((x) => x.split(' ')).sort((a, b) => b.length - a.length);
+const DIVINE_ZH = ['耶和华', '耶和華', '以马内利', '以馬內利', '弥赛亚', '彌賽亞', '全能者', '至高者', '圣灵', '聖靈', '上帝', '耶稣', '耶穌', '基督',
+  '天父', '圣子', '聖子', '神', '主'].sort((a, b) => b.length - a.length); // simplified and traditional
+// Words that look divine but aren't: a person addressed as "Son," / "Father," at the start of a sentence, "Father Abraham";
+// 别神/众神/假神 and 主人/主母/主意.
+const ZH_NOT_GOD = { '神': { before: /[别別众眾假诸諸外]$/, after: /^[像]/ }, '主': { before: /[买買地财財债債卖賣物]$/, after: /^[人母意张張顾顧管妇婦席子]/ } };
+function markDivineNames() {
+  for (const x of reader.words) x.el.classList.remove('divine');
+  if (!state.divineNames || reader.mode !== 'bible') return;
+  const byVerse = new Map(); // v -> words in order (the second version has its own v + 0.5)
+  for (const x of reader.words) { if (!byVerse.has(x.v)) byVerse.set(x.v, []); byVerse.get(x.v).push(x); }
+  for (const [v, list] of byVerse) {
+    const zh = isChineseVersion(Number.isInteger(v) ? state.version : reader.altVersion);
+    if (zh) {
+      const chars = list.map((x) => x.el.textContent).join('');
+      if (chars.length !== list.length) continue; // one character per token in Chinese text
+      for (let i = 0; i < chars.length;) {
+        const name = DIVINE_ZH.find((n) => chars.startsWith(n, i));
+        const not = name && ZH_NOT_GOD[name];
+        if (name && !(not && (not.before.test(chars.slice(0, i)) || not.after.test(chars.slice(i + name.length))))) {
+          for (let k = i; k < i + name.length; k++) list[k].el.classList.add('divine');
+          i += name.length;
+        } else i++;
+      }
+      continue;
+    }
+    const bare = list.map((x) => x.el.textContent.replace(/[’']s$/, '').replace(/^[^A-Za-z]+|[^A-Za-z]+$/g, ''));
+    for (let i = 0; i < list.length; i++) {
+      const phrase = DIVINE_PHRASES.find((p) => p.every((w, k) => bare[i + k] === w));
+      if (phrase) { for (let k = 0; k < phrase.length; k++) list[i + k].el.classList.add('divine'); i += phrase.length - 1; continue; }
+      if (!DIVINE_WORDS.has(bare[i])) continue;
+      const text = list[i].el.textContent;
+      const starts = i === 0 || /[.?!:;“"‘(—]$/.test(list[i - 1].el.textContent) || /^[“"‘(]/.test(text);
+      if (/^(Son|Father|Word|Lamb|Spirit|Counselor|Advocate)$/.test(bare[i]) && starts && /,$/.test(text)) continue; // "Son, you are…"
+      if (bare[i] === 'Father' && bare[i + 1] === 'Abraham') continue;
+      list[i].el.classList.add('divine');
+    }
+  }
 }
 
 // Mark the words that are in the Bible dictionaries (圣经辞典/Bible Dictionary, Easton, ISBE, Bible wiki) with a small
