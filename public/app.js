@@ -2338,7 +2338,13 @@ async function deleteMyVersion(v, closePicker) {
 
 // Add a Bible version from an EPUB the person owns: read it on the phone, show what was found, then keep it privately.
 async function addBibleFromEpub() {
-  const input = h('input', { type: 'file', accept: '.epub,application/epub+zip', hidden: true, onchange: () => { const f = input.files[0]; if (f) { close(); checkBibleEpub(f.arrayBuffer(), f.name, f); } } });
+  const input = h('input', { type: 'file', accept: '.epub,application/epub+zip', hidden: true, onchange: () => {
+    const f = input.files[0];
+    if (!f) return;
+    close();
+    const bytes = f.arrayBuffer(); // read once: used to check the Bible and to put the file in Books
+    checkBibleEpub(bytes, f.name, { name: f.name, type: f.type, size: f.size, bytes });
+  } });
   const close = openSheet(() => [
     h('h2', {}, 'Add a Bible'),
     h('p', { class: 'confirm-text' }, 'Choose the EPUB of a Bible you own. The app reads its books, chapters and verses and shows you what it found before adding it.'),
@@ -2455,7 +2461,7 @@ async function checkBibleEpub(bufPromise, fileName, file = null) {
           close();
           await loadVersions();
           setVersion(added[0].id);
-          if (file) addBooks([file]); // also keep the ebook in Books (unless it's already there)
+          if (file) addBooks([{ ...file, bytes: await file.bytes }]); // also keep the ebook in Books (unless it's already there)
         } catch (err) {
           // Don't leave half-saved versions behind.
           for (const v of added) await api('DELETE', `/api/my-versions/${v.id}`).catch(() => {});
@@ -2792,23 +2798,26 @@ async function fingerprint(buf) {
   try { return [...new Uint8Array(await crypto.subtle.digest('SHA-256', buf))].map((b) => b.toString(16).padStart(2, '0')).join(''); } catch { return null; }
 }
 // The phone's file picker offers files on the phone and in Google Drive, Dropbox, etc.; each is copied into the account.
+// files: File objects, or { name, type, size, bytes } when the file was already read (a phone may not let a file
+// from the cloud be read twice).
 async function addBooks(files) {
   for (const file of files) {
     const format = formatOf(file);
     if (!format) { toast(`${file.name}: only EPUB, PDF and text files can be added.`); continue; }
     if (file.size > 60 * 1024 * 1024) { toast(`${file.name} is larger than 60 MB.`); continue; }
+    // Read the file once; everything below uses these bytes.
+    let bytes;
+    try { bytes = file.bytes || await file.arrayBuffer(); } catch { toast(`${file.name} couldn't be read. Try choosing it again.`); continue; }
     let title = file.name.replace(/\.[^.]+$/, '').replace(/[_]+/g, ' ').trim(), author = '', cover = null;
     if (format === 'epub') {
       try {
-        const book = await openEpub(await file.arrayBuffer());
+        const book = await openEpub(bytes);
         title = book.title || title; author = book.author || '';
         if (book.coverPath) cover = await makeCover(await book.zip.read(book.coverPath));
       } catch { toast(`${file.name} couldn't be opened as an EPUB book.`); continue; }
     }
     // Already in Books (the same file, whatever its name)? Then don't upload it again.
-    let bytes;
     try {
-      bytes = await file.arrayBuffer();
       const sha = await fingerprint(bytes);
       const { book: same } = sha ? await api('GET', `/api/library/find?sha=${sha}&size=${bytes.byteLength}`) : { book: null };
       if (same) { toast(`“${same.title}” is already in your books`); continue; }
@@ -2816,7 +2825,7 @@ async function addBooks(files) {
     toast(`Adding “${title}”…`);
     try {
       const q = new URLSearchParams({ format, title, author });
-      const { book, duplicate } = await (await authFetch(`/api/library?${q}`, { method: 'POST', body: bytes || file })).json();
+      const { book, duplicate } = await (await authFetch(`/api/library?${q}`, { method: 'POST', body: bytes })).json();
       if (duplicate) { toast(`“${book.title}” is already in your books`); continue; } // same file, whatever its name
       if (cover) await authFetch(`/api/library/${book.id}/cover`, { method: 'PUT', body: cover }).catch(() => {});
       toast(`Added “${book.title}”`);
