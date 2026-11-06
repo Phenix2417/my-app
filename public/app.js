@@ -1,4 +1,5 @@
 // Bible Study — single-page app. No build step, no dependencies.
+import { openEpub, openText, ANCHOR_PREFIX } from './epub.js';
 
 const COLORS = ['yellow', 'green', 'blue', 'pink', 'purple'];
 const LONG_PRESS_MS = 400;
@@ -40,6 +41,10 @@ const ICONS = {
   copy: '<rect x="8.5" y="8.5" width="12" height="12" rx="2"/><path d="M15.5 8.5V5a1.5 1.5 0 0 0-1.5-1.5H5A1.5 1.5 0 0 0 3.5 5v9A1.5 1.5 0 0 0 5 15.5h3.5"/>',
   dictionary: '<path d="M12 7C10 5.4 6.8 5 2.8 5.8v12.6c4-.8 7.2-.4 9.2 1.2 2-1.6 5.2-2 9.2-1.2V5.8C17.2 5 14 5.4 12 7z"/><path d="M12 7v12.6"/><circle cx="16.5" cy="12.5" r="3.2"/><path d="M18.8 14.8l2.1 2.1"/>',
   pencil: '<path d="M4.5 19.5l.9-4 10.8-10.8a1.9 1.9 0 0 1 2.7 0l.4.4a1.9 1.9 0 0 1 0 2.7L8.5 18.6z"/><path d="M14.6 6.3l3.1 3.1"/>',
+  // Books: tab (filled, like the other tabs), add a book, and a book's contents.
+  books: 'M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H8V4h12v12zM10 9h8v2h-8zm0 3h4v2h-4zm0-6h8v2h-8z',
+  addBook: '<path d="M5 4.5A1.5 1.5 0 0 1 6.5 3H17v12H6.5A1.5 1.5 0 0 0 5 16.5z"/><path d="M5 16.5A1.5 1.5 0 0 0 6.5 18H11"/><path d="M18 15v6M15 18h6"/>',
+  contents: '<path d="M8 6h12M8 12h12M8 18h12"/><circle cx="4" cy="6" r=".9" fill="currentColor"/><circle cx="4" cy="12" r=".9" fill="currentColor"/><circle cx="4" cy="18" r=".9" fill="currentColor"/>',
   serifAa: '<text x="1.5" y="19.5" font-family="Georgia,\'Noto Serif\',serif" font-size="17" font-weight="700" fill="currentColor" stroke="none">A</text><text x="13.5" y="19.5" font-family="Georgia,\'Noto Serif\',serif" font-size="12" font-weight="700" fill="currentColor" stroke="none">a</text>',
   read: 'M21 5c-1.1-.35-2.3-.5-3.5-.5-1.95 0-4.05.4-5.5 1.5-1.45-1.1-3.55-1.5-5.5-1.5S2.45 4.9 1 6v14.65c0 .25.25.5.5.5.1 0 .15-.05.25-.05C3.1 20.45 5.05 20 6.5 20c1.95 0 4.05.4 5.5 1.5 1.35-.85 3.8-1.5 5.5-1.5 1.65 0 3.35.3 4.75 1.05.1.05.15.05.25.05.25 0 .5-.25.5-.5V6c-.6-.45-1.25-.75-2-1zm0 13.5c-1.1-.35-2.3-.5-3.5-.5-1.7 0-4.15.65-5.5 1.5V8c1.35-.85 3.8-1.5 5.5-1.5 1.2 0 2.4.15 3.5.5v11.5zM17.5 10.5c.88 0 1.73.09 2.5.26V9.24c-.79-.15-1.64-.24-2.5-.24-1.7 0-3.24.29-4.5.83v1.66c1.13-.64 2.7-.99 4.5-.99zM13 12.49v1.66c1.13-.64 2.7-.99 4.5-.99.88 0 1.73.09 2.5.26V11.9c-.79-.15-1.64-.24-2.5-.24-1.7 0-3.24.3-4.5.83zM17.5 14.33c-1.7 0-3.24.29-4.5.83v1.66c1.13-.64 2.7-.99 4.5-.99.88 0 1.73.09 2.5.26v-1.52c-.79-.16-1.64-.24-2.5-.24z',
   notes: 'M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h10l6-6V5c0-1.1-.9-2-2-2zM5 19V5h14v9h-5v5H5zm2-12h10v2H7zm0 4h10v2H7zm0 4h5v2H7z',
@@ -1543,6 +1548,7 @@ function textSizeControl() {
     store.set('fontSize', state.fontSize);
     label.textContent = `${state.fontSize}`;
     reader.body?.style.setProperty('--verse-size', `${state.fontSize}px`);
+    document.querySelector('.book-body')?.style.setProperty('--verse-size', `${state.fontSize}px`);
     positionHandles(); positionToolbar();
   };
   return [
@@ -2298,26 +2304,266 @@ function signOut(expired) {
   if (expired) toast('Please sign in again');
 }
 
+/* ---------------- Books: the person's own digital books ---------------- */
+const BOOK_ACCEPT = '.epub,.pdf,.txt,application/epub+zip,application/pdf,text/plain';
+const lib = { books: null, opened: new Map(), covers: new Map(), current: null, saveTimer: null };
+const authHeaders = () => (state.auth ? { Authorization: `Bearer ${state.auth.token}` } : {});
+async function authFetch(path, opts = {}) {
+  let res;
+  try { res = await fetch(path, { ...opts, headers: { ...authHeaders(), ...(opts.headers || {}) } }); } catch { throw new OfflineError('You seem to be offline.'); }
+  if (res.status === 401 && state.auth) { signOut(true); throw new Error('Signed out'); }
+  if (!res.ok) { const d = await res.json().catch(() => ({})); const e = new Error(d.error || `Request failed (${res.status})`); e.status = res.status; throw e; }
+  return res;
+}
+const formatOf = (file) => {
+  const ext = file.name.split('.').pop().toLowerCase();
+  return { epub: 'epub', pdf: 'pdf', txt: 'txt' }[ext] || { 'application/epub+zip': 'epub', 'application/pdf': 'pdf', 'text/plain': 'txt' }[file.type] || null;
+};
+const bookProgress = (b) => (b.position?.progress != null ? Math.round(b.position.progress * 100) : null);
+// A generated cover for books without one: the title on a colour chosen from it.
+const TILE_COLORS = ['#3d5a80', '#7b4b94', '#2f6f62', '#9c4a3c', '#5b6b2f', '#8a5a2b', '#38577a', '#6d3f5b'];
+function bookTile(b) {
+  let hsh = 0; for (const ch of b.title) hsh = (hsh * 31 + ch.codePointAt(0)) >>> 0;
+  return h('div', { class: 'lib-tile', style: `background:${TILE_COLORS[hsh % TILE_COLORS.length]}` },
+    h('span', { class: 'lib-tile-title' }, b.title), b.author ? h('span', { class: 'lib-tile-author' }, b.author) : null,
+    h('span', { class: 'lib-format' }, b.format.toUpperCase()));
+}
+function coverImg(b) {
+  const box = h('div', { class: 'lib-cover' }, bookTile(b));
+  if (!b.hasCover) return box;
+  const show = (url) => box.replaceChildren(h('img', { src: url, alt: '' }));
+  if (lib.covers.has(b.id)) show(lib.covers.get(b.id));
+  else authFetch(`/api/library/${b.id}/cover`).then((r) => r.blob()).then((blob) => { const u = URL.createObjectURL(blob); lib.covers.set(b.id, u); show(u); }).catch(() => {});
+  return box;
+}
+
+async function loadLibrary() {
+  const { books } = await api('GET', '/api/library');
+  lib.books = books;
+  store.set(`library.${uid()}`, books);
+  return books;
+}
+
+async function renderLibrary() {
+  const grid = h('div', { class: 'lib-grid' });
+  const status = h('div');
+  const input = h('input', { type: 'file', accept: BOOK_ACCEPT, multiple: true, hidden: true, onchange: () => { addBooks([...input.files]); input.value = ''; } });
+  const pick = () => input.click();
+  mount(h('main', { class: 'screen library-page' },
+    h('div', { class: 'title-row' }, h('h1', {}, 'Books'), h('button', { class: 'text-btn', onclick: pick }, 'Add')),
+    status, grid, input,
+    sideDock([{ id: 'side-add-book', label: 'Add a book', icon: ICONS.addBook, action: pick }])));
+  const draw = (books, failed) => {
+    status.replaceChildren(failed ? h('p', { class: 'error' }, "Couldn't refresh your books. Showing the saved list.") : '');
+    if (!books?.length) {
+      grid.replaceChildren(h('div', { class: 'lib-empty' },
+        h('p', {}, 'Add EPUB, PDF or text books from your phone, Google Drive or Dropbox. They’re kept in your account, so they open on any device you sign in on.'),
+        h('button', { class: 'filled-btn', onclick: pick }, 'Add a book')));
+      return;
+    }
+    grid.replaceChildren(...books.map((b) => h('div', { class: 'lib-card' },
+      h('button', { class: 'lib-open', type: 'button', 'aria-label': `Open ${b.title}`, onclick: () => openLibraryBook(b) },
+        coverImg(b),
+        h('span', { class: 'lib-title' }, b.title),
+        h('span', { class: 'lib-meta' }, [b.author, bookProgress(b) != null ? `${bookProgress(b)}%` : null].filter(Boolean).join(' · '))),
+      h('button', { class: 'icon-btn lib-more', type: 'button', 'aria-label': `Options for ${b.title}`, title: 'Book options', onclick: () => bookOptions(b) }, '⋯'))));
+  };
+  draw(lib.books || store.get(`library.${uid()}`, null));
+  try { draw(await loadLibrary()); } catch { if (state.tab === 'books') draw(lib.books || store.get(`library.${uid()}`, null), true); }
+}
+
+// The phone's file picker offers files on the phone and in Google Drive, Dropbox, etc.; each is copied into the account.
+async function addBooks(files) {
+  for (const file of files) {
+    const format = formatOf(file);
+    if (!format) { toast(`${file.name}: only EPUB, PDF and text files can be added.`); continue; }
+    if (file.size > 60 * 1024 * 1024) { toast(`${file.name} is larger than 60 MB.`); continue; }
+    let title = file.name.replace(/\.[^.]+$/, '').replace(/[_]+/g, ' ').trim(), author = '', cover = null;
+    if (format === 'epub') {
+      try {
+        const book = await openEpub(await file.arrayBuffer());
+        title = book.title || title; author = book.author || '';
+        if (book.coverPath) cover = await makeCover(await book.zip.read(book.coverPath));
+      } catch { toast(`${file.name} couldn't be opened as an EPUB book.`); continue; }
+    }
+    toast(`Adding “${title}”…`);
+    try {
+      const q = new URLSearchParams({ format, title, author });
+      const { book } = await (await authFetch(`/api/library?${q}`, { method: 'POST', body: file })).json();
+      if (cover) await authFetch(`/api/library/${book.id}/cover`, { method: 'PUT', body: cover }).catch(() => {});
+      toast(`Added “${book.title}”`);
+    } catch (e) { toast(e instanceof OfflineError ? "You're offline. Try again when you're connected." : `${title}: ${e.message}`); }
+  }
+  if (state.tab === 'books') renderLibrary();
+}
+// A small JPEG of the book's cover for the library grid.
+async function makeCover(bytes) {
+  if (!bytes) return null;
+  const url = URL.createObjectURL(new Blob([bytes]));
+  try {
+    const img = new Image(); img.src = url; await img.decode();
+    const w = 360, hgt = Math.round(w * img.naturalHeight / img.naturalWidth) || 540;
+    const c = document.createElement('canvas'); c.width = w; c.height = Math.min(hgt, 720);
+    c.getContext('2d').drawImage(img, 0, 0, w, hgt);
+    return await new Promise((r) => c.toBlob(r, 'image/jpeg', 0.85));
+  } catch { return null; } finally { URL.revokeObjectURL(url); }
+}
+
+function bookOptions(b) {
+  openSheet((close) => {
+    const input = h('input', { value: b.title, maxlength: 200, required: true });
+    return [
+      h('h2', {}, 'Book'),
+      h('label', { class: 'field' }, h('span', {}, 'Title'), input),
+      h('p', { class: 'handle-sub' }, `${b.format.toUpperCase()} · ${(b.size / 1048576).toFixed(b.size < 10485760 ? 1 : 0)} MB`),
+      h('div', { class: 'sheet-actions' },
+        h('button', { class: 'text-btn danger', type: 'button', onclick: async () => {
+          if (!confirm(`Delete “${b.title}” from your books?`)) return;
+          try { await api('DELETE', `/api/library/${b.id}`); close(); toast('Book deleted'); renderLibrary(); } catch (e) { toast(e.message); }
+        } }, 'Delete'),
+        h('span', { class: 'spacer' }),
+        h('button', { class: 'text-btn', type: 'button', onclick: close }, 'Cancel'),
+        h('button', { class: 'filled-btn', type: 'button', onclick: async () => {
+          try { await api('PUT', `/api/library/${b.id}`, { title: input.value }); close(); renderLibrary(); } catch (e) { toast(e.message); }
+        } }, 'Save')),
+    ];
+  }, { label: 'Book options' });
+}
+
+async function openLibraryBook(b) {
+  if (b.format === 'pdf') { // the phone's own PDF viewer, through a short-lived link
+    const win = window.open('', '_blank');
+    try {
+      const { url } = await api('POST', `/api/library/${b.id}/link`);
+      if (win) win.location.href = url; else location.href = url;
+    } catch (e) { win?.close(); toast(e.message); }
+    return;
+  }
+  lib.current = b;
+  state.tab = 'book';
+  render();
+}
+
+// Reading an EPUB or text book: one chapter at a time, like the Bible reader.
+async function renderBookReader() {
+  const b = lib.current;
+  if (!b) { state.tab = 'books'; return render(); }
+  const titleEl = h('div', { class: 'b-chapter' });
+  const head = h('header', { class: 'c-head b-head' }, h('div', { class: 'c-titlebar' }, h('h1', {}, b.title)), titleEl);
+  const body = h('div', { class: 'book-body', style: `--verse-size:${state.fontSize}px` }, h('p', { class: 'empty-inline' }, 'Opening…'));
+  const scroller = h('div', { class: 'c-scroll b-scroll', tabindex: 0 }, body);
+  const back = h('button', { class: 'back-pill', type: 'button', onclick: () => { saveBookPosition(true); state.tab = 'books'; render(); } }, '‹ Books');
+  const screen = h('main', { class: 'screen commentary-page book-page' }, head, scroller, back,
+    sideDock([
+      { id: 'side-contents', label: 'Contents', icon: ICONS.contents, action: () => showContents() },
+      { id: 'side-book-size', label: 'Text size', icon: ICONS.serifAa, popover: textSizeControl },
+    ]));
+  mount(screen);
+  new ResizeObserver(() => { scroller.style.paddingTop = `${head.offsetHeight + 10}px`; }).observe(head);
+
+  let book;
+  try {
+    book = lib.opened.get(b.id);
+    if (!book) {
+      const buf = await (await authFetch(`/api/library/${b.id}/file`)).arrayBuffer();
+      book = b.format === 'epub' ? await openEpub(buf) : openText(buf, b.title);
+      lib.opened.set(b.id, book);
+    }
+  } catch (e) {
+    body.replaceChildren(h('p', { class: 'error' }, e instanceof OfflineError ? "You're offline. Books need a connection to open." : `This book couldn't be opened (${e.message}).`));
+    return;
+  }
+  if (state.tab !== 'book' || lib.current !== b) return;
+
+  let chapter = Math.min(b.position?.chapter ?? 0, book.chapters.length - 1);
+  const show = async (i, { frac = 0, anchor = '', slide = 0 } = {}) => {
+    chapter = Math.max(0, Math.min(book.chapters.length - 1, i));
+    const content = await book.render(chapter);
+    if (state.tab !== 'book' || lib.current !== b) return;
+    const nav = h('div', { class: 'b-nav' },
+      chapter > 0 ? h('button', { class: 'text-btn', onclick: () => show(chapter - 1, { slide: -1 }) }, '‹ Previous') : h('span'),
+      chapter < book.chapters.length - 1 ? h('button', { class: 'text-btn', onclick: () => show(chapter + 1, { slide: 1 }) }, 'Next ›') : h('span', { class: 'handle-sub' }, 'The end'));
+    body.replaceChildren(content, nav);
+    titleEl.textContent = book.chapterTitle(chapter) || `${chapter + 1} of ${book.chapters.length}`;
+    if (slide) { body.classList.remove('slide-from-right', 'slide-from-left'); void body.offsetWidth; body.classList.add(slide > 0 ? 'slide-from-right' : 'slide-from-left'); }
+    requestAnimationFrame(() => {
+      const target = anchor && body.querySelector(`#${CSS.escape(ANCHOR_PREFIX + anchor)}`);
+      if (target) scroller.scrollTop += target.getBoundingClientRect().top - scroller.getBoundingClientRect().top - head.offsetHeight - 12;
+      else scroller.scrollTop = frac * Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+      saveBookPosition();
+    });
+  };
+  lib.show = show;
+  lib.where = () => {
+    const max = Math.max(1, scroller.scrollHeight - scroller.clientHeight);
+    const frac = Math.min(1, Math.max(0, scroller.scrollTop / max));
+    return { chapter, frac, progress: Math.min(1, (chapter + frac) / book.chapters.length) };
+  };
+  const showContents = () => openSheet((close) => [
+    h('h2', {}, 'Contents'),
+    h('div', { class: 'toc' }, ...(book.toc.length ? book.toc : book.chapters.map((_, i) => ({ label: `Section ${i + 1}`, chapter: i, depth: 0 })))
+      .map((t) => h('button', { class: 'toc-item' + (t.chapter === chapter ? ' current' : ''), style: `padding-left:${12 + Math.min(t.depth, 4) * 16}px`,
+        onclick: () => { close(); show(t.chapter, { anchor: t.anchor }); } }, t.label))),
+  ], { label: 'Contents' });
+
+  // Links inside the book go to their chapter (and place on the page).
+  body.addEventListener('click', (e) => {
+    const link = e.target.closest('.bk-link');
+    if (!link) return;
+    const i = book.chapters.findIndex((c) => c.href === link.dataset.file);
+    if (i >= 0) show(i, { anchor: link.dataset.anchor });
+  });
+  // Bars slide away while reading; a tap brings them back.
+  let lastTop = 0, touched = false;
+  for (const ev of ['pointerdown', 'wheel', 'keydown']) scroller.addEventListener(ev, () => { touched = true; }, { passive: true });
+  scroller.addEventListener('scroll', () => {
+    const top = scroller.scrollTop;
+    if (touched && top > lastTop + 6 && top > 60) setBars(false);
+    lastTop = top;
+    saveBookPosition();
+  }, { passive: true });
+  scroller.addEventListener('click', (e) => { if (!e.target.closest('button, a, .bk-link')) setBars(document.body.classList.contains('bars-hidden')); });
+  enableChapterSwipe(scroller, body, (dir) => {
+    const to = chapter + dir;
+    if (to < 0 || to >= book.chapters.length) { toast(dir > 0 ? 'This is the end of the book.' : 'This is the beginning of the book.'); return; }
+    show(to, { slide: dir });
+  });
+  show(chapter, { frac: b.position?.frac || 0 });
+}
+// Remember where the reader is, on the server (so other devices open there too).
+function saveBookPosition(now) {
+  const b = lib.current;
+  if (!b || !lib.where) return;
+  clearTimeout(lib.saveTimer);
+  const go = () => {
+    const pos = lib.where();
+    b.position = pos;
+    api('PUT', `/api/library/${b.id}`, { position: pos }).catch(() => {});
+  };
+  if (now) go(); else lib.saveTimer = setTimeout(go, 1500);
+}
+
 /* ---------------- shell ---------------- */
 let navEl;
 function mount(screen) {
   $app.replaceChildren(screen, navEl);
 }
 function buildNav() {
-  const item = (tab, label) => h('button', { 'aria-current': state.tab === tab || (tab === 'read' && state.tab === 'commentary') ? 'page' : null, dataset: { tab },
+  const item = (tab, label) => h('button', { 'aria-current': state.tab === tab || (tab === 'read' && state.tab === 'commentary') || (tab === 'books' && state.tab === 'book') ? 'page' : null, dataset: { tab },
     onclick: () => {
       if (state.tab === tab && tab === 'read') return;
-      clearSelection(); state.tab = tab; render(); window.scrollTo(0, 0); // re-tapping Notes/Friends refreshes
+      if (state.tab === 'book') saveBookPosition(true);
+      clearSelection(); state.tab = tab; render(); window.scrollTo(0, 0); // re-tapping Notes/Books/Friends refreshes
     } },
   h('span', { class: 'icon badge' }, svg(ICONS[tab])), label);
-  navEl = h('nav', { class: 'bottom-nav', 'aria-label': 'Main' }, item('read', 'Read'), item('notes', 'Notes'), item('friends', 'Friends'));
+  navEl = h('nav', { class: 'bottom-nav', 'aria-label': 'Main' }, item('read', 'Read'), item('notes', 'Notes'), item('books', 'Books'), item('friends', 'Friends'));
 }
 function updateBadge() {
   const b = navEl?.querySelector('[data-tab="friends"] .badge');
   const n = state.friends?.incoming.length || 0;
   if (b) { if (n) b.dataset.count = n; else delete b.dataset.count; }
 }
-function rerender() { if (state.tab === 'read') paint(); else if (state.tab !== 'commentary') render(); }
+function rerender() { if (state.tab === 'read') paint(); else if (state.tab !== 'commentary' && state.tab !== 'book') render(); }
 // The part of the Bible text not covered by the top and bottom bars.
 function visibleTextArea() {
   const box = reader.scroller?.getBoundingClientRect();
@@ -2337,6 +2583,8 @@ async function render() {
   if (state.tab === 'read') return renderReader();
   if (state.tab === 'commentary') return renderCommentaryPage();
   if (state.tab === 'notes') return renderNotes();
+  if (state.tab === 'books') return renderLibrary();
+  if (state.tab === 'book') return renderBookReader();
   return renderFriends();
 }
 

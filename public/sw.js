@@ -1,7 +1,7 @@
 // Offline support: app shell is network-first, Bible text is cache-first, API is never cached here
 // (the app keeps its own saved copy of notes).
-const CACHE = 'bible-study-v2';
-const SHELL = ['/', '/index.html', '/app.js', '/styles.css', '/manifest.webmanifest', '/icon.svg'];
+const CACHE = 'bible-study-v3';
+const SHELL = ['/', '/index.html', '/app.js', '/epub.js', '/styles.css', '/manifest.webmanifest', '/icon.svg'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));

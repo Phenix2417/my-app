@@ -6,6 +6,7 @@ import { createCommentaryService } from './commentary.js';
 import { createPronounceService, createPhoneticsService, createFreeDictionary } from './pronounce.js';
 import { createTranslateService } from './translate.js';
 import { createBibleDictionary } from './bibledict.js';
+import { createLibraryStore } from './library.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // On Railway, a volume attached to the service is mounted at RAILWAY_VOLUME_MOUNT_PATH; keep the database there.
@@ -32,6 +33,7 @@ const pronounce = createPronounceService({ cacheDir: path.join(dataDir, 'audio-c
 const phonetics = createPhoneticsService({ cacheDir: path.join(dataDir, 'phonetics-cache'), freeDict });
 const translate = createTranslateService({ cacheDir: path.join(dataDir, 'translate-cache') });
 
-createServer(db, { publicDir: path.join(root, 'public'), trustProxy, commentary, pronounce, phonetics, translate, bibleDict: createBibleDictionary({ cacheDir: path.join(dataDir, 'bibledict-cache') }) }).listen(port, host, () => {
+createServer(db, { publicDir: path.join(root, 'public'), trustProxy, commentary, pronounce, phonetics, translate, bibleDict: createBibleDictionary({ cacheDir: path.join(dataDir, 'bibledict-cache') }),
+  library: createLibraryStore({ dir: path.join(dataDir, 'library') }) }).listen(port, host, () => {
   console.log(`Bible Study running at http://localhost:${port}`);
 });

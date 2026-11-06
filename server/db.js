@@ -59,6 +59,22 @@ export function openDb(file) {
     );
     CREATE INDEX IF NOT EXISTS notes_by_chapter ON notes (book, chapter, user_id);
     CREATE INDEX IF NOT EXISTS notes_by_user ON notes (user_id, updated_at);
+
+    -- The person's own digital books (EPUB, PDF, text). Files live on disk in the library folder.
+    CREATE TABLE IF NOT EXISTS library_books (
+      id TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      title TEXT NOT NULL,
+      author TEXT NOT NULL DEFAULT '',
+      format TEXT NOT NULL CHECK (format IN ('epub', 'pdf', 'txt')),
+      size INTEGER NOT NULL,
+      has_cover INTEGER NOT NULL DEFAULT 0,
+      position TEXT NOT NULL DEFAULT '',
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      opened_at INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS library_by_user ON library_books (user_id);
   `);
   // Databases created before display names existed get the column added.
   const cols = db.prepare('PRAGMA table_info(users)').all().map((c) => c.name);

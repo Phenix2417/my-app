@@ -7,6 +7,7 @@ import { commentaryList, CommentaryError, COMMENTARY_IDS } from './commentary.js
 import { PronounceError } from './pronounce.js';
 import { TranslateError } from './translate.js';
 import { BibleDictError } from './bibledict.js';
+import { LibraryError, BOOK_TYPES, MAX_BOOK_BYTES, MAX_LIBRARY_BYTES, MAX_COVER_BYTES, sniffFormat, sniffImage } from './library.js';
 
 const COLORS = new Set(['yellow', 'green', 'blue', 'pink', 'purple']);
 const USERNAME_RE = /^[a-z0-9_]{3,20}$/i;
@@ -73,7 +74,7 @@ export function seedTestUsers(db, users) {
   return created;
 }
 
-export function createApp(db, { publicDir, trustProxy = false, commentary = null, pronounce = null, phonetics = null, translate = null, bibleDict = null } = {}) {
+export function createApp(db, { publicDir, trustProxy = false, commentary = null, pronounce = null, phonetics = null, translate = null, bibleDict = null, library = null } = {}) {
   const q = (sql) => db.prepare(sql);
   const stmt = {
     userByName: q('SELECT * FROM users WHERE username = ?'),
@@ -121,6 +122,30 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
       WHERE (:book IS NULL OR (n.book = :book AND n.chapter = :chapter))
       ORDER BY n.updated_at DESC LIMIT 500`),
   };
+
+  Object.assign(stmt, {
+    myLibrary: q('SELECT * FROM library_books WHERE user_id = ? ORDER BY MAX(opened_at, created_at) DESC'),
+    libraryBook: q('SELECT * FROM library_books WHERE id = ? AND user_id = ?'),
+    libraryBytes: q('SELECT COALESCE(SUM(size), 0) AS total FROM library_books WHERE user_id = ?'),
+    addLibraryBook: q(`INSERT INTO library_books (id, user_id, title, author, format, size, created_at, updated_at)
+      VALUES (:id, :user_id, :title, :author, :format, :size, :now, :now)`),
+    setLibraryTitle: q('UPDATE library_books SET title = ?, updated_at = ? WHERE id = ? AND user_id = ?'),
+    setLibraryPosition: q('UPDATE library_books SET position = ?, opened_at = ? WHERE id = ? AND user_id = ?'),
+    setLibraryCover: q('UPDATE library_books SET has_cover = 1 WHERE id = ? AND user_id = ?'),
+    deleteLibraryBook: q('DELETE FROM library_books WHERE id = ? AND user_id = ?'),
+  });
+  const libraryOut = (b) => ({ id: b.id, title: b.title, author: b.author, format: b.format, size: b.size, hasCover: !!b.has_cover,
+    position: b.position ? JSON.parse(b.position) : null, createdAt: b.created_at, openedAt: b.opened_at });
+  const cleanText = (v, max) => String(v ?? '').replace(/[\u0000-\u001f\u007f\u200b-\u200f\u2028-\u202e\u2066-\u2069]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
+  function myBook(me, id) {
+    const b = stmt.libraryBook.get(id, me.id);
+    if (!b) throw new HttpError(404, 'Book not found');
+    return b;
+  }
+  function needLibrary() { if (!library) throw new HttpError(503, 'Books are not set up on this server'); }
+  // Short-lived links so a PDF can open in the phone's own viewer, which can't send the sign-in header.
+  const fileLinks = new Map(); // token -> { userId, id, exp }
+  const libraryErr = (e) => { if (e instanceof LibraryError) throw new HttpError(e.status, e.message); throw e; };
 
   const pair = (x, y) => (x < y ? [x, y] : [y, x]);
   const now = () => Date.now();
@@ -186,6 +211,84 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
 
   const routes = [
     ['GET', /^\/api\/health$/, () => ({ ok: true })],
+
+    /* ----- Library: the person's own books ----- */
+    ['GET', /^\/api\/library$/, ({ me }) => ({ books: stmt.myLibrary.all(me.id).map(libraryOut) }), true],
+    ['POST', /^\/api\/library$/, async ({ me, query, req }) => {
+      needLibrary();
+      const declared = query.get('format');
+      const used = stmt.libraryBytes.get(me.id).total;
+      const room = Math.min(MAX_BOOK_BYTES, MAX_LIBRARY_BYTES - used);
+      if (room <= 0) throw new HttpError(413, 'Your library is full. Delete a book to make room.');
+      const up = await library.receive(req, me.id, room).catch(libraryErr);
+      const format = up.size ? sniffFormat(up.head, declared) : null;
+      if (!format) { await library.discard(up.tmp); throw new HttpError(415, 'Only EPUB, PDF and text files can be added.'); }
+      const id = crypto.randomBytes(12).toString('base64url');
+      const title = cleanText(query.get('title'), 200) || 'Untitled', author = cleanText(query.get('author'), 120);
+      await library.keep(up.tmp, me.id, id);
+      stmt.addLibraryBook.run({ id, user_id: me.id, title, author, format, size: up.size, now: now() });
+      return { status: 201, body: { book: libraryOut(stmt.libraryBook.get(id, me.id)) } };
+    }, true, { raw: true }],
+    ['PUT', /^\/api\/library\/([\w-]{16})\/cover$/, async ({ me, params: [id], req }) => {
+      needLibrary(); myBook(me, id);
+      const up = await library.receive(req, me.id, MAX_COVER_BYTES).catch(libraryErr);
+      if (!sniffImage(up.head)) { await library.discard(up.tmp); throw new HttpError(415, 'The cover must be a JPEG or PNG image.'); }
+      await library.keep(up.tmp, me.id, id, { cover: true });
+      stmt.setLibraryCover.run(id, me.id);
+      return { ok: true };
+    }, true, { raw: true }],
+    ['GET', /^\/api\/library\/([\w-]{16})\/cover$/, async ({ me, params: [id] }) => {
+      needLibrary(); myBook(me, id);
+      const f = await library.read(me.id, id, { cover: true });
+      if (!f) throw new HttpError(404, 'No cover');
+      const head = Buffer.alloc(8); const fd = await fs.promises.open(f.file); await fd.read(head, 0, 8, 0); await fd.close();
+      return { file: f.file, size: f.size, headers: { 'Content-Type': sniffImage(head) || 'application/octet-stream', 'Cache-Control': 'private, max-age=86400' } };
+    }, true],
+    ['GET', /^\/api\/library\/([\w-]{16})\/file$/, async ({ me, params: [id] }) => {
+      needLibrary();
+      const b = myBook(me, id), f = await library.read(me.id, id);
+      if (!f) throw new HttpError(404, 'The book file is missing');
+      return { file: f.file, size: f.size, headers: { 'Content-Type': BOOK_TYPES[b.format], 'Cache-Control': 'private, no-store' } };
+    }, true],
+    ['POST', /^\/api\/library\/([\w-]{16})\/link$/, ({ me, params: [id] }) => {
+      needLibrary(); myBook(me, id);
+      for (const [t, l] of fileLinks) if (l.exp < now()) fileLinks.delete(t);
+      const token = crypto.randomBytes(24).toString('base64url');
+      fileLinks.set(token, { userId: me.id, id, exp: now() + 5 * 60 * 1000 });
+      return { url: `/api/library-file/${token}` };
+    }, true],
+    ['GET', /^\/api\/library-file\/([\w-]{32})$/, async ({ params: [token] }) => {
+      needLibrary();
+      const l = fileLinks.get(token);
+      if (!l || l.exp < now()) throw new HttpError(404, 'This link has expired. Open the book again from your library.');
+      const b = stmt.libraryBook.get(l.id, l.userId), f = b && await library.read(l.userId, l.id);
+      if (!f) throw new HttpError(404, 'Book not found');
+      const name = `${b.title.replace(/[^\w .()-]+/g, '_').slice(0, 80) || 'book'}.${b.format}`;
+      return { file: f.file, size: f.size, headers: { 'Content-Type': BOOK_TYPES[b.format], 'Cache-Control': 'private, no-store',
+        'Content-Disposition': `inline; filename="${name}"` } };
+    }],
+    ['PUT', /^\/api\/library\/([\w-]{16})$/, ({ me, params: [id], body }) => {
+      myBook(me, id);
+      if ('title' in body) {
+        const title = cleanText(body.title, 200);
+        if (!title) throw new HttpError(400, 'Please enter a title');
+        stmt.setLibraryTitle.run(title, now(), id, me.id);
+      }
+      if ('position' in body) {
+        const p = body.position;
+        if (!p || !Number.isInteger(p.chapter) || p.chapter < 0 || p.chapter > 100000 || typeof p.frac !== 'number' || !(p.frac >= 0 && p.frac <= 1)
+          || (p.progress != null && !(p.progress >= 0 && p.progress <= 1))) throw new HttpError(400, 'Invalid position');
+        stmt.setLibraryPosition.run(JSON.stringify({ chapter: p.chapter, frac: p.frac, progress: p.progress ?? null }), now(), id, me.id);
+      }
+      return { book: libraryOut(myBook(me, id)) };
+    }, true],
+    ['DELETE', /^\/api\/library\/([\w-]{16})$/, async ({ me, params: [id] }) => {
+      myBook(me, id);
+      stmt.deleteLibraryBook.run(id, me.id);
+      if (library) await library.remove(me.id, id);
+      return { ok: true };
+    }, true],
+
     ['GET', /^\/api\/books$/, () => ({ books: BOOKS })],
     ['GET', /^\/api\/commentaries$/, () => ({ commentaries: commentaryList() })],
     ['GET', /^\/api\/phonetics\/([a-z-]{1,40})$/, async ({ params: [word] }) => {
@@ -388,7 +491,7 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
         'Content-Type': MIME[ext] || 'application/octet-stream',
         'Cache-Control': rel.startsWith('/bible/') ? 'public, max-age=604800' : 'no-cache',
         ...(ext === '.html' ? {
-          'Content-Security-Policy': "default-src 'self'; img-src 'self' data:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'",
+          'Content-Security-Policy': "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'",
         } : {}),
       });
     });
@@ -403,18 +506,22 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
       }
       const route = routes.find(([m, re]) => m === req.method && re.test(url.pathname));
       if (!route) throw new HttpError(404, 'Not found');
-      const [, re, fn, needsAuth] = route;
+      const [, re, fn, needsAuth, opts] = route;
       const auth = req.headers.authorization || '';
       const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
       const me = token ? stmt.sessionUser.get(sha256(token)) : null;
       if (needsAuth && !me) throw new HttpError(401, 'Please sign in again');
-      const body = await readJson(req);
+      const body = opts?.raw ? {} : await readJson(req); // raw routes stream the request themselves
       const result = await fn({
-        me, token, body, query: url.searchParams, params: url.pathname.match(re).slice(1),
+        me, token, body, req, query: url.searchParams, params: url.pathname.match(re).slice(1),
         // The proxy appends the real client address last; earlier entries can be forged by the client.
         ip: (trustProxy && String(req.headers['x-forwarded-for'] || '').split(',').pop().trim()) || req.socket.remoteAddress,
       });
       if (result && result.status && result.body) return send(res, result.status, result.body, result.headers);
+      if (result && result.file) { // a file from disk, streamed
+        res.writeHead(200, { 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer', 'Content-Length': result.size, ...result.headers });
+        return fs.createReadStream(result.file).on('error', () => res.destroy()).pipe(res);
+      }
       return send(res, 200, result);
     } catch (e) {
       if (e instanceof HttpError) return send(res, e.status, { error: e.message });
