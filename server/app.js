@@ -365,10 +365,15 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
 
     ['GET', /^\/api\/books$/, () => ({ books: BOOKS })],
     // Bible versions; the World English Bible is built in, the others are fetched once per chapter and kept.
-    ['GET', /^\/api\/versions$/, ({ me }) => ({ versions: [
+    ['GET', /^\/api\/versions$/, async ({ me }) => ({ versions: [
       ...VERSIONS.map(({ id, short, name, lang, credit }) => ({ id, short, name, lang, credit })),
-      // The person's own versions, from ebooks they own: private to them.
-      ...(me ? stmt.myVersions.all(me.id).map((v) => ({ id: v.id, short: v.short, name: v.name, lang: v.lang, mine: true, credit: `${v.name} (from your own copy)` })) : []),
+      // The person's own versions, from ebooks they own: private to them. `missing`: Bible books not saved (an import
+      // that stopped partway), so the app can offer to complete it.
+      ...(me ? await Promise.all(stmt.myVersions.all(me.id).map(async (v) => {
+        const have = new Set(library ? await library.versionBooks(me.id, v.id) : []);
+        return { id: v.id, short: v.short, name: v.name, lang: v.lang, mine: true, credit: `${v.name} (from your own copy)`,
+          missing: BOOKS.filter((b) => !have.has(b.id)).map((b) => b.id) };
+      })) : []),
     ] })],
     ['POST', /^\/api\/my-versions$/, ({ me, body }) => {
       needLibrary();

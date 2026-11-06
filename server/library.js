@@ -74,6 +74,10 @@ export function createLibraryStore({ dir }) {
     async readVersionBook(userId, versionId, book) {
       try { return JSON.parse(await fs.promises.readFile(path.join(userDir(userId), 'versions', versionId, `${book}.json`), 'utf8')); } catch { return null; }
     },
+    // The Bible books saved so far for a version (an import stopped partway leaves some out).
+    async versionBooks(userId, versionId) {
+      try { return (await fs.promises.readdir(path.join(userDir(userId), 'versions', versionId))).filter((f) => f.endsWith('.json')).map((f) => f.slice(0, -5)); } catch { return []; }
+    },
     async removeVersion(userId, versionId) { await fs.promises.rm(path.join(userDir(userId), 'versions', versionId), { recursive: true, force: true }); },
     // Fingerprint of a book already kept (for books uploaded before fingerprints were recorded).
     async fingerprint(userId, id) {

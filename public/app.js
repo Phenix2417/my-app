@@ -248,6 +248,7 @@ const versionInfo = (id = state.version) => (state.versions || FALLBACK_VERSIONS
 const isChineseVersion = (id = state.version) => /^zh/.test(versionInfo(id).lang || '');
 // A chapter's verses ([[text, para?], ...]) in a version: the built-in World English Bible, or fetched (and kept by the server).
 const chapterCache = new Map();
+const chapterCacheClear = (version) => { for (const k of [...chapterCache.keys()]) if (k.startsWith(`${version}/`)) chapterCache.delete(k); };
 async function loadChapter(book, chapter, version = state.version) {
   if (version === 'web') return (await loadBook(book))[chapter - 1] || [];
   const key = `${version}/${book}/${chapter}`;
@@ -612,8 +613,11 @@ async function renderReader() {
     const why = e instanceof OfflineError ? `${versionInfo(version).name} needs a connection the first time you open a chapter.`
       : e.status >= 500 || e.status === 0 || !e.status ? `${versionInfo(version).short}: the server isn't answering right now (${e.status || e.message}). Try again in a moment.`
       : `${versionInfo(version).short}: ${tr(e.message)}`;
-    body.append(h('p', { class: 'error' }, why),
-      h('button', { class: 'tonal-btn', type: 'button', onclick: () => renderReader() }, 'Try again'));
+    const own = versionInfo(version).mine && e.status === 404;
+    body.append(h('p', { class: 'error' }, own ? `${versionInfo(version).short} doesn't have this chapter — its import may not have finished. Repair it from the EPUB it came from.` : why),
+      h('div', { class: 'row-actions' },
+        own ? h('button', { class: 'filled-btn', type: 'button', onclick: () => addBibleFromEpub(versionInfo(version)) }, `Repair ${versionInfo(version).short}`) : null,
+        h('button', { class: 'tonal-btn', type: 'button', onclick: () => renderReader() }, 'Try again')));
     return;
   }
   if (state.pos.book !== book || state.pos.chapter !== chapter || state.tab !== 'read' || state.version !== version) return;
@@ -2723,7 +2727,12 @@ async function openVersionPicker() {
     const btn = h('button', { class: 'version-item', type: 'button', role: 'checkbox', 'aria-checked': 'false', lang: v.lang, onclick: () => toggle(v.id) },
       h('span', { class: 'version-short' }, v.short), h('span', { class: 'version-name' }, v.name), h('span', { class: 'pick-n', 'aria-hidden': 'true' }));
     rows.set(v.id, btn);
-    return h('div', { class: 'version-row' }, btn, v.mine ? deleteNoteBtn(() => deleteMyVersion(v, closeSheet), `Delete ${v.short}`) : null);
+    const row = h('div', { class: 'version-row' }, btn, v.mine ? deleteNoteBtn(() => deleteMyVersion(v, closeSheet), `Delete ${v.short}`) : null);
+    // One of the person's own Bibles that didn't finish saving: say so, and offer to complete it.
+    if (!v.mine || !v.missing?.length) return row;
+    return h('div', { class: 'version-incomplete' }, row,
+      h('p', { class: 'handle-sub' }, `${v.short} is missing ${v.missing.length} of 66 books.`,
+        h('button', { class: 'text-btn', type: 'button', onclick: () => { closeSheet(); addBibleFromEpub(v); } }, 'Repair')));
   };
   const group = (title, list) => list.length ? [h('div', { class: 'section-label' }, title),
     h('div', { class: 'version-list', role: 'group', 'aria-label': title }, ...list.map(item))] : [];
@@ -2755,25 +2764,29 @@ async function deleteMyVersion(v, closePicker) {
 }
 
 // Add a Bible version from an EPUB the person owns: read it on the phone, show what was found, then keep it privately.
-async function addBibleFromEpub() {
+// `repair`: one of the person's own versions that didn't finish saving; the EPUB is read again and saved into it
+// (the same version, so its highlights and notes stay).
+async function addBibleFromEpub(repair = null) {
   const input = h('input', { type: 'file', accept: '.epub,application/epub+zip', hidden: true, onchange: () => {
     const f = input.files[0];
     if (!f) return;
     close();
     const bytes = f.arrayBuffer(); // read once: used to check the Bible and to put the file on the shelf
-    checkBibleEpub(bytes, f.name, { name: f.name, type: f.type, size: f.size, data: bytes });
+    checkBibleEpub(bytes, f.name, { name: f.name, type: f.type, size: f.size, data: bytes }, repair);
   } });
   const close = openSheet(() => [
-    h('h2', {}, 'Add a Bible'),
-    h('p', { class: 'confirm-text' }, 'Choose the EPUB of a Bible you own. The app reads its books, chapters and verses and shows you what it found before adding it.'),
+    h('h2', {}, repair ? `Repair ${repair.short}` : 'Add a Bible'),
+    h('p', { class: 'confirm-text' }, repair
+      ? `Choose the EPUB ${repair.short} came from. Its books are saved again into ${repair.short}; your highlights and notes in it stay.`
+      : 'Choose the EPUB of a Bible you own. The app reads its books, chapters and verses and shows you what it found before adding it.'),
     h('div', { class: 'add-bible-choices' },
       h('button', { class: 'filled-btn', type: 'button', onclick: () => input.click() }, svg(ICONS.addBook), 'From your phone or cloud'),
-      h('button', { class: 'tonal-btn', type: 'button', onclick: () => { close(); chooseBibleFromBooks(); } }, svg(ICONS.books), 'From your shelf')),
+      h('button', { class: 'tonal-btn', type: 'button', onclick: () => { close(); chooseBibleFromBooks(repair); } }, svg(ICONS.books), 'From your shelf')),
     input,
   ], { label: 'Add a Bible' });
 }
 // Pick one of the EPUBs already on the shelf.
-async function chooseBibleFromBooks() {
+async function chooseBibleFromBooks(repair = null) {
   const grid = h('div', { class: 'lib-grid pick-grid' }, h('p', { class: 'empty-inline' }, 'Loading your shelf…'));
   const close = openSheet(() => [h('h2', {}, 'Choose from your shelf'), grid], { label: 'Choose from shelf' });
   let books;
@@ -2784,7 +2797,7 @@ async function chooseBibleFromBooks() {
   }
   grid.replaceChildren(...books.map((b) => h('button', { class: 'lib-open', type: 'button', 'aria-label': `Use ${b.title}`, onclick: () => {
     close();
-    checkBibleEpub(authFetch(`/api/library/${b.id}/file`).then((r) => r.arrayBuffer()), b.title);
+    checkBibleEpub(authFetch(`/api/library/${b.id}/file`).then((r) => r.arrayBuffer()), b.title, null, repair);
   } }, coverImg(b), h('span', { class: 'lib-title' }, b.title), b.author ? h('span', { class: 'lib-meta' }, b.author) : null)));
 }
 
@@ -2795,12 +2808,13 @@ const KNOWN_VERSIONS = [[/english standard|\bESV\b/i, 'ESV', 'English Standard V
   [/king james|\bKJV\b/i, 'KJV', 'King James Version'], [/amplified/i, 'AMP', 'Amplified Bible'], [/the message/i, 'MSG', 'The Message']];
 const KNOWN_CHINESE = [[/和合|\bCUV\b/i, '和合本', '和合本'], [/新译本|\bCNV\b/i, '新译本', '新译本'], [/当代|\bCCB\b/i, '当代译本', '当代译本'], [/思高/, '思高本', '思高本']];
 // file: set when the EPUB came from the phone (not from the shelf); it's then also put on the shelf, unless it's already there.
-async function checkBibleEpub(bufPromise, fileName, file = null) {
+async function checkBibleEpub(bufPromise, fileName, file = null, repair = null) {
   const status = h('p', { class: 'confirm-text' }, 'Reading your Bible…');
   const body = h('div', {}, status);
   const close = openSheet(() => [h('h2', {}, 'Add a Bible'), body], { label: 'Check Bible' });
   let parsed;
-  try { parsed = await parseBibleEpub(await bufPromise, await loadBooks()); } catch (e) {
+  // The ebook's book names are matched against the English names, whatever language the app is in.
+  try { parsed = await parseBibleEpub(await bufPromise, (await loadBooks()).map((b) => ({ ...b, name: b.enName || b.name }))); } catch (e) {
     status.textContent = tr(`This file couldn't be read as an EPUB (${e.message}).`); return;
   }
   status.textContent = tr('Checking chapters and verses…');
@@ -2835,7 +2849,8 @@ async function checkBibleEpub(bufPromise, fileName, file = null) {
     const good = part.verses > 0;
     part.nameIn = h('input', { value: part.name, maxlength: 80 });
     part.shortIn = h('input', { value: part.short, maxlength: 12 });
-    part.pick = h('input', { type: 'checkbox', checked: good });
+    // Repairing: only the translation in the version's language is saved.
+    part.pick = h('input', { type: 'checkbox', checked: good && (!repair || /^zh/.test(part.lang) === /^zh/.test(repair.lang)) });
     return h('section', { class: 'bible-part' + (both ? ' boxed' : '') }, ...[
       both ? h('label', { class: 'bible-pick' }, part.pick, h('span', {}, /^zh/.test(part.lang) ? 'Add the Chinese translation' : 'Add the English translation')) : null,
       h('p', { class: 'bible-found' }, good
@@ -2844,8 +2859,8 @@ async function checkBibleEpub(bufPromise, fileName, file = null) {
       part.missing.length > 0 && part.missing.length < 66 ? h('p', { class: 'handle-sub' }, `Missing: ${part.missing.slice(0, 12).join(', ')}${part.missing.length > 12 ? '…' : ''}`) : null,
       good && part.pct < 90 ? h('p', { class: 'error' }, "This ebook's layout wasn't fully understood, so some verses may be in the wrong place. Check the samples below.") : null,
       ...(good ? [sample(part, 'genesis', 1, 1), sample(part, 'psalms', 23, 1), sample(part, 'john', 3, 16)].filter(Boolean) : []),
-      good ? h('label', { class: 'field' }, h('span', {}, 'Name'), part.nameIn) : null,
-      good ? h('label', { class: 'field' }, h('span', {}, 'Short name'), part.shortIn) : null,
+      good && !repair ? h('label', { class: 'field' }, h('span', {}, 'Name'), part.nameIn) : null,
+      good && !repair ? h('label', { class: 'field' }, h('span', {}, 'Short name'), part.shortIn) : null,
     ].filter((x) => x != null && x !== false));
   });
   const anyGood = parts.some((x) => x.verses > 0);
@@ -2857,16 +2872,21 @@ async function checkBibleEpub(bufPromise, fileName, file = null) {
       h('button', { class: 'text-btn', type: 'button', onclick: close }, 'Cancel'),
       anyGood ? h('button', { class: 'filled-btn', type: 'button', onclick: async (e) => {
         const btn = e.currentTarget;
-        const chosen = parts.filter((x) => x.verses > 0 && (!both || x.pick.checked));
+        const chosen = parts.filter((x) => x.verses > 0 && (!both || x.pick.checked)).slice(0, repair ? 1 : 2);
         if (!chosen.length) { toast('Choose at least one translation to add.'); return; }
         btn.disabled = true;
         const added = [];
+        // Saving takes a while: keep the screen on, and ask for the app to stay open.
+        const wake = await navigator.wakeLock?.request('screen').catch(() => null);
+        const keepOpen = h('p', { class: 'handle-sub' }, 'Keep the app open until saving finishes.');
+        btn.closest('.sheet-actions')?.before(keepOpen);
         try {
           for (const part of chosen) {
-            const { version } = await api('POST', '/api/my-versions', { short: part.shortIn.value, name: part.nameIn.value, lang: part.lang });
-            added.push(version);
-            // Save the books six at a time.
-            const ids = Object.keys(part.data);
+            const version = repair || (await api('POST', '/api/my-versions', { short: part.shortIn.value, name: part.nameIn.value, lang: part.lang })).version;
+            if (!repair) added.push(version);
+            // Save the books six at a time. A repair saves only the books the version is missing, never over the others.
+            const ids = Object.keys(part.data).filter((id) => !repair?.missing || repair.missing.includes(id));
+            if (repair && !ids.length) throw new Error(`This EPUB doesn't have the books ${repair.short} is missing.`);
             let next = 0, done = 0;
             await Promise.all(Array.from({ length: 6 }, async () => {
               while (next < ids.length) {
@@ -2878,14 +2898,15 @@ async function checkBibleEpub(bufPromise, fileName, file = null) {
           }
           close();
           await loadVersions();
-          setVersion(added[0].id);
+          if (repair) { chapterCacheClear(repair.id); toast(`${repair.short} repaired`); if (state.tab === 'read') renderReader(); }
+          else setVersion(added[0].id);
           if (file) addBooks([{ ...file, data: await file.data }]); // also keep the ebook on the shelf (unless it's already there)
         } catch (err) {
-          // Don't leave half-saved versions behind.
+          // Don't leave half-saved versions behind (a repair keeps its version: try again).
           for (const v of added) await api('DELETE', `/api/my-versions/${v.id}`).catch(() => {});
-          btn.disabled = false; btn.textContent = tr('Add'); toast(err.message);
-        }
-      } }, both ? 'Add' : 'Add version') : null),
+          btn.disabled = false; btn.textContent = tr(repair ? 'Repair' : 'Add'); toast(err.message);
+        } finally { wake?.release().catch(() => {}); keepOpen.remove(); }
+      } }, repair ? 'Repair' : both ? 'Add' : 'Add version') : null),
   ].filter((x) => x != null && x !== false));
 }
 
