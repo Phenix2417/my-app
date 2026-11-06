@@ -489,3 +489,6 @@ body.bars-hidden .to-top.page-top { bottom: calc(20px + env(safe-area-inset-bott
 .edit-note svg { width: 22px; height: 22px; }
 .card .edit-note { width: 34px; height: 34px; margin: -6px -6px -6px auto; }
 .note-view-head h2 { flex: 1; margin: 4px 0 12px; }
+.mark.mine { color: var(--primary); }
+.mark svg { width: .8em; height: .8em; }
+.mark svg.line-icon { stroke-width: 2.2; }

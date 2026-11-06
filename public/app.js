@@ -525,7 +525,7 @@ function paint() {
     end.el.after(h('button', { class: `mark ${cls}`, 'aria-label': label, title: label,
       onclick: (e) => { e.stopPropagation(); showNotesAt({ v: n.end.verse, w: n.end.word }); } }, text));
   };
-  for (const n of mine) if (n.body) addMark(n, 'mine', 'Your note', '✎');
+  for (const n of mine) if (n.body) addMark(n, 'mine', 'Your note', svg(ICONS.pencil)); // same pencil as Edit note
   for (const n of friends) addMark(n, `f-${n.color}`, `Note from ${dn(n.author)}`, firstChar(dn(n.author)));
   positionHandles();
 }
