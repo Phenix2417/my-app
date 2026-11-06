@@ -661,8 +661,6 @@ body.bars-hidden .b-size-panel { display: none; }
 .r-title .r-version { white-space: nowrap; }
 
 /* Two versions: each text labelled with its version, small, at the right */
-.reader-body.parallel .v-label { float: right; margin: 0 0 0 .6em; line-height: inherit; font: 400 11px/1.2 Roboto, system-ui, sans-serif; color: var(--muted);
-  letter-spacing: .02em; -webkit-user-select: none; user-select: none; }
 .version-item .pick-n { min-width: 24px; height: 24px; border-radius: 12px; display: grid; place-items: center; font: 600 13px/1 Roboto, system-ui, sans-serif; }
 .version-item[aria-checked="true"] .pick-n { background: var(--primary); color: var(--on-primary); }
 .version-item svg { display: none; }

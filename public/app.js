@@ -628,17 +628,25 @@ function buildVerses(verses, alt = null, altVersion = null) {
         verse.append(g);
       }
     });
+    // The second version's text, under the verse: its words are selectable like the first version's. They're
+    // numbered as verse v + 0.5, so they sort right after verse v and never mix with its words.
     const altText = alt?.[vi]?.[0];
-    if (alt) {
-      // Each text carries its version's name, small, at the right (like a printed parallel Bible).
-      verse.querySelector('.vnum').after(h('span', { class: 'v-label', 'aria-hidden': 'true' }, versionInfo().short));
-      if (altText) verse.append(h('span', { class: 'verse-alt', lang: versionInfo(altVersion).lang },
-        h('span', { class: 'v-label', 'aria-hidden': 'true' }, versionInfo(altVersion).short), altText));
+    if (altText) {
+      const box = h('span', { class: 'verse-alt', lang: versionInfo(altVersion).lang });
+      const av = v + 0.5;
+      verseTokens(altText, altVersion).forEach(({ t: word, gap }, w) => {
+        const el = h('span', { class: 'w', dataset: { v: av, w } }, word);
+        reader.words.push({ v: av, w, el });
+        box.append(el);
+        if (gap) { const g = h('span', { class: 'g' }, gap); reader.gaps.push({ v: av, w, el: g }); box.append(g); }
+      });
+      verse.append(box);
     }
     reader.verseEls[v] = verse;
     frag.append(verse);
   });
   reader.chapterData = verses;
+  reader.altVersion = alt ? altVersion : null;
   reader.body.classList.toggle('parallel', !!alt);
   if (state.version !== 'web') frag.append(h('p', { class: 'version-credit' }, versionInfo().credit || versionInfo().name));
   reader.body.lang = isChineseVersion() ? versionInfo().lang : 'en';
@@ -656,15 +664,28 @@ function chapterNotes() {
 }
 
 // Notes shown on the text being read: the Bible chapter, or the open chapter of one of the person's books.
+const isAltWord = (p) => p.v % 1 !== 0; // a word of the second version's text
 function pageNotes() {
-  if (reader.mode === 'bible') return chapterNotes();
+  if (reader.mode === 'bible') {
+    const { mine, friends } = chapterNotes();
+    if (!reader.altVersion) return { mine, friends };
+    // Notes made in the second version, placed on its text (verse v + 0.5); _orig is the note itself.
+    const { book, chapter } = state.pos;
+    const here = (n) => n.book === book && n.chapter === chapter && (n.version || 'web') === reader.altVersion;
+    const shift = (n) => ({ ...n, start: { ...n.start, verse: n.start.verse + 0.5 }, end: { ...n.end, verse: n.end.verse + 0.5 }, _orig: n });
+    return {
+      mine: [...mine, ...Object.values(state.mine.notes).filter(here).sort((a, b) => a.createdAt - b.createdAt).map(shift)],
+      friends: [...friends, ...(state.showFriends ? state.friendNotes.filter(here).map(shift) : [])],
+    };
+  }
   if (reader.mode === 'book') return { mine: bookChapterNotes(), friends: [] };
   return { mine: [], friends: [] };
 }
 function notesAt(p) {
   const { mine, friends } = pageNotes();
   const at = (n) => { const [s, e] = noteRange(n); return inRange(p, s, e); };
-  return { mine: mine.filter(at), friends: friends.filter(at) };
+  const orig = (n) => n._orig || n;
+  return { mine: mine.filter(at).map(orig), friends: friends.filter(at).map(orig) };
 }
 
 // Apply highlight colors, friend underlines, note markers and the selection to the rendered words.
@@ -729,9 +750,15 @@ function enableChapterSwipe(el, content, onSwipe) {
 }
 
 /* ----- selection with draggable handles ----- */
-function setSelection(start, end) {
+// Keep a selection within one version's text (the one `anchor` is in) when two versions are shown.
+function withinOneText(sel, anchor = sel.start) {
+  if (!reader.altVersion || isAltWord(sel.start) === isAltWord(sel.end)) return sel;
+  const ws = reader.words.filter((x) => inRange(x, sel.start, sel.end) && isAltWord(x) === isAltWord(anchor));
+  return ws.length ? { start: { v: ws[0].v, w: ws[0].w }, end: { v: ws.at(-1).v, w: ws.at(-1).w } } : { start: anchor, end: anchor };
+}
+function setSelection(start, end, anchor = start) {
   if (cmp(start, end) > 0) [start, end] = [end, start];
-  state.selection = { start, end };
+  state.selection = withinOneText({ start, end }, anchor);
   paint();
   showToolbar();
 }
@@ -761,8 +788,12 @@ function selectionHasFullSentence() {
 function selectedQuote() {
   const { start, end } = state.selection;
   const ws = reader.words.filter((x) => inRange(x, start, end));
-  if (reader.mode !== 'bible' || isChineseVersion()) return ws.map((x, i) => (i && x.el.previousSibling?.classList?.contains('g') ? ' ' : '') + x.el.textContent).join('');
-  return ws.map((x) => x.el.textContent).join(' ');
+  const CJK = /[\u3000-\u303f\u3400-\u9fff\uff00-\uffef]/;
+  return ws.map((x, i) => {
+    if (!i) return x.el.textContent;
+    const spaced = x.el.previousSibling?.classList?.contains('g') || (!CJK.test(ws[i - 1].el.textContent.slice(-1)) && !CJK.test(x.el.textContent[0]));
+    return (spaced ? ' ' : '') + x.el.textContent;
+  }).join('');
 }
 
 const KNOB = 22;
@@ -843,7 +874,8 @@ function startHandleDrag(e, handle) {
     // If the dragged handle crossed the other one, swap their roles so the finger keeps "its" end.
     const wantRole = before ? 'start' : 'end';
     if (reader.handles[wantRole] !== handle) reader.handles = { start: reader.handles.end, end: reader.handles.start };
-    if (cmp(next.start, state.selection.start) || cmp(next.end, state.selection.end)) { state.selection = next; paint(); }
+    const kept = withinOneText(next, anchor);
+    if (cmp(kept.start, state.selection.start) || cmp(kept.end, state.selection.end)) { state.selection = kept; paint(); }
   };
   const move = (ev) => { last = { x: ev.clientX, y: ev.clientY }; update(); autoScrollFor(ev.clientY, update); };
   const up = () => {
@@ -866,7 +898,8 @@ function nudgeHandle(e, which) {
   const j = Math.max(0, Math.min(reader.words.length - 1, i + dir));
   const p = { v: reader.words[j].v, w: reader.words[j].w };
   const other = which === 'start' ? state.selection.end : state.selection.start;
-  setSelection(which === 'start' ? p : other, which === 'start' ? other : p);
+  if (reader.altVersion && isAltWord(p) !== isAltWord(other)) return; // don't step into the other version's text
+  setSelection(which === 'start' ? p : other, which === 'start' ? other : p, other);
   reader.handles?.[which]?.focus();
 }
 
@@ -903,7 +936,7 @@ function attachReaderGestures(body) {
     // Hold-and-slide still works: extend from the pressed word.
     const update = () => {
       const p = wordAtPoint(press.lastX, press.lastY);
-      if (p) { state.selection = cmp(p, press.word) < 0 ? { start: p, end: press.word } : { start: press.word, end: p }; paint(); }
+      if (p) { state.selection = withinOneText(cmp(p, press.word) < 0 ? { start: p, end: press.word } : { start: press.word, end: p }, press.word); paint(); }
     };
     press.lastX = e.clientX; press.lastY = e.clientY;
     update();
@@ -958,9 +991,11 @@ function showToolbar() {
   reader.toolbar?.remove();
   if (!state.selection) return;
   const { start, end } = state.selection;
+  const inAlt = isAltWord(start); // the second version's text: the note belongs to that version
+  const textVersion = inAlt ? reader.altVersion : state.version;
   const draft = (color) => ({
-    id: newId(), book: state.pos.book, chapter: state.pos.chapter, version: state.version,
-    start: { verse: start.v, word: start.w }, end: { verse: end.v, word: end.w }, color, quote: selectedQuote(), body: '',
+    id: newId(), book: state.pos.book, chapter: state.pos.chapter, version: textVersion,
+    start: { verse: Math.floor(start.v), word: start.w }, end: { verse: Math.floor(end.v), word: end.w }, color, quote: selectedQuote(), body: '',
   });
   if (reader.mode === 'commentary') return showCommentaryToolbar();
   if (reader.mode === 'book') return showBookToolbar();
@@ -976,10 +1011,10 @@ function showToolbar() {
       try { await navigator.clipboard.writeText(text); toast('Copied'); } catch { toast("Couldn't copy"); }
       clearSelection();
     }),
-    bubbleBtn('Commentary', ICONS.commentaryBooks, () => { const sel = { start, end }; clearSelection(); openCommentaryPage(start.v, sel); }),
+    bubbleBtn('Commentary', ICONS.commentaryBooks, () => { const sel = inAlt ? null : { start, end }; clearSelection(); openCommentaryPage(Math.floor(start.v), sel); }),
     // One word: its dictionary entry. Several words: the selection translated, then each word to look up.
     // (The dictionary is English–Chinese, so it isn't offered on a Chinese version's text.)
-    isChineseVersion() ? null : bubbleBtn('Dictionary', ICONS.dictionary, (e) => toggleDictionary(bar, e.currentTarget), 'dict-btn')));
+    isChineseVersion(textVersion) ? null : bubbleBtn('Dictionary', ICONS.dictionary, (e) => toggleDictionary(bar, e.currentTarget), 'dict-btn')));
   reader.toolbar = bar;
   document.body.append(bar);
   positionToolbar();
