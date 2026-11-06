@@ -295,7 +295,7 @@ function ref(n) {
 }
 
 // A note's title: its reference, plus the Bible version when it isn't the World English Bible.
-const noteRef = (n) => (n.lib || !n.version || n.version === 'web' ? ref(n) : `${ref(n)} · ${versionInfo(n.version).short}`);
+const noteRef = (n) => (n.lib || !n.version || n.version === 'web' ? ref(n) : `${ref(n)} · ${n.versionLabel || versionInfo(n.version).short}`);
 
 /* ---------------- shared UI ---------------- */
 // A small info bubble attached to an element (for long presses). Returns { set(text) } to update it.
@@ -456,7 +456,9 @@ function noteCard(n, { onClick, friend, onEdit, onDelete, title } = {}) {
     onkeydown: onClick ? (e) => { if (e.key === 'Enter') onClick(); } : null },
   h('div', { class: 'card-head' }, h('span', { class: 'note-title' }, title || noteRef(n), noteTime(n)), friend ? h('span', { class: 'who', title: '@' + n.author.username }, dn(n.author)) : null,
     onEdit || onDelete ? h('span', { class: 'note-actions' }, onEdit ? editNoteBtn(onEdit) : null, onDelete ? deleteNoteBtn(onDelete) : null) : null),
-  h('div', { class: 'quote', dataset: { c: n.color } }, n.quote),
+  // A friend's note in a Bible this person doesn't have: no quoted text, just which Bible it was in.
+  n.textHidden ? h('div', { class: 'quote quote-hidden', dataset: { c: n.color } }, LANG === 'zh' ? `（${n.versionLabel}经文未显示：你没有这本圣经）` : `(${n.versionLabel} text not shown: you don't have this Bible)`)
+    : h('div', { class: 'quote', dataset: { c: n.color } }, n.quote),
   n.body ? h('p', { class: 'note-body' }, noteBodyNodes(n.body)) : null);
 }
 

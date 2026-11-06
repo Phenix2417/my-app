@@ -139,7 +139,7 @@ test('the same book is kept once, recognised by its content rather than its name
   srv.close(); fs.rmSync(dir2, { recursive: true, force: true });
 });
 
-test("notes in a person's own Bible reach only friends who have that Bible too", async () => {
+test("notes in a person's own Bible reach friends without its text unless they have that Bible too", async () => {
   const cat = await register('cat'), dan = await register('dan');
   const me = async (t) => (await json('GET', '/api/me', t)).data.user;
   const catId = (await me(cat)).id, danId = (await me(dan)).id;
@@ -152,9 +152,11 @@ test("notes in a person's own Bible reach only friends who have that Bible too",
   assert.equal((await json('PUT', '/api/notes/note-cat-web-1', cat, note('web note', 'web'))).status, 200);
   assert.equal((await json('PUT', '/api/notes/note-cat-esv-1', cat, note('esv note', esv.id))).status, 200);
 
-  // Dan has no ESV: he sees the WEB note only (not the ESV note or its quoted text).
+  // Dan has no ESV: he sees both notes, but the ESV one without its quoted text.
   let seen = (await json('GET', '/api/friends/notes?book=john&chapter=1', dan)).data.notes;
-  assert.deepEqual(seen.map((n) => n.body), ['web note']);
+  const hidden = seen.find((n) => n.body === 'esv note');
+  assert.equal(seen.find((n) => n.body === 'web note').quote, 'In the beginning was');
+  assert.deepEqual([hidden.quote, hidden.textHidden, hidden.versionLabel], ['', true, 'ESV']);
 
   // Dan imports the same ebook: the ESV note appears, in his copy.
   const danEsv = (await json('POST', '/api/my-versions', dan, { short: 'ESV-2', name: 'ESV', lang: 'en', source: sha })).data.version;

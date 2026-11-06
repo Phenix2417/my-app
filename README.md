@@ -63,9 +63,9 @@ Read the Bible, highlight passages, write notes, and see the notes your friends 
 - **翻译 / Translate** — an entry that isn't in the interface language (Easton and the ISBE in Chinese; Bible Wiki or 圣经wiki
   when Wikipedia has only the other language) has a translate button beside its title. The text is translated in pieces
   (Youdao, up to about 4,000 characters, a piece that can't be translated stays as it is); tapping again shows the original.
-- **Friends and imported Bibles** — a note made in one of your own imported Bibles (and its quoted text) is shown to a friend
-  only if they have that Bible too (imported from the same ebook, or a version with the same short name and language), and
-  then in their copy. Notes in the built-in versions are shared as before.
+- **Friends and imported Bibles** — a note made in one of your own imported Bibles is shared like any other, but its quoted
+  Bible text only with a friend who has that Bible too (imported from the same ebook, or a version with the same short name
+  and language), who sees it in their copy. Others see the note and its reference with "(ESV text not shown)".
 - **Imported Bibles on the shelf** — opening an EPUB on the shelf that was imported as a Bible version opens the Bible
   reader instead, with all its translations side by side, in the book's own order. Versions remember the ebook's
   fingerprint when imported; older ones are recognised from the title ("HOLY BIBLE (ESV-CUV)" → ESV and 和合本) and linked

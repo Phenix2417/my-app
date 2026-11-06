@@ -201,6 +201,7 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
     id: n.id, book: n.book, chapter: n.chapter, version: n.version || 'web', // words are counted in this version's text
     start: { verse: n.verse_start, word: n.word_start }, end: { verse: n.verse_end, word: n.word_end },
     color: n.color, quote: n.quote, body: n.body, createdAt: n.created_at, updatedAt: n.updated_at,
+    ...(n.text_hidden ? { versionLabel: n.version_label, textHidden: true } : {}),
     ...(n.username ? { author: userOut(n.user_id, n.username, n.display_name) } : {}),
   });
 
@@ -625,8 +626,8 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
       const book = query.get('book');
       if (book && !BOOK_IDS.has(book)) throw new HttpError(400, 'Unknown book');
       const rows = stmt.friendNotes.all({ viewer: me.id, book: book || null, chapter: book ? Number(query.get('chapter')) : null });
-      // A note made in a friend's own imported Bible (and its quoted text) is shown only to someone who has that Bible
-      // too — imported from the same ebook, or a version with the same short name and language — and in their copy.
+      // A note made in a friend's own imported Bible: someone who has that Bible too (imported from the same ebook, or a
+      // version with the same short name and language) sees it in their copy; anyone else sees it without the quoted text.
       const mine = stmt.myVersions.all(me.id), owners = new Map();
       const visible = [];
       for (const n of rows) {
@@ -634,7 +635,8 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
         if (!owners.has(n.version)) owners.set(n.version, stmt.versionById.get(n.version));
         const theirs = owners.get(n.version);
         const match = theirs && mine.find((v) => v.lang === theirs.lang && ((theirs.source_sha && v.source_sha === theirs.source_sha) || v.short === theirs.short));
-        if (match) visible.push({ ...n, version: match.id });
+        // Without that Bible, the note is still shared — its words and reference, not the Bible's text.
+        visible.push(match ? { ...n, version: match.id } : { ...n, quote: '', version_label: theirs?.short || 'Bible', text_hidden: 1 });
       }
       return { notes: visible.map(noteOut) };
     }, true],
