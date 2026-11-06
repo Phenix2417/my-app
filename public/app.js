@@ -2913,11 +2913,13 @@ async function checkBibleEpub(bufPromise, fileName, file = null, repair = null) 
               }
             }));
           }
+          // Also keep the ebook on the shelf (unless it's already there) — before the sheet closes, while the screen is
+          // kept on, so leaving the app right after can't cut the upload short.
+          if (file) { btn.textContent = tr('Putting it on your shelf…'); await addBooks([{ ...file, data: await file.data }]); }
           close();
           await loadVersions();
           if (repair) { chapterCacheClear(repair.id); toast(`${repair.short} repaired`); if (state.tab === 'read') renderReader(); }
-          else setVersion(added[0].id);
-          if (file) addBooks([{ ...file, data: await file.data }]); // also keep the ebook on the shelf (unless it's already there)
+          else setVersion(added[0].id, { quiet: true }), goTo(state.pos);
         } catch (err) {
           // Don't leave half-saved versions behind (a repair keeps its version: try again).
           for (const v of added) await api('DELETE', `/api/my-versions/${v.id}`).catch(() => {});
