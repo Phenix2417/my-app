@@ -49,21 +49,21 @@ test('British and American phonetics come from the dictionary service, once per 
   const calls = [];
   const fetchImpl = async (url) => { calls.push(url); return Response.json({ ec: { word: [{ ukphone: 'təˈmɑːtəʊ', usphone: 'təˈmeɪtoʊ' }] } }); };
   const get = createPhoneticsService({ fetchImpl, words: new Set(['tomato']), wiktionary: false });
-  assert.deepEqual(await get('tomato'), { uk: 'təˈmɑːtəʊ', us: 'təˈmeɪtoʊ' });
+  assert.deepEqual(await get('tomato'), { uk: 'təˈmɑːtəʊ', us: 'təˈmeɪtoʊ', src: { uk: 'youdao', us: 'youdao' } });
   await get('tomato');
   assert.deepEqual(calls, ['https://dict.youdao.com/jsonapi?q=tomato']);
   await assert.rejects(get('zzzz'), { status: 404 });
   const empty = createPhoneticsService({ fetchImpl: async () => Response.json({}), words: new Set(['x-ray']), wiktionary: false });
-  assert.deepEqual(await empty('x-ray'), { uk: '', us: '' });
+  assert.deepEqual(await empty('x-ray'), { uk: '', us: '', src: { uk: '', us: '' } });
 });
 
 test('built-in phonetics for Bible names are used without asking the service', async () => {
   const calls = [];
   const get = createPhoneticsService({ fetchImpl: async (u) => { calls.push(u); return Response.json({}); },
     words: new Set(['caiaphas', 'malchus']), names: { caiaphas: { uk: 'ˈkaɪ.ə.fəs' } }, wiktionary: false });
-  assert.deepEqual(await get('caiaphas'), { uk: 'ˈkaɪ.ə.fəs', us: 'ˈkaɪ.ə.fəs' });
+  assert.deepEqual(await get('caiaphas'), { uk: 'ˈkaɪ.ə.fəs', us: 'ˈkaɪ.ə.fəs', src: { uk: 'ipa-dict', us: 'ipa-dict' } });
   assert.equal(calls.length, 0);
-  assert.deepEqual(await get('malchus'), { uk: '', us: '' });
+  assert.deepEqual(await get('malchus'), { uk: '', us: '', src: { uk: '', us: '' } });
   assert.equal(calls.length, 1, 'other words still ask the service');
 });
 
@@ -82,7 +82,7 @@ test('falls back to Wiktionary, once, when Youdao has nothing', async () => {
     return Response.json({});
   };
   const get = createPhoneticsService({ fetchImpl, words: new Set(['caiaphas']), names: {} });
-  assert.deepEqual(await get('caiaphas'), { uk: 'ˈkaɪ.ə.fəs', us: 'ˈkaɪ.ə.fəs' });
+  assert.deepEqual(await get('caiaphas'), { uk: 'ˈkaɪ.ə.fəs', us: 'ˈkaɪ.ə.fəs', src: { uk: 'wiktionary', us: 'wiktionary' } });
   await get('caiaphas');
   assert.equal(calls.filter((u) => u.includes('wiktionary')).length, 1);
 });

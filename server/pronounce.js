@@ -118,7 +118,7 @@ export function createPhoneticsService({
   const clean = (s) => (typeof s === 'string' ? s.trim().replace(/^\/|\/$/g, '').slice(0, 80) : '');
 
   async function load(word) {
-    const file = cacheDir && path.join(cacheDir, `${word}.json`);
+    const file = cacheDir && path.join(cacheDir, `${word}.v2.json`); // v2: records each phonetic's source
     if (file) { try { return JSON.parse(await fs.promises.readFile(file, 'utf8')); } catch { /* not cached */ } }
     let res;
     try { res = await fetchImpl(`${upstream}?q=${encodeURIComponent(word)}`, { signal: AbortSignal.timeout(15000) }); } catch {
@@ -130,10 +130,11 @@ export function createPhoneticsService({
     const pick = (list) => (Array.isArray(list) ? list[0] : list) || {};
     const ec = pick(data?.ec?.word), simple = pick(data?.simple?.word);
     let value = { uk: clean(ec.ukphone || simple.ukphone), us: clean(ec.usphone || simple.usphone) };
+    value.src = { uk: value.uk ? 'youdao' : '', us: value.us ? 'youdao' : '' };
     // Nothing from Youdao (common for Bible names): ask Wiktionary for this one word.
     if (!value.uk && !value.us && wiktionary) {
       const w = await fromWiktionary(word).catch(() => null);
-      if (w) value = { uk: w.uk || w.us, us: w.us || w.uk };
+      if (w) value = { uk: w.uk || w.us, us: w.us || w.uk, src: { uk: 'wiktionary', us: 'wiktionary' } };
     }
     if (file) { try { await fs.promises.mkdir(cacheDir, { recursive: true }); await fs.promises.writeFile(file, JSON.stringify(value)); } catch { /* best effort */ } }
     return value;
@@ -158,7 +159,7 @@ export function createPhoneticsService({
     if (memory.has(word)) return memory.get(word);
     const local = loadNames()[word];
     let value;
-    if (local) value = { uk: local.uk || local.us || '', us: local.us || local.uk || '' }; // no request needed
+    if (local) value = { uk: local.uk || local.us || '', us: local.us || local.uk || '', src: { uk: 'ipa-dict', us: 'ipa-dict' } }; // no request needed
     else {
       if (!inflight.has(word)) inflight.set(word, load(word).finally(() => inflight.delete(word)));
       value = await inflight.get(word);

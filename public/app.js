@@ -737,14 +737,28 @@ function namePronRow(word) {
   phoneticsFor(word).then((p) => { if (p?.uk || p?.us) { row.hidden = false; positionToolbar(); } }).catch(() => {});
   return row;
 }
+// Where a phonetic came from: a small badge before it.
+const PH_SOURCES = {
+  youdao: ['Y', 'Youdao'], wiktionary: ['W', 'Wiktionary'], 'ipa-dict': ['i', 'ipa-dict'], ecdict: ['E', 'ECDICT (offline dictionary)'],
+};
+function setPhSource(badge, src) {
+  const s = PH_SOURCES[src];
+  badge.hidden = !s;
+  if (!s) return;
+  badge.textContent = s[0];
+  badge.dataset.src = src;
+  badge.title = `Phonetic from ${s[1]}`;
+}
 function pronButton(word, accent, fallback) {
   const name = accent === 'uk' ? 'British' : 'American';
   const ipa = h('span', { class: 'ipa' + (fallback ? ' pending' : '') }, fallback ? `/${fallback}/` : '…');
+  const badge = h('span', { class: 'ph-src', 'aria-hidden': 'true', hidden: true });
+  if (fallback) setPhSource(badge, 'ecdict');
   const btn = h('button', { class: 'pron', 'aria-label': `Play ${name} pronunciation of ${word}`, onclick: () => playWord(word, accent, btn) },
-    h('span', { class: 'accent' }, accent.toUpperCase()), ipa, svg(ICONS.speaker));
+    h('span', { class: 'accent' }, accent.toUpperCase()), badge, ipa, svg(ICONS.speaker));
   phoneticsFor(word).then((p) => {
     const v = p?.[accent];
-    if (v) ipa.textContent = `/${v}/`; else if (!fallback) ipa.textContent = '';
+    if (v) { ipa.textContent = `/${v}/`; setPhSource(badge, p.src?.[accent] || 'youdao'); } else if (!fallback) { ipa.textContent = ''; setPhSource(badge, null); }
     ipa.classList.remove('pending');
     btn.setAttribute('aria-label', `Play ${name} pronunciation of ${word}${v ? `, /${v}/` : ''}`);
     positionToolbar();
