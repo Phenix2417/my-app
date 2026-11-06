@@ -1499,6 +1499,35 @@ function bibleTextFor(word, lang) {
   }
   return bibleTextCache.get(key);
 }
+const wikiCache = new Map();
+function wikiFor(word) {
+  const w = String(word || '').toLowerCase();
+  if (!wikiCache.has(w)) {
+    const p = api('GET', `/api/wiki/${encodeURIComponent(w)}`);
+    wikiCache.set(w, p);
+    p.catch(() => wikiCache.delete(w));
+  }
+  return wikiCache.get(w);
+}
+// The Bible wiki entry: Chinese first (when Wikipedia has it), then English, each linking to the full article.
+function wikiSection(found) {
+  const part = (x, zh) => {
+    const LIMIT = zh ? 150 : 300;
+    const text = h('p', { class: 'bd-text' + (zh ? '' : ' wiki-en') }, x.text.length > LIMIT ? shorten(x.text, LIMIT) : x.text);
+    const more = x.text.length > LIMIT ? h('button', { class: 'text-btn bd-more', type: 'button', onclick: () => {
+      const open = more.textContent === 'More';
+      text.textContent = open ? x.text : shorten(x.text, LIMIT);
+      more.textContent = open ? 'Less' : 'More';
+      positionToolbar();
+    } }, 'More') : null;
+    return h('div', { class: 'bd-entry', lang: zh ? 'zh-Hans' : 'en' },
+      h('div', { class: 'bd-term' + (zh ? '' : ' wiki-term-en') }, x.title), text,
+      h('div', { class: 'wiki-actions' }, more, h('a', { class: 'wiki-link', href: x.url, target: '_blank', rel: 'noopener noreferrer' }, zh ? '在维基百科阅读' : 'Read on Wikipedia')));
+  };
+  return h('section', { class: 'bd wiki' },
+    h('div', { class: 'bd-head' }, 'Bible Wiki', h('span', { class: 'bd-src' }, ` · ${found.source} (${found.license})`)),
+    found.zh ? part(found.zh, true) : null, part(found.en, false));
+}
 // Cut a long entry at a word boundary, without leaving an empty bullet line at the end.
 const shorten = (full, limit) => `${full.slice(0, limit).replace(/\s+\S*$/, '').replace(/\n[•·\s]*$/, '')}…`;
 function bibleSection(found, { english = false } = {}) {
@@ -1663,20 +1692,46 @@ function toggleDictionary(bar, btn) {
       x.t ? h('p', { class: 'dict-zh', lang: 'zh-Hans' }, x.t) : rows[x.word]?.length ? chineseLines(rows[x.word]) : null,
       !main ? null : x.d ? h('p', { class: 'dict-en' }, x.d) : englishLines(englishFor(x.word, x.t)),
     ];
-    const bibleSlot = h('div', { class: 'bd-slot' });
+    const bibleSlot = h('div', { class: 'bd-slot' }), wikiSlot = h('div', { class: 'bd-slot' });
     // Not in the English dictionary: still show the word (the Bible dictionary buttons attach to it).
     const noEnglish = !e || (!e.t && !e.d && !e.base && !rows[e.word]?.length);
     if (noEnglish) body.replaceChildren(h('div', { class: 'dict-head' }, h('span', { class: 'dict-word' }, w)),
       // Pronunciations are still looked up; the row is removed if no phonetic symbols are found.
       namePronRow(w),
-      h('p', { class: 'dict-muted' }, 'Not in the English dictionary.'), bibleSlot);
-    else body.replaceChildren(...[...block(e, !e.base), ...(e.base ? [h('div', { class: 'dict-base' }, `Base form: ${e.base.word}`), ...block(e.base, true)] : []), bibleSlot].filter(Boolean));
+      h('p', { class: 'dict-muted' }, 'Not in the English dictionary.'), bibleSlot, wikiSlot);
+    else body.replaceChildren(...[...block(e, !e.base), ...(e.base ? [h('div', { class: 'dict-base' }, `Base form: ${e.base.word}`), ...block(e.base, true)] : []), bibleSlot, wikiSlot].filter(Boolean));
     positionToolbar();
     // Bible dictionary buttons, only if the word (or its base form) has topics. The text is fetched on tap.
     let bdWord = w;
     let topics = await bibleTopicsFor(w);
     if (!topics.length && e?.base) { bdWord = e.base.word; topics = await bibleTopicsFor(bdWord); }
-    if (!topics.length || !bibleSlot.isConnected) return; // none, or another word was tapped meanwhile
+    if (!bibleSlot.isConnected) return; // another word was tapped meanwhile
+    // Bible Wiki (Wikipedia), after the Bible dictionaries: for words with Bible topics, and for names.
+    const token = all.find((t) => dictKey(t) === w) || w;
+    const isName = /^[A-Z]/.test(token.replace(/^[^A-Za-z]+/, ''));
+    if (topics.length || isName) {
+      let wikiBox = null;
+      const wikiBtn = h('button', { class: 'bd-jump', type: 'button', lang: 'en', 'aria-label': 'Show the Bible wiki article', onclick: async () => {
+        if (!wikiBox) {
+          if (wikiBtn.classList.contains('loading')) return;
+          wikiBtn.classList.add('loading');
+          try { wikiBox = wikiSection(await wikiFor(topics.length ? bdWord : w)); } catch (err) {
+            wikiBtn.classList.remove('loading');
+            toast(err instanceof OfflineError ? 'The Bible wiki needs a connection.' : err.message);
+            return;
+          }
+          wikiBtn.classList.remove('loading');
+          if (!wikiSlot.isConnected) return;
+          wikiSlot.append(wikiBox);
+        }
+        positionToolbar();
+        const box = body.closest('.dict');
+        if (box) box.scrollBy({ top: wikiBox.getBoundingClientRect().top - box.getBoundingClientRect().top - 6, behavior: 'smooth' });
+        wikiBox.classList.remove('flash'); void wikiBox.offsetWidth; wikiBox.classList.add('flash');
+      } }, 'Bible Wiki');
+      body.querySelector('.dict-head')?.append(wikiBtn);
+    }
+    if (!topics.length) { positionToolbar(); return; }
     const sections = {};
     // Show (fetching the first time) and scroll to the entry; tapping again just scrolls back to it.
     const toggle = (lang) => async (ev) => {
@@ -1704,14 +1759,15 @@ function toggleDictionary(bar, btn) {
       section.classList.remove('flash'); void section.offsetWidth; section.classList.add('flash');
     };
     const zhBtn = h('button', { class: 'bd-jump', type: 'button', 'aria-label': 'Show the Chinese Bible dictionary entry', onclick: toggle('zh') }, '圣经辞典');
-    body.querySelector('.dict-head')?.append(zhBtn,
-      h('button', { class: 'bd-jump', type: 'button', lang: 'en', 'aria-label': 'Show the English Bible dictionary entry', onclick: toggle('en') }, 'Bible Dictionary'));
+    const enBtn = h('button', { class: 'bd-jump', type: 'button', lang: 'en', 'aria-label': 'Show the English Bible dictionary entry', onclick: toggle('en') }, 'Bible Dictionary');
+    const head = body.querySelector('.dict-head'), wikiBtn = head?.querySelector('[aria-label="Show the Bible wiki article"]');
+    if (wikiBtn) wikiBtn.before(zhBtn, enBtn); else head?.append(zhBtn, enBtn);
     // No English dictionary entry: show the Chinese Bible dictionary entry straight away.
     if (noEnglish) toggle('zh')({ currentTarget: zhBtn });
     positionToolbar();
   };
   const dictBox = h('div', { class: 'dict' }, trans, body,
-    h('p', { class: 'dict-credit' }, multi ? 'Translation: Youdao · Chinese: ECDICT, Wiktionary (CC BY-SA) · English: ECDICT, Free Dictionary (Wiktionary), WordNet · Phonetics & audio: Youdao, Free Dictionary API · 圣经辞典: 信望爱' : 'Chinese: ECDICT, Wiktionary (CC BY-SA) · English: ECDICT, Free Dictionary (Wiktionary), WordNet · Phonetics & audio: Youdao, Free Dictionary API · 圣经辞典: 信望爱'));
+    h('p', { class: 'dict-credit' }, multi ? 'Translation: Youdao · Chinese: ECDICT, Wiktionary (CC BY-SA) · English: ECDICT, Free Dictionary (Wiktionary), WordNet · Phonetics & audio: Youdao, Free Dictionary API · 圣经辞典: 信望爱 · Bible Wiki: Wikipedia (CC BY-SA)' : 'Chinese: ECDICT, Wiktionary (CC BY-SA) · English: ECDICT, Free Dictionary (Wiktionary), WordNet · Phonetics & audio: Youdao, Free Dictionary API · 圣经辞典: 信望爱 · Bible Wiki: Wikipedia (CC BY-SA)'));
   // An ↑ button appears once the panel is scrolled down, and takes it back to the top.
   const toTop = h('button', { class: 'to-top', type: 'button', hidden: true, 'aria-label': 'Back to top', title: 'Back to top',
     onclick: () => dictBox.scrollTo({ top: 0, behavior: 'smooth' }) }, svg(ICONS.arrowUp));

@@ -7,6 +7,7 @@ import { commentaryList, CommentaryError, COMMENTARY_IDS } from './commentary.js
 import { PronounceError } from './pronounce.js';
 import { TranslateError } from './translate.js';
 import { BibleDictError } from './bibledict.js';
+import { WikiError } from './wiki.js';
 import { VERSIONS, VERSION_IDS, VersionError } from './versions.js';
 import { LibraryError, BOOK_TYPES, MAX_BOOK_BYTES, MAX_LIBRARY_BYTES, MAX_COVER_BYTES, sniffFormat, sniffImage } from './library.js';
 
@@ -75,7 +76,7 @@ export function seedTestUsers(db, users) {
   return created;
 }
 
-export function createApp(db, { publicDir, trustProxy = false, commentary = null, pronounce = null, phonetics = null, translate = null, bibleDict = null, library = null, freeDict = null, versions = null } = {}) {
+export function createApp(db, { publicDir, trustProxy = false, commentary = null, pronounce = null, phonetics = null, translate = null, bibleDict = null, library = null, freeDict = null, versions = null, wiki = null } = {}) {
   const q = (sql) => db.prepare(sql);
   const stmt = {
     userByName: q('SELECT * FROM users WHERE username = ?'),
@@ -437,6 +438,17 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
         throw e;
       }
       if (!found) throw new HttpError(404, 'Not in the Bible dictionary');
+      return found;
+    }, true],
+    // Bible wiki: the Wikipedia article about a Bible word or name, English and Chinese.
+    ['GET', /^\/api\/wiki\/([a-z' %-]{1,60})$/, async ({ params: [word] }) => {
+      if (!wiki) throw new HttpError(503, 'The Bible wiki is not set up on this server');
+      let found;
+      try { found = await wiki(decodeURIComponent(word)); } catch (e) {
+        if (e instanceof WikiError) throw new HttpError(e.status, e.message);
+        throw e;
+      }
+      if (!found) throw new HttpError(404, 'No wiki article for this word');
       return found;
     }, true],
     ['POST', /^\/api\/translate$/, async ({ body }) => {

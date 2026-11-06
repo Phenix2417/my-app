@@ -51,6 +51,10 @@ Read the Bible, highlight passages, write notes, and see the notes your friends 
   (`server/data/topics.json`, 5,952 titles, no text; rebuild with `node scripts/build-topic-index.mjs`), so the
   **圣经辞典** / **Bible Dictionary** buttons cost nothing to show. Tapping one fetches that text from FHL's JSON API
   (`st.php`); the server keeps a copy.
+- **Bible Wiki** — after the Bible dictionary buttons, for words with Bible topics and for names: the Wikipedia article
+  (CC BY-SA 4.0), in Chinese (simplified, when Wikipedia has one) and English, with a link to the full article.
+  One request asks for Bible-specific titles at once ("Grace (Bible)", "Grace in Christianity", …); the bare word
+  counts only if its opening is about the Bible. The server keeps a copy (`server/wiki.js`).
 - **Grammar** — in the Translate panel, tap **Grammar** after the selected text: every word gets its part of speech in Chinese
   (colour-coded), each verb its tense and voice (e.g. 一般过去时 · 被动语态), plus subject/verb and prepositional and
   noun phrases. It runs on the phone with [compromise](https://github.com/spencermountain/compromise) 14.19.0 (MIT),
