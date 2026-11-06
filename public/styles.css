@@ -401,3 +401,6 @@ body.bars-hidden .bottom-nav { transform: translateY(100%); }
 
 .bd-term-en { text-transform: capitalize; }
 .bd-english .bd-text { font-family: "Noto Serif", Georgia, serif; line-height: 1.6; }
+
+.bd-jump[aria-pressed="true"] { background: var(--primary); color: var(--on-primary); }
+.bd-slot > .bd:first-child:not([hidden]) ~ .bd { margin-top: 14px; }

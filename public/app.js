@@ -1089,18 +1089,27 @@ function toggleDictionary(bar, btn) {
     const found = (await bibleEntryFor(w)) || (e?.base ? await bibleEntryFor(e.base.word) : null);
     if (!found || !bibleSlot.isConnected) return; // another word was tapped meanwhile
     const hasEnglish = found.entries.some((x) => x.englishText);
-    bibleSlot.replaceChildren(...[bibleSection(found), hasEnglish ? bibleSection(found, { english: true }) : null].filter(Boolean));
-    // Buttons after the word that scroll down to its Bible dictionary entry, in Chinese or English.
-    const jump = (selector) => () => {
+    // The Bible dictionary entries stay hidden until their button is tapped.
+    const zhSection = bibleSection(found);
+    const enSection = hasEnglish ? bibleSection(found, { english: true }) : null;
+    zhSection.hidden = true;
+    if (enSection) enSection.hidden = true;
+    bibleSlot.replaceChildren(...[zhSection, enSection].filter(Boolean));
+    // Buttons after the word: show (and scroll to) the Chinese or English entry; tap again to hide it.
+    const toggle = (section) => (ev) => {
+      const btn = ev.currentTarget;
+      const opening = section.hidden;
+      section.hidden = !opening;
+      btn.setAttribute('aria-pressed', String(opening));
+      positionToolbar();
+      if (!opening) return;
       const box = body.closest('.dict');
-      const target = bibleSlot.querySelector(selector);
-      if (!target) return;
-      if (box) box.scrollBy({ top: target.getBoundingClientRect().top - box.getBoundingClientRect().top - 6, behavior: 'smooth' });
-      target.classList.remove('flash'); void target.offsetWidth; target.classList.add('flash');
+      if (box) box.scrollBy({ top: section.getBoundingClientRect().top - box.getBoundingClientRect().top - 6, behavior: 'smooth' });
+      section.classList.remove('flash'); void section.offsetWidth; section.classList.add('flash');
     };
     body.querySelector('.dict-head')?.append(...[
-      h('button', { class: 'bd-jump', type: 'button', 'aria-label': 'Go to the Chinese Bible dictionary entry', onclick: jump('.bd:not(.bd-english)') }, '圣经辞典 ↓'),
-      hasEnglish ? h('button', { class: 'bd-jump', type: 'button', lang: 'en', 'aria-label': 'Go to the English Bible dictionary entry', onclick: jump('.bd-english') }, 'Bible Dictionary ↓') : null,
+      h('button', { class: 'bd-jump', type: 'button', 'aria-pressed': 'false', 'aria-label': 'Show the Chinese Bible dictionary entry', onclick: toggle(zhSection) }, '圣经辞典'),
+      enSection ? h('button', { class: 'bd-jump', type: 'button', lang: 'en', 'aria-pressed': 'false', 'aria-label': 'Show the English Bible dictionary entry', onclick: toggle(enSection) }, 'Bible Dictionary') : null,
     ].filter(Boolean));
     positionToolbar();
   };
