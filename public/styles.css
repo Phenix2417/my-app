@@ -7,7 +7,7 @@
   --muted: #a9b2b0;
   --primary: #8fdcc4;
   --on-primary: #00382d;
-  --error: #ffb4ab;
+  --error: #ffb4ab; --on-error: #690005;
   --divider: #2c3533;
   --handle: #f2a63b;
   --sel: rgba(242, 166, 59, 0.32);
@@ -25,7 +25,7 @@
   :root {
     --bg: #f6faf8; --surface: #e6eeeb; --surface-2: #eef3f1; --pill: #cde8e0;
     --on-bg: #171d1c; --muted: #4f5a57; --primary: #006b58; --on-primary: #fff;
-    --error: #ba1a1a; --divider: #d4dedb; --handle: #e08a10; --sel: rgba(242, 166, 59, 0.28);
+    --error: #ba1a1a; --on-error: #fff; --divider: #d4dedb; --handle: #e08a10; --sel: rgba(242, 166, 59, 0.28);
     --hl-yellow: #f6e08e; --hl-green: #b9e4c6; --hl-blue: #bdd6f5; --hl-pink: #f3c3d9; --hl-purple: #dacbf5;
     --scrim: rgba(0, 0, 0, 0.35);
     color-scheme: light;
@@ -596,3 +596,15 @@ body.bars-hidden .b-size-panel { display: none; }
 .card .note-actions { margin: -6px -6px -6px auto; }
 .card .note-actions .edit-note { margin: 0; }
 .delete-note { color: var(--error); }
+
+/* One look for the same purpose everywhere */
+.filled-btn.danger-btn { background: var(--error); color: var(--on-error); }
+.confirm-text { margin: -6px 0 18px; color: var(--muted); font-size: 16px; line-height: 1.5; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+.toc-head h2 { font-size: 22px; font-weight: 500; }           /* full-page titles match sheet titles */
+.to-top { display: grid; place-items: center; padding: 0; }
+.to-top svg { width: 22px; height: 22px; }
+.lib-more { display: grid; place-items: center; padding: 0; }
+.lib-more svg { width: 20px; height: 20px; }
+.grip svg { width: 20px; height: 20px; display: block; }
+.manage-actions .delete-note { width: 40px; height: 40px; }

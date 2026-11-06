@@ -31,6 +31,7 @@ const svg = (d) => {
   s.append(p);
   return s;
 };
+// Every icon is an outline drawing in one style; the same purpose always uses the same icon.
 const ICONS = {
   // Reading-page side bar: notes from people, commentary books standing on a shelf, and a serif "Aa".
   friendsNotes: '<path d="M14.5 3.5H6.5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h5"/><path d="M8 8.5h6M8 12h3.5"/><circle cx="17" cy="13" r="2.6"/><path d="M12.6 21c.5-2.5 2.3-3.9 4.4-3.9s3.9 1.4 4.4 3.9"/>',
@@ -41,23 +42,26 @@ const ICONS = {
   copy: '<rect x="8.5" y="8.5" width="12" height="12" rx="2"/><path d="M15.5 8.5V5a1.5 1.5 0 0 0-1.5-1.5H5A1.5 1.5 0 0 0 3.5 5v9A1.5 1.5 0 0 0 5 15.5h3.5"/>',
   dictionary: '<path d="M12 7C10 5.4 6.8 5 2.8 5.8v12.6c4-.8 7.2-.4 9.2 1.2 2-1.6 5.2-2 9.2-1.2V5.8C17.2 5 14 5.4 12 7z"/><path d="M12 7v12.6"/><circle cx="16.5" cy="12.5" r="3.2"/><path d="M18.8 14.8l2.1 2.1"/>',
   pencil: '<path d="M4.5 19.5l.9-4 10.8-10.8a1.9 1.9 0 0 1 2.7 0l.4.4a1.9 1.9 0 0 1 0 2.7L8.5 18.6z"/><path d="M14.6 6.3l3.1 3.1"/>',
-  // Books: tab (filled, like the other tabs), add a book, and a book's contents.
-  books: 'M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H8V4h12v12zM10 9h8v2h-8zm0 3h4v2h-4zm0-6h8v2h-8z',
-  addBook: '<path d="M5 4.5A1.5 1.5 0 0 1 6.5 3H17v12H6.5A1.5 1.5 0 0 0 5 16.5z"/><path d="M5 16.5A1.5 1.5 0 0 0 6.5 18H11"/><path d="M18 15v6M15 18h6"/>',
+  // Books: tab (a closed book), add a book, and a book's contents.
+  books: '<path d="M6.5 3.5H19v14H6.5A1.5 1.5 0 0 0 5 19V5a1.5 1.5 0 0 1 1.5-1.5z"/><path d="M5 19a1.5 1.5 0 0 0 1.5 1.5H19"/><path d="M10 3.5v6.5l2-1.4 2 1.4V3.5"/>',
+  addBook: '<path d="M6.5 3.5H16v11H6.5A1.5 1.5 0 0 0 5 16V5a1.5 1.5 0 0 1 1.5-1.5z"/><path d="M5 16a1.5 1.5 0 0 0 1.5 1.5H11"/><path d="M18 14.5v6M15 17.5h6"/>',
   contents: '<path d="M8 6h12M8 12h12M8 18h12"/><circle cx="4" cy="6" r=".9" fill="currentColor"/><circle cx="4" cy="12" r=".9" fill="currentColor"/><circle cx="4" cy="18" r=".9" fill="currentColor"/>',
   back: '<path d="M20 12H5M11 5l-7 7 7 7"/>',
   close: '<path d="M6 6l12 12M18 6L6 18"/>',
   more: '<circle cx="5" cy="12" r="1.3" fill="currentColor"/><circle cx="12" cy="12" r="1.3" fill="currentColor"/><circle cx="19" cy="12" r="1.3" fill="currentColor"/>',
   sliders: '<path d="M4 7.5h7M17 7.5h3M4 16.5h3M13 16.5h7"/><circle cx="14" cy="7.5" r="2.5"/><circle cx="10" cy="16.5" r="2.5"/>',
   serifAa: '<text x="1.5" y="19.5" font-family="Georgia,\'Noto Serif\',serif" font-size="17" font-weight="700" fill="currentColor" stroke="none">A</text><text x="13.5" y="19.5" font-family="Georgia,\'Noto Serif\',serif" font-size="12" font-weight="700" fill="currentColor" stroke="none">a</text>',
-  read: 'M21 5c-1.1-.35-2.3-.5-3.5-.5-1.95 0-4.05.4-5.5 1.5-1.45-1.1-3.55-1.5-5.5-1.5S2.45 4.9 1 6v14.65c0 .25.25.5.5.5.1 0 .15-.05.25-.05C3.1 20.45 5.05 20 6.5 20c1.95 0 4.05.4 5.5 1.5 1.35-.85 3.8-1.5 5.5-1.5 1.65 0 3.35.3 4.75 1.05.1.05.15.05.25.05.25 0 .5-.25.5-.5V6c-.6-.45-1.25-.75-2-1zm0 13.5c-1.1-.35-2.3-.5-3.5-.5-1.7 0-4.15.65-5.5 1.5V8c1.35-.85 3.8-1.5 5.5-1.5 1.2 0 2.4.15 3.5.5v11.5zM17.5 10.5c.88 0 1.73.09 2.5.26V9.24c-.79-.15-1.64-.24-2.5-.24-1.7 0-3.24.29-4.5.83v1.66c1.13-.64 2.7-.99 4.5-.99zM13 12.49v1.66c1.13-.64 2.7-.99 4.5-.99.88 0 1.73.09 2.5.26V11.9c-.79-.15-1.64-.24-2.5-.24-1.7 0-3.24.3-4.5.83zM17.5 14.33c-1.7 0-3.24.29-4.5.83v1.66c1.13-.64 2.7-.99 4.5-.99.88 0 1.73.09 2.5.26v-1.52c-.79-.16-1.64-.24-2.5-.24z',
-  notes: 'M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h10l6-6V5c0-1.1-.9-2-2-2zM5 19V5h14v9h-5v5H5zm2-12h10v2H7zm0 4h10v2H7zm0 4h5v2H7z',
-  refresh: 'M17.65 6.35A7.96 7.96 0 0 0 12 4a8 8 0 1 0 7.73 10h-2.08A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z',
-  personAdd: 'M15 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm-9-2V7H4v3H1v2h3v3h2v-3h3v-2H6zm9 4c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z',
-  account: 'M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z',
-  speaker: 'M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 7.97v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z',
-  chevronLeft: 'M15.41 7.41 14 6l-6 6 6 6 1.41-1.41L10.83 12z',
-  friends: 'M9 13.75c-2.34 0-7 1.17-7 3.5V19h14v-1.75c0-2.33-4.66-3.5-7-3.5zM4.34 17c.84-.58 2.87-1.25 4.66-1.25s3.82.67 4.66 1.25H4.34zM9 12c1.93 0 3.5-1.57 3.5-3.5S10.93 5 9 5 5.5 6.57 5.5 8.5 7.07 12 9 12zm0-5c.83 0 1.5.67 1.5 1.5S9.83 10 9 10s-1.5-.67-1.5-1.5S8.17 7 9 7zm7.04 6.81c1.16.84 1.96 1.96 1.96 3.44V19h4v-1.75c0-2.02-3.5-3.17-5.96-3.44zM15 12c1.93 0 3.5-1.57 3.5-3.5S16.93 5 15 5c-.54 0-1.04.13-1.5.35.63.89 1 1.98 1 3.15s-.37 2.26-1 3.15c.46.22.96.35 1.5.35z',
+  read: '<path d="M12 7C10 5.4 6.8 5 2.8 5.8v12.6c4-.8 7.2-.4 9.2 1.2 2-1.6 5.2-2 9.2-1.2V5.8C17.2 5 14 5.4 12 7z"/><path d="M12 7v12.6"/>',
+  notes: '<path d="M5 3.5h14v11l-5.5 6H5z"/><path d="M13.5 20.5v-6H19"/><path d="M8.5 8h7M8.5 11.5h4"/>',
+  refresh: '<path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3"/><path d="M19.5 4.5v4h-4"/>',
+  personAdd: '<circle cx="10" cy="8" r="3.4"/><path d="M3 20c.7-3.7 3.5-5.9 7-5.9 1.4 0 2.7.4 3.8 1"/><path d="M18.5 13v7M15 16.5h7"/>',
+  account: '<circle cx="12" cy="8" r="3.6"/><path d="M4.5 20c.8-3.9 3.8-6.2 7.5-6.2s6.7 2.3 7.5 6.2"/>',
+  speaker: '<path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M15.5 9.2a4 4 0 0 1 0 5.6M18 6.8a7.5 7.5 0 0 1 0 10.4"/>',
+  chevronLeft: '<path d="M14.5 6l-6 6 6 6"/>',
+  friends: '<circle cx="9" cy="8" r="3.2"/><path d="M3 19.5c.6-3.3 3-5.2 6-5.2s5.4 1.9 6 5.2"/><circle cx="16.8" cy="9" r="2.6"/><path d="M16.8 14.3c2.3 0 4 1.5 4.4 4.2"/>',
+  arrowUp: '<path d="M12 19.5v-15M5.5 11l6.5-6.5 6.5 6.5"/>',
+  arrowDown: '<path d="M12 4.5v15M5.5 13l6.5 6.5 6.5-6.5"/>',
+  grip: '<circle cx="9" cy="6" r="1.3" fill="currentColor"/><circle cx="15" cy="6" r="1.3" fill="currentColor"/><circle cx="9" cy="12" r="1.3" fill="currentColor"/><circle cx="15" cy="12" r="1.3" fill="currentColor"/><circle cx="9" cy="18" r="1.3" fill="currentColor"/><circle cx="15" cy="18" r="1.3" fill="currentColor"/>',
 };
 
 /* ---------------- storage ---------------- */
@@ -276,13 +280,15 @@ function toast(msg) {
 }
 
 const openSheets = new Map(); // label -> close(); a sheet is never stacked on a copy of itself
-function openSheet(build, { label } = {}) {
+function openSheet(build, { label, onClose } = {}) {
   const key = label || 'Dialog';
   openSheets.get(key)?.();
   const sheet = h('div', { class: 'sheet', role: 'dialog', 'aria-modal': 'true', 'aria-label': key });
   const scrim = h('div', { class: 'scrim' }, sheet);
   const close = () => {
+    if (!scrim.isConnected) return;
     scrim.remove(); document.removeEventListener('keydown', onKey);
+    onClose?.();
     if (openSheets.get(key) === close) openSheets.delete(key);
   };
   openSheets.set(key, close);
@@ -316,15 +322,31 @@ function noteTime(n) {
     : { year: 'numeric', month: 'short', day: 'numeric' };
   return h('span', { class: 'note-time', title: t.toLocaleString() }, `${edited ? 'Edited ' : ''}${today ? (edited ? 'today, ' : 'Today, ') : ''}${t.toLocaleString(undefined, opts)}`);
 }
+// A yes/no question in the app's own sheet (never the browser's grey dialog). Resolves true if confirmed.
+function confirmSheet({ title, message = '', action = 'Delete' }) {
+  return new Promise((resolve) => {
+    let answered = false;
+    const done = (yes, close) => { if (answered) return; answered = true; close(); resolve(yes); };
+    openSheet((close) => [
+      h('h2', {}, title),
+      message ? h('p', { class: 'confirm-text' }, message) : null,
+      h('div', { class: 'sheet-actions' },
+        h('span', { class: 'spacer' }),
+        h('button', { class: 'text-btn', type: 'button', onclick: () => done(false, close) }, 'Cancel'),
+        h('button', { class: 'filled-btn danger-btn', type: 'button', autofocus: true, onclick: () => done(true, close) }, action)),
+    ], { label: 'Confirm', onClose: () => { if (!answered) { answered = true; resolve(false); } } }); // closed any other way: no
+  });
+}
+
 // Delete a note (Bible or book) after asking; then refresh what's on screen.
-function confirmDeleteNote(n, after) {
-  if (!confirm(n.body ? 'Delete this note?' : 'Delete this highlight?')) return false;
+async function confirmDeleteNote(n, after) {
+  if (!await confirmSheet({ title: n.body ? 'Delete this note?' : 'Delete this highlight?', message: n.quote })) return false;
   (n.lib ? deleteBookNote : deleteNote)(n.id);
   rerender(); toast(n.body ? 'Note deleted' : 'Highlight deleted');
   after?.();
   return true;
 }
-const deleteNoteBtn = (onclick) => h('button', { class: 'icon-btn edit-note delete-note', type: 'button', 'aria-label': 'Delete', title: 'Delete',
+const deleteNoteBtn = (onclick, label = 'Delete') => h('button', { class: 'icon-btn edit-note delete-note', type: 'button', 'aria-label': label, title: label,
   onclick: (e) => { e.stopPropagation(); onclick(); } }, svg(ICONS.close));
 const editNoteBtn = (onclick) => h('button', { class: 'icon-btn edit-note', type: 'button', 'aria-label': 'Edit note', title: 'Edit note',
   onclick: (e) => { e.stopPropagation(); onclick(); } }, svg(ICONS.pencil));
@@ -406,8 +428,8 @@ function noteEditor(note, { isNew } = {}) {
       h('label', { class: 'field' }, h('span', {}, 'Note'), ta),
       quoteLinks(ta),
       h('div', { class: 'sheet-actions' },
-        !isNew ? h('button', { class: 'text-btn danger', type: 'button', onclick: () => {
-          if (!confirm('Delete this note?')) return;
+        !isNew ? h('button', { class: 'text-btn danger', type: 'button', onclick: async () => {
+          if (!await confirmSheet({ title: 'Delete this note?', message: note.quote })) return;
           (note.lib ? deleteBookNote : deleteNote)(note.id); close(); rerender(); toast('Note deleted');
         } }, 'Delete') : null,
         h('span', { class: 'spacer' }),
@@ -1478,7 +1500,7 @@ function toggleDictionary(bar, btn) {
     h('p', { class: 'dict-credit' }, multi ? 'Translation: Youdao · Phonetics & audio: Youdao, Free Dictionary API · Dictionary: ECDICT · 圣经辞典: 信望爱' : 'ECDICT English–Chinese dictionary · Phonetics & audio: Youdao, Free Dictionary API · 圣经辞典: 信望爱'));
   // An ↑ button appears once the panel is scrolled down, and takes it back to the top.
   const toTop = h('button', { class: 'to-top', type: 'button', hidden: true, 'aria-label': 'Back to top', title: 'Back to top',
-    onclick: () => dictBox.scrollTo({ top: 0, behavior: 'smooth' }) }, '↑');
+    onclick: () => dictBox.scrollTo({ top: 0, behavior: 'smooth' }) }, svg(ICONS.arrowUp));
   dictBox.addEventListener('scroll', () => { toTop.hidden = dictBox.scrollTop < 40; }, { passive: true });
   bar.append(dictBox, toTop);
   if (multi) body.replaceChildren(h('p', { class: 'dict-muted' }, 'Tap any word above for its definition, or Grammar to analyse the passage.'));
@@ -1693,9 +1715,8 @@ function drawManage() {
           set(next);
           cm.manage.querySelector(`.manage-row[data-id="${id}"]`)?.focus();
         } },
-      h('span', { class: 'grip', 'aria-hidden': 'true' }, '⋮⋮'), info(c),
-      h('div', { class: 'manage-actions' }, h('button', { class: 'icon-btn', 'aria-label': `Remove ${c.name}`, title: `Remove ${c.name}`,
-        onclick: () => set(ids.filter((x) => x !== id)) }, '✕')));
+      h('span', { class: 'grip', 'aria-hidden': 'true' }, svg(ICONS.grip)), info(c),
+      h('div', { class: 'manage-actions' }, deleteNoteBtn(() => set(ids.filter((x) => x !== id)), `Remove ${c.name}`)));
       enableHoldToDrag(row, () => set([...mine.querySelectorAll('.manage-row')].map((r) => r.dataset.id)));
       return row;
     }));
@@ -1798,7 +1819,7 @@ function renderCommentaryPage() {
   // The dictionary panel's arrow, once you've scrolled away from where the page opened: it returns there.
   cm.homeTop = 0;
   const toTop = h('button', { class: 'to-top page-top', type: 'button', hidden: true, 'aria-label': 'Back to where you started', title: 'Back to where you started',
-    onclick: () => cm.scroller.scrollTo({ top: cm.homeTop, behavior: 'smooth' }) }, '↑');
+    onclick: () => cm.scroller.scrollTo({ top: cm.homeTop, behavior: 'smooth' }) }, svg(ICONS.arrowUp));
   let lastTop = 0, touched = false; // jumping to the verse on opening isn't reading on, so wait for the reader to scroll
   for (const ev of ['pointerdown', 'wheel', 'keydown']) cm.scroller.addEventListener(ev, () => { touched = true; }, { passive: true });
   cm.scroller.addEventListener('scroll', () => {
@@ -1809,7 +1830,7 @@ function renderCommentaryPage() {
     const dir = cm.manageOpen ? 0 : top > cm.homeTop + 300 ? 1 : top < cm.homeTop - 300 ? -1 : 0;
     toTop.hidden = !dir;
     if (dir) {
-      toTop.textContent = dir > 0 ? '↑' : '↓';
+      toTop.replaceChildren(svg(dir > 0 ? ICONS.arrowUp : ICONS.arrowDown));
       const name = dir > 0 ? 'Back up to where you started' : 'Back down to where you started';
       toTop.setAttribute('aria-label', name); toTop.title = name;
     }
@@ -2208,8 +2229,8 @@ async function renderFriends() {
         act('PUT', `/api/friends/${u.id}/sharing`, { enabled: e.target.checked });
       } });
       kids.push(h('div', { class: 'card' },
-        personName(u, h('button', { class: 'text-btn danger', style: 'font-size:15px', onclick: () => {
-          if (confirm(`Remove ${dn(u)} (@${u.username}) as a friend? You'll stop seeing each other's notes.`)) act('DELETE', `/api/friends/${u.id}`);
+        personName(u, h('button', { class: 'text-btn danger', style: 'font-size:15px', onclick: async () => {
+          if (await confirmSheet({ title: `Remove ${dn(u)} as a friend?`, message: `@${u.username} · You'll stop seeing each other's notes.`, action: 'Remove' })) act('DELETE', `/api/friends/${u.id}`);
         } }, 'Remove')),
         h('div', { class: 'share-row' },
           h('label', { for: id }, h('div', { class: 'label' }, 'Can see my notes'),
@@ -2395,7 +2416,7 @@ async function renderLibrary() {
         coverImg(b),
         h('span', { class: 'lib-title' }, b.title),
         h('span', { class: 'lib-meta' }, [b.author, bookProgress(b) != null ? `${bookProgress(b)}%` : null].filter(Boolean).join(' · '))),
-      h('button', { class: 'icon-btn lib-more', type: 'button', 'aria-label': `Options for ${b.title}`, title: 'Book options', onclick: () => bookOptions(b) }, '⋯'))));
+      h('button', { class: 'icon-btn lib-more', type: 'button', 'aria-label': `Book options: ${b.title}`, title: 'Book options', onclick: () => bookOptions(b) }, svg(ICONS.more)))));
   };
   draw(lib.books || store.get(`library.${uid()}`, null));
   try { draw(await loadLibrary()); } catch { if (state.tab === 'books') draw(lib.books || store.get(`library.${uid()}`, null), true); }
@@ -2442,12 +2463,12 @@ function bookOptions(b, { onSaved = renderLibrary, onDeleted = renderLibrary } =
   openSheet((close) => {
     const input = h('input', { value: b.title, maxlength: 200, required: true });
     return [
-      h('h2', {}, 'Book'),
+      h('h2', {}, 'Book options'),
       h('label', { class: 'field' }, h('span', {}, 'Title'), input),
       h('p', { class: 'handle-sub' }, `${b.format.toUpperCase()} · ${(b.size / 1048576).toFixed(b.size < 10485760 ? 1 : 0)} MB`),
       h('div', { class: 'sheet-actions' },
         h('button', { class: 'text-btn danger', type: 'button', onclick: async () => {
-          if (!confirm(`Delete “${b.title}” from your books?`)) return;
+          if (!await confirmSheet({ title: 'Delete this book?', message: `“${b.title}” and its highlights and notes will be removed from your books.` })) return;
           try { await api('DELETE', `/api/library/${b.id}`); close(); toast('Book deleted'); onDeleted(); } catch (e) { toast(e.message); }
         } }, 'Delete'),
         h('span', { class: 'spacer' }),
@@ -2491,7 +2512,7 @@ async function renderBookReader() {
   const sizeBtn = barBtn('Text size', ICONS.sliders, () => { sizePanel.hidden = !sizePanel.hidden; sizeBtn.setAttribute('aria-expanded', String(!sizePanel.hidden)); });
   sizeBtn.setAttribute('aria-expanded', 'false');
   const topBar = h('header', { class: 'b-topbar' },
-    barBtn('Close book', ICONS.close, toLibrary), h('span', { class: 'spacer' }),
+    barBtn('Back to books', ICONS.back, toLibrary), h('span', { class: 'spacer' }),
     barBtn('Book options', ICONS.more, () => bookOptions(b, { onSaved: () => { runEl.textContent = runEl.textContent.replace(/^[^·]*/, b.title + ' '); }, onDeleted: toLibrary })));
   const toolbar = h('nav', { class: 'b-toolbar', 'aria-label': 'Book' }, barBtn('Contents', ICONS.contents, () => showContents()),
     barBtn('Notes', ICONS.notes, () => showBookNotes()), sizeBtn);
