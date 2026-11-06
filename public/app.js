@@ -318,10 +318,10 @@ function noteTime(n) {
 }
 const editNoteBtn = (onclick) => h('button', { class: 'icon-btn edit-note', type: 'button', 'aria-label': 'Edit note', title: 'Edit note',
   onclick: (e) => { e.stopPropagation(); onclick(); } }, svg(ICONS.pencil));
-function noteCard(n, { onClick, friend, onEdit } = {}) {
+function noteCard(n, { onClick, friend, onEdit, title } = {}) {
   return h('div', { class: 'card' + (onClick ? ' clickable' : ''), onclick: onClick, tabindex: onClick ? 0 : null,
     onkeydown: onClick ? (e) => { if (e.key === 'Enter') onClick(); } : null },
-  h('div', { class: 'card-head' }, h('span', { class: 'note-title' }, ref(n), noteTime(n)), friend ? h('span', { class: 'who', title: '@' + n.author.username }, dn(n.author)) : null,
+  h('div', { class: 'card-head' }, h('span', { class: 'note-title' }, title || ref(n), noteTime(n)), friend ? h('span', { class: 'who', title: '@' + n.author.username }, dn(n.author)) : null,
     onEdit ? editNoteBtn(onEdit) : null),
   h('div', { class: 'quote', dataset: { c: n.color } }, n.quote),
   n.body ? h('p', { class: 'note-body' }, noteBodyNodes(n.body)) : null);
@@ -2482,7 +2482,8 @@ async function renderBookReader() {
   const topBar = h('header', { class: 'b-topbar' },
     barBtn('Close book', ICONS.close, toLibrary), h('span', { class: 'spacer' }),
     barBtn('Book options', ICONS.more, () => bookOptions(b, { onSaved: () => { runEl.textContent = runEl.textContent.replace(/^[^·]*/, b.title + ' '); }, onDeleted: toLibrary })));
-  const toolbar = h('nav', { class: 'b-toolbar', 'aria-label': 'Book' }, barBtn('Contents', ICONS.contents, () => showContents()), sizeBtn);
+  const toolbar = h('nav', { class: 'b-toolbar', 'aria-label': 'Book' }, barBtn('Contents', ICONS.contents, () => showContents()),
+    barBtn('Notes', ICONS.notes, () => showBookNotes()), sizeBtn);
   const screen = h('main', { class: 'screen commentary-page book-page' }, runEl, scroller, progressEl, topBar, sizePanel, toolbar);
   mount(screen);
 
@@ -2507,7 +2508,7 @@ async function renderBookReader() {
   Object.assign(reader, { mode: 'book', body, scroller, words: [], gaps: [], verseEls: [], handles: null, toolbar: null });
   body.addEventListener('pointerdown', (e) => { const blk = bookBlockAt(e.target); if (blk) wrapBookBlock(blk); }, { capture: true });
   attachReaderGestures(body);
-  const show = async (i, { frac = 0, anchor = '', slide = 0 } = {}) => {
+  const show = async (i, { frac = 0, anchor = '', slide = 0, block = 0 } = {}) => {
     chapter = Math.max(0, Math.min(book.chapters.length - 1, i));
     clearSelection();
     const content = await book.render(chapter);
@@ -2526,7 +2527,8 @@ async function renderBookReader() {
     whereEl.textContent = `Chapter ${chapter + 1} of ${book.chapters.length}`;
     if (slide) { body.classList.remove('slide-from-right', 'slide-from-left'); void body.offsetWidth; body.classList.add(slide > 0 ? 'slide-from-right' : 'slide-from-left'); }
     requestAnimationFrame(() => {
-      const target = anchor && body.querySelector(`#${CSS.escape(ANCHOR_PREFIX + anchor)}`);
+      const target = (anchor && body.querySelector(`#${CSS.escape(ANCHOR_PREFIX + anchor)}`)) || (block && lib.blocks[block - 1]);
+      if (block && target) { target.classList.remove('flash'); void target.offsetWidth; target.classList.add('flash'); }
       if (target) scroller.scrollTop += target.getBoundingClientRect().top - scroller.getBoundingClientRect().top - 56;
       else scroller.scrollTop = frac * Math.max(0, scroller.scrollHeight - scroller.clientHeight);
       saveBookPosition();
@@ -2537,6 +2539,26 @@ async function renderBookReader() {
     const max = Math.max(1, scroller.scrollHeight - scroller.clientHeight);
     const frac = Math.min(1, Math.max(0, scroller.scrollTop / max));
     return { chapter, frac, progress: Math.min(1, (chapter + frac) / book.chapters.length) };
+  };
+  // This book's highlights and notes as a full page, in reading order; a tap goes to the place.
+  const showBookNotes = () => {
+    document.querySelector('.toc-page')?.remove();
+    const notes = (lib.notes.get(b.id) || []).slice()
+      .sort((x, y) => x.chapter - y.chapter || x.start.verse - y.start.verse || x.start.word - y.start.word);
+    const close = () => { page.remove(); document.removeEventListener('keydown', onKey); };
+    const onKey = (e) => { if (e.key === 'Escape') close(); };
+    const go = (n) => { close(); show(n.chapter, { block: n.start.verse }); };
+    const list = h('div', { class: 'toc-list b-notes-list' }, ...(notes.length
+      ? notes.map((n) => noteCard(n, { title: book.chapterTitle(n.chapter) || `Chapter ${n.chapter + 1}`, onClick: () => go(n), onEdit: () => { close(); noteEditor(n); } }))
+      : [h('p', { class: 'empty-inline' }, 'No highlights or notes in this book yet. Hold a word to select text, then pick a colour or Note.')]));
+    const page = h('div', { class: 'toc-page', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Notes' },
+      h('header', { class: 'toc-head' },
+        h('button', { class: 'icon-btn toc-close', type: 'button', 'aria-label': 'Back to the book', title: 'Back to the book', onclick: close }, svg(ICONS.back)),
+        h('h2', {}, 'Notes'), h('span', { class: 'toc-title' }, notes.length ? `${notes.length} in ${b.title}` : b.title)),
+      list);
+    document.body.append(page);
+    document.addEventListener('keydown', onKey);
+    page.querySelector('.toc-close').focus();
   };
   // The contents as a full page over the book; the current chapter is marked and scrolled into view.
   const showContents = () => {
