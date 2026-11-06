@@ -701,3 +701,5 @@ body.bars-hidden .b-size-panel { display: none; }
 .bd-translate:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .bd-translate.loading { opacity: .6; cursor: progress; }
 .bd-translate.loading::after { content: " …"; }
+.dict-origin { margin: 2px 0 6px; font-size: 13px; color: var(--muted); }
+.dict-origin .origin-word { font-size: 15px; color: var(--on-bg); }

@@ -63,6 +63,12 @@ Read the Bible, highlight passages, write notes, and see the notes your friends 
 - **翻译 / Translate** — an entry that isn't in the interface language (Easton and the ISBE in Chinese; Bible Wiki or 圣经wiki
   when Wikipedia has only the other language) has a translate button beside its title. The text is translated in pieces
   (Youdao, up to about 4,000 characters, a piece that can't be translated stays as it is); tapping again shows the original.
+- **Word origins** — a word English took over from a language of the Bible's world shows where it comes from under the
+  pronunciations: 源自希伯来语 · אַבְרָם (ʾaḇrām) / From Hebrew · אַבְרָם (ʾaḇrām). About 640 Bible words: names from
+  Hebrew, Aramaic, Greek, Akkadian, Egyptian, Persian…, and terms such as amen, cherub, ephod, shekel, hosanna (Near Eastern
+  languages), and angel, apostle, baptize, psalm (Greek Bible terms, not everyday words like "hour"). From Wiktionary
+  (CC BY-SA) via kaikki.org: `public/origins.json`, rebuilt with
+  `curl -s https://kaikki.org/dictionary/English/kaikki.org-dictionary-English.jsonl | node scripts/build-word-origins.mjs`.
 - **Dictionary counts** — in the English text, names (people, God, places, peoples — capitalised words, and the temple,
   tabernacle, sanctuary and synagogue) have a small raised number, on their first appearance in the chapter, saying how many Bible dictionaries have them
   (圣经辞典/Bible Dictionary counts once, then Easton, ISBE and the Bible wiki). Each dictionary's button and entry heading

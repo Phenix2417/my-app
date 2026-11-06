@@ -1592,6 +1592,23 @@ function wikiFor(word) {
 }
 // The Bible wiki entry: Chinese first (when Wikipedia has it), then English, each linking to the full article.
 // One language of the Bible wiki entry ('zh': 圣经wiki, 'en': Bible Wiki), linking to the full article.
+// Where a word comes from, when English took it straight from Hebrew, Aramaic, Greek… (public/origins.json, built from
+// Wiktionary by scripts/build-word-origins.mjs). Loaded the first time it's needed.
+const ORIGIN_LANGS = {
+  he: ['Hebrew', '希伯来语'], hbo: ['Biblical Hebrew', '希伯来语'], 'he-old': ['Hebrew', '希伯来语'], arc: ['Aramaic', '亚兰语'], 'arc-imp': ['Aramaic', '亚兰语'],
+  'arc-bib': ['Aramaic', '亚兰语'], syc: ['Syriac', '叙利亚语'], grc: ['Ancient Greek', '古希腊语'], 'grc-koi': ['Koine Greek', '通用希腊语'], el: ['Greek', '希腊语'],
+  akk: ['Akkadian', '阿卡德语'], egy: ['Egyptian', '古埃及语'], peo: ['Old Persian', '古波斯语'], fa: ['Persian', '波斯语'], phn: ['Phoenician', '腓尼基语'],
+  uga: ['Ugaritic', '乌加里特语'], sux: ['Sumerian', '苏美尔语'],
+};
+let originsFile = null;
+async function originFor(token, key) {
+  originsFile ??= fetch('/origins.json').then((r) => (r.ok ? r.json() : {})).catch(() => { originsFile = null; return {}; });
+  const all = await originsFile;
+  const o = all[token] || all[key] || all[token.toLowerCase()];
+  const names = o && ORIGIN_LANGS[o.lang];
+  return names ? { ...o, en: names[0], zh: names[1] } : null;
+}
+
 // Translating an entry that isn't in the interface language. Long text goes in pieces (the translation service takes up
 // to 600 characters), a few at a time, up to about 4,000 characters; each piece is remembered.
 const TRANSLATE_MAX = 4000;
@@ -1937,6 +1954,17 @@ function toggleDictionary(bar, btn) {
       namePronRow(w),
       h('p', { class: 'dict-muted' }, 'Not in the English dictionary.'), bibleSlot, wikiSlot);
     else body.replaceChildren(...[...block(e, !e.base), ...(e.base ? [h('div', { class: 'dict-base' }, `Base form: ${e.base.word}`), ...block(e.base, true)] : []), bibleSlot, wikiSlot].filter(Boolean));
+    // A word English took straight from a language of the Bible's world: say which, under the pronunciations.
+    const tokenText = (all.find((t) => dictKey(t) === w) || w).replace(/[’']s$/, '').replace(/^[^A-Za-z]+|[^A-Za-z'-]+$/g, '');
+    originFor(tokenText, w).then((o) => {
+      if (!o || !bibleSlot.isConnected) return;
+      const line = h('p', { class: 'dict-origin' }, LANG === 'zh' ? `源自${o.zh}` : `From ${o.en}`,
+        o.word ? h('span', { class: 'origin-word', lang: o.lang.startsWith('grc') || o.lang === 'el' ? 'grc' : o.lang }, ` · ${o.word}`) : null,
+        o.tr ? h('span', { class: 'origin-tr' }, ` (${o.tr})`) : null);
+      const after = body.querySelector('.dict-prons') || body.querySelector('.dict-head');
+      after?.after(line);
+      positionToolbar();
+    });
     positionToolbar();
     // Bible dictionary buttons (圣经辞典, Bible Dictionary, Easton, ISBE), only for the sources that have the word
     // (or its base form). The text is fetched on tap.
