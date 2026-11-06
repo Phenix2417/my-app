@@ -45,6 +45,7 @@ const ICONS = {
   books: 'M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H8V4h12v12zM10 9h8v2h-8zm0 3h4v2h-4zm0-6h8v2h-8z',
   addBook: '<path d="M5 4.5A1.5 1.5 0 0 1 6.5 3H17v12H6.5A1.5 1.5 0 0 0 5 16.5z"/><path d="M5 16.5A1.5 1.5 0 0 0 6.5 18H11"/><path d="M18 15v6M15 18h6"/>',
   contents: '<path d="M8 6h12M8 12h12M8 18h12"/><circle cx="4" cy="6" r=".9" fill="currentColor"/><circle cx="4" cy="12" r=".9" fill="currentColor"/><circle cx="4" cy="18" r=".9" fill="currentColor"/>',
+  back: '<path d="M20 12H5M11 5l-7 7 7 7"/>',
   serifAa: '<text x="1.5" y="19.5" font-family="Georgia,\'Noto Serif\',serif" font-size="17" font-weight="700" fill="currentColor" stroke="none">A</text><text x="13.5" y="19.5" font-family="Georgia,\'Noto Serif\',serif" font-size="12" font-weight="700" fill="currentColor" stroke="none">a</text>',
   read: 'M21 5c-1.1-.35-2.3-.5-3.5-.5-1.95 0-4.05.4-5.5 1.5-1.45-1.1-3.55-1.5-5.5-1.5S2.45 4.9 1 6v14.65c0 .25.25.5.5.5.1 0 .15-.05.25-.05C3.1 20.45 5.05 20 6.5 20c1.95 0 4.05.4 5.5 1.5 1.35-.85 3.8-1.5 5.5-1.5 1.65 0 3.35.3 4.75 1.05.1.05.15.05.25.05.25 0 .5-.25.5-.5V6c-.6-.45-1.25-.75-2-1zm0 13.5c-1.1-.35-2.3-.5-3.5-.5-1.7 0-4.15.65-5.5 1.5V8c1.35-.85 3.8-1.5 5.5-1.5 1.2 0 2.4.15 3.5.5v11.5zM17.5 10.5c.88 0 1.73.09 2.5.26V9.24c-.79-.15-1.64-.24-2.5-.24-1.7 0-3.24.29-4.5.83v1.66c1.13-.64 2.7-.99 4.5-.99zM13 12.49v1.66c1.13-.64 2.7-.99 4.5-.99.88 0 1.73.09 2.5.26V11.9c-.79-.15-1.64-.24-2.5-.24-1.7 0-3.24.3-4.5.83zM17.5 14.33c-1.7 0-3.24.29-4.5.83v1.66c1.13-.64 2.7-.99 4.5-.99.88 0 1.73.09 2.5.26v-1.52c-.79-.16-1.64-.24-2.5-.24z',
   notes: 'M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h10l6-6V5c0-1.1-.9-2-2-2zM5 19V5h14v9h-5v5H5zm2-12h10v2H7zm0 4h10v2H7zm0 4h5v2H7z',
@@ -2452,10 +2453,10 @@ async function renderBookReader() {
   const head = h('header', { class: 'c-head b-head' }, h('div', { class: 'c-titlebar' }, h('h1', {}, b.title)), titleEl);
   const body = h('div', { class: 'book-body', style: `--verse-size:${state.fontSize}px` }, h('p', { class: 'empty-inline' }, 'Opening…'));
   const scroller = h('div', { class: 'c-scroll b-scroll', tabindex: 0 }, body);
-  const back = h('button', { class: 'back-pill', type: 'button', onclick: () => { saveBookPosition(true); state.tab = 'books'; render(); } }, '‹ Books');
-  const screen = h('main', { class: 'screen commentary-page book-page' }, head, scroller, back,
+  // Bottom-left: the contents (slides away with the bars while reading). The Books tab goes back to the library.
+  const tocBtn = h('button', { class: 'icon-btn toc-btn', type: 'button', 'aria-label': 'Contents', title: 'Contents', onclick: () => showContents() }, svg(ICONS.contents));
+  const screen = h('main', { class: 'screen commentary-page book-page' }, head, scroller, tocBtn,
     sideDock([
-      { id: 'side-contents', label: 'Contents', icon: ICONS.contents, action: () => showContents() },
       { id: 'side-book-size', label: 'Text size', icon: ICONS.serifAa, popover: textSizeControl },
     ]));
   mount(screen);
@@ -2499,12 +2500,26 @@ async function renderBookReader() {
     const frac = Math.min(1, Math.max(0, scroller.scrollTop / max));
     return { chapter, frac, progress: Math.min(1, (chapter + frac) / book.chapters.length) };
   };
-  const showContents = () => openSheet((close) => [
-    h('h2', {}, 'Contents'),
-    h('div', { class: 'toc' }, ...(book.toc.length ? book.toc : book.chapters.map((_, i) => ({ label: `Section ${i + 1}`, chapter: i, depth: 0 })))
-      .map((t) => h('button', { class: 'toc-item' + (t.chapter === chapter ? ' current' : ''), style: `padding-left:${12 + Math.min(t.depth, 4) * 16}px`,
-        onclick: () => { close(); show(t.chapter, { anchor: t.anchor }); } }, t.label))),
-  ], { label: 'Contents' });
+  // The contents as a full page over the book; the current chapter is marked and scrolled into view.
+  const showContents = () => {
+    document.querySelector('.toc-page')?.remove();
+    const entries = book.toc.length ? book.toc : book.chapters.map((_, i) => ({ label: book.chapterTitle(i) || `Section ${i + 1}`, chapter: i, depth: 0 }));
+    // The entry for where the reader is: the last one at or before the current chapter.
+    const here = entries.reduce((best, t, i) => (t.chapter <= chapter ? i : best), 0);
+    const close = () => { page.remove(); document.removeEventListener('keydown', onKey); };
+    const onKey = (e) => { if (e.key === 'Escape') close(); };
+    const list = h('div', { class: 'toc-list' }, ...entries.map((t, i) => h('button', {
+      class: 'toc-item' + (i === here ? ' current' : ''), 'aria-current': i === here ? 'true' : null,
+      style: `padding-left:${16 + Math.min(t.depth, 4) * 18}px`, onclick: () => { close(); show(t.chapter, { anchor: t.anchor }); } }, t.label)));
+    const page = h('div', { class: 'toc-page', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Contents' },
+      h('header', { class: 'toc-head' },
+        h('button', { class: 'icon-btn toc-close', type: 'button', 'aria-label': 'Back to the book', title: 'Back to the book', onclick: close }, svg(ICONS.back)),
+        h('h2', {}, 'Contents'), h('span', { class: 'toc-title' }, b.title)),
+      list);
+    document.body.append(page);
+    document.addEventListener('keydown', onKey);
+    requestAnimationFrame(() => { list.querySelector('.current')?.scrollIntoView({ block: 'center' }); page.querySelector('.toc-close').focus(); });
+  };
 
   // Links inside the book go to their chapter (and place on the page).
   body.addEventListener('click', (e) => {
