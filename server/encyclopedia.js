@@ -22,8 +22,6 @@ const COMMON_WORDS = new Set(('after again against all also always among another
   + 'under until up upon us use used very want was way we well went were what when where whether which while who whole whom whose why will with '
   + 'within without would yet you your able above across almost already although become came either else full however indeed instead less mean '
   + 'means near nearly neither person quite ready real really say seem seemed seems set short sure taking tell told true upon usually whatever wish').split(' '));
-// Names the old dictionaries file under another form (the WEB has "Yahweh"; Easton and the ISBE have JEHOVAH).
-const ALIASES = { yahweh: 'jehovah', yhwh: 'jehovah' };
 const MAX_TEXT = 60000; // the longest ISBE articles run to 340,000 characters
 const MAX_ENTRIES = 3;
 
@@ -52,7 +50,7 @@ export function createEncyclopedias({ dir = path.join(here, 'data'), data = null
     const word = normalize(raw);
     if (!word) return [];
     const { index } = load(source);
-    for (const f of [...baseForms(word), ALIASES[word]].filter(Boolean)) if (index.has(f)) return index.get(f).slice(0, MAX_ENTRIES);
+    for (const f of baseForms(word)) if (index.has(f)) return index.get(f).slice(0, MAX_ENTRIES);
     // "baptism" -> "BAPTISM, CHRISTIAN" (an entry filed under a longer heading)
     for (const [h, list] of index) if (h.startsWith(`${word}, `)) return list.slice(0, MAX_ENTRIES);
     return [];
