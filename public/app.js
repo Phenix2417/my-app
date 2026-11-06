@@ -2372,8 +2372,9 @@ async function checkBibleEpub(bufPromise, fileName) {
       h('button', { class: 'text-btn', type: 'button', onclick: close }, 'Cancel'),
       good ? h('button', { class: 'filled-btn', type: 'button', onclick: async (e) => {
         const btn = e.currentTarget; btn.disabled = true;
+        let version = null;
         try {
-          const { version } = await api('POST', '/api/my-versions', { short: shortIn.value, name: nameIn.value, lang });
+          ({ version } = await api('POST', '/api/my-versions', { short: shortIn.value, name: nameIn.value, lang }));
           const ids = Object.keys(data);
           for (let i = 0; i < ids.length; i++) {
             btn.textContent = `Saving ${i + 1} / ${ids.length}…`;
@@ -2382,7 +2383,11 @@ async function checkBibleEpub(bufPromise, fileName) {
           close();
           await loadVersions();
           setVersion(version.id);
-        } catch (err) { btn.disabled = false; btn.textContent = 'Add version'; toast(err.message); }
+        } catch (err) {
+          // Don't leave a half-saved version behind.
+          if (version) await api('DELETE', `/api/my-versions/${version.id}`).catch(() => {});
+          btn.disabled = false; btn.textContent = 'Add version'; toast(err.message);
+        }
       } }, 'Add version') : null),
   ].filter((x) => x != null && x !== false && x !== 0)); // leave out the parts that don't apply
 }
