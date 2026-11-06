@@ -46,6 +46,9 @@ const ICONS = {
   addBook: '<path d="M5 4.5A1.5 1.5 0 0 1 6.5 3H17v12H6.5A1.5 1.5 0 0 0 5 16.5z"/><path d="M5 16.5A1.5 1.5 0 0 0 6.5 18H11"/><path d="M18 15v6M15 18h6"/>',
   contents: '<path d="M8 6h12M8 12h12M8 18h12"/><circle cx="4" cy="6" r=".9" fill="currentColor"/><circle cx="4" cy="12" r=".9" fill="currentColor"/><circle cx="4" cy="18" r=".9" fill="currentColor"/>',
   back: '<path d="M20 12H5M11 5l-7 7 7 7"/>',
+  close: '<path d="M6 6l12 12M18 6L6 18"/>',
+  more: '<circle cx="5" cy="12" r="1.3" fill="currentColor"/><circle cx="12" cy="12" r="1.3" fill="currentColor"/><circle cx="19" cy="12" r="1.3" fill="currentColor"/>',
+  sliders: '<path d="M4 7.5h7M17 7.5h3M4 16.5h3M13 16.5h7"/><circle cx="14" cy="7.5" r="2.5"/><circle cx="10" cy="16.5" r="2.5"/>',
   serifAa: '<text x="1.5" y="19.5" font-family="Georgia,\'Noto Serif\',serif" font-size="17" font-weight="700" fill="currentColor" stroke="none">A</text><text x="13.5" y="19.5" font-family="Georgia,\'Noto Serif\',serif" font-size="12" font-weight="700" fill="currentColor" stroke="none">a</text>',
   read: 'M21 5c-1.1-.35-2.3-.5-3.5-.5-1.95 0-4.05.4-5.5 1.5-1.45-1.1-3.55-1.5-5.5-1.5S2.45 4.9 1 6v14.65c0 .25.25.5.5.5.1 0 .15-.05.25-.05C3.1 20.45 5.05 20 6.5 20c1.95 0 4.05.4 5.5 1.5 1.35-.85 3.8-1.5 5.5-1.5 1.65 0 3.35.3 4.75 1.05.1.05.15.05.25.05.25 0 .5-.25.5-.5V6c-.6-.45-1.25-.75-2-1zm0 13.5c-1.1-.35-2.3-.5-3.5-.5-1.7 0-4.15.65-5.5 1.5V8c1.35-.85 3.8-1.5 5.5-1.5 1.2 0 2.4.15 3.5.5v11.5zM17.5 10.5c.88 0 1.73.09 2.5.26V9.24c-.79-.15-1.64-.24-2.5-.24-1.7 0-3.24.29-4.5.83v1.66c1.13-.64 2.7-.99 4.5-.99zM13 12.49v1.66c1.13-.64 2.7-.99 4.5-.99.88 0 1.73.09 2.5.26V11.9c-.79-.15-1.64-.24-2.5-.24-1.7 0-3.24.3-4.5.83zM17.5 14.33c-1.7 0-3.24.29-4.5.83v1.66c1.13-.64 2.7-.99 4.5-.99.88 0 1.73.09 2.5.26v-1.52c-.79-.16-1.64-.24-2.5-.24z',
   notes: 'M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h10l6-6V5c0-1.1-.9-2-2-2zM5 19V5h14v9h-5v5H5zm2-12h10v2H7zm0 4h10v2H7zm0 4h5v2H7z',
@@ -2410,7 +2413,7 @@ async function makeCover(bytes) {
   } catch { return null; } finally { URL.revokeObjectURL(url); }
 }
 
-function bookOptions(b) {
+function bookOptions(b, { onSaved = renderLibrary, onDeleted = renderLibrary } = {}) {
   openSheet((close) => {
     const input = h('input', { value: b.title, maxlength: 200, required: true });
     return [
@@ -2420,12 +2423,12 @@ function bookOptions(b) {
       h('div', { class: 'sheet-actions' },
         h('button', { class: 'text-btn danger', type: 'button', onclick: async () => {
           if (!confirm(`Delete “${b.title}” from your books?`)) return;
-          try { await api('DELETE', `/api/library/${b.id}`); close(); toast('Book deleted'); renderLibrary(); } catch (e) { toast(e.message); }
+          try { await api('DELETE', `/api/library/${b.id}`); close(); toast('Book deleted'); onDeleted(); } catch (e) { toast(e.message); }
         } }, 'Delete'),
         h('span', { class: 'spacer' }),
         h('button', { class: 'text-btn', type: 'button', onclick: close }, 'Cancel'),
         h('button', { class: 'filled-btn', type: 'button', onclick: async () => {
-          try { await api('PUT', `/api/library/${b.id}`, { title: input.value }); close(); renderLibrary(); } catch (e) { toast(e.message); }
+          try { const r = await api('PUT', `/api/library/${b.id}`, { title: input.value }); b.title = r.book.title; close(); onSaved(); } catch (e) { toast(e.message); }
         } }, 'Save')),
     ];
   }, { label: 'Book options' });
@@ -2449,18 +2452,25 @@ async function openLibraryBook(b) {
 async function renderBookReader() {
   const b = lib.current;
   if (!b) { state.tab = 'books'; return render(); }
-  const titleEl = h('div', { class: 'b-chapter' });
-  const head = h('header', { class: 'c-head b-head' }, h('div', { class: 'c-titlebar' }, h('h1', {}, b.title)), titleEl);
+  // Full screen, no title bar or tabs: a quiet line of book and chapter on top, where you are at the bottom,
+  // and two buttons (back to the library, contents) that show on a tap and slide away while reading.
+  const runEl = h('div', { class: 'b-running' }, b.title);
+  const whereEl = h('span'), pctEl = h('span');
+  const progressEl = h('div', { class: 'b-progress', 'aria-hidden': 'true' }, whereEl, pctEl);
   const body = h('div', { class: 'book-body', style: `--verse-size:${state.fontSize}px` }, h('p', { class: 'empty-inline' }, 'Opening…'));
   const scroller = h('div', { class: 'c-scroll b-scroll', tabindex: 0 }, body);
-  // Bottom-left: the contents (slides away with the bars while reading). The Books tab goes back to the library.
-  const tocBtn = h('button', { class: 'icon-btn toc-btn', type: 'button', 'aria-label': 'Contents', title: 'Contents', onclick: () => showContents() }, svg(ICONS.contents));
-  const screen = h('main', { class: 'screen commentary-page book-page' }, head, scroller, tocBtn,
-    sideDock([
-      { id: 'side-book-size', label: 'Text size', icon: ICONS.serifAa, popover: textSizeControl },
-    ]));
+  // Reader bars: shown on opening and on a tap, slid away while reading.
+  const toLibrary = () => { saveBookPosition(true); state.tab = 'books'; render(); };
+  const barBtn = (label, icon, onclick) => h('button', { class: 'icon-btn b-bar-btn', type: 'button', 'aria-label': label, title: label, onclick }, svg(icon));
+  const sizePanel = h('div', { class: 'b-size-panel', role: 'group', 'aria-label': 'Text size', hidden: true }, textSizeControl());
+  const sizeBtn = barBtn('Text size', ICONS.sliders, () => { sizePanel.hidden = !sizePanel.hidden; sizeBtn.setAttribute('aria-expanded', String(!sizePanel.hidden)); });
+  sizeBtn.setAttribute('aria-expanded', 'false');
+  const topBar = h('header', { class: 'b-topbar' },
+    barBtn('Close book', ICONS.close, toLibrary), h('span', { class: 'spacer' }),
+    barBtn('Book options', ICONS.more, () => bookOptions(b, { onSaved: () => { runEl.textContent = runEl.textContent.replace(/^[^·]*/, b.title + ' '); }, onDeleted: toLibrary })));
+  const toolbar = h('nav', { class: 'b-toolbar', 'aria-label': 'Book' }, barBtn('Contents', ICONS.contents, () => showContents()), sizeBtn);
+  const screen = h('main', { class: 'screen commentary-page book-page' }, runEl, scroller, progressEl, topBar, sizePanel, toolbar);
   mount(screen);
-  new ResizeObserver(() => { scroller.style.paddingTop = `${head.offsetHeight + 10}px`; }).observe(head);
 
   let book;
   try {
@@ -2485,11 +2495,13 @@ async function renderBookReader() {
       chapter > 0 ? h('button', { class: 'text-btn', onclick: () => show(chapter - 1, { slide: -1 }) }, '‹ Previous') : h('span'),
       chapter < book.chapters.length - 1 ? h('button', { class: 'text-btn', onclick: () => show(chapter + 1, { slide: 1 }) }, 'Next ›') : h('span', { class: 'handle-sub' }, 'The end'));
     body.replaceChildren(content, nav);
-    titleEl.textContent = book.chapterTitle(chapter) || `${chapter + 1} of ${book.chapters.length}`;
+    const ct = book.chapterTitle(chapter);
+    runEl.textContent = ct && ct !== b.title ? `${b.title} · ${ct}` : b.title;
+    whereEl.textContent = `Chapter ${chapter + 1} of ${book.chapters.length}`;
     if (slide) { body.classList.remove('slide-from-right', 'slide-from-left'); void body.offsetWidth; body.classList.add(slide > 0 ? 'slide-from-right' : 'slide-from-left'); }
     requestAnimationFrame(() => {
       const target = anchor && body.querySelector(`#${CSS.escape(ANCHOR_PREFIX + anchor)}`);
-      if (target) scroller.scrollTop += target.getBoundingClientRect().top - scroller.getBoundingClientRect().top - head.offsetHeight - 12;
+      if (target) scroller.scrollTop += target.getBoundingClientRect().top - scroller.getBoundingClientRect().top - 56;
       else scroller.scrollTop = frac * Math.max(0, scroller.scrollHeight - scroller.clientHeight);
       saveBookPosition();
     });
@@ -2533,11 +2545,16 @@ async function renderBookReader() {
   for (const ev of ['pointerdown', 'wheel', 'keydown']) scroller.addEventListener(ev, () => { touched = true; }, { passive: true });
   scroller.addEventListener('scroll', () => {
     const top = scroller.scrollTop;
-    if (touched && top > lastTop + 6 && top > 60) setBars(false);
+    if (touched && top > lastTop + 6 && top > 60) { setBars(false); sizePanel.hidden = true; sizeBtn.setAttribute('aria-expanded', 'false'); }
     lastTop = top;
     saveBookPosition();
   }, { passive: true });
-  scroller.addEventListener('click', (e) => { if (!e.target.closest('button, a, .bk-link')) setBars(document.body.classList.contains('bars-hidden')); });
+  scroller.addEventListener('click', (e) => {
+    if (e.target.closest('button, a, .bk-link')) return;
+    const show = document.body.classList.contains('bars-hidden');
+    setBars(show);
+    if (!show) { sizePanel.hidden = true; sizeBtn.setAttribute('aria-expanded', 'false'); }
+  });
   enableChapterSwipe(scroller, body, (dir) => {
     const to = chapter + dir;
     if (to < 0 || to >= book.chapters.length) { toast(dir > 0 ? 'This is the end of the book.' : 'This is the beginning of the book.'); return; }
@@ -2549,6 +2566,8 @@ async function renderBookReader() {
 function saveBookPosition(now) {
   const b = lib.current;
   if (!b || !lib.where) return;
+  const pct = document.querySelector('.b-progress span:last-child');
+  if (pct) pct.textContent = `${(lib.where().progress * 100).toFixed(1).replace(/\.0$/, '')}%`;
   clearTimeout(lib.saveTimer);
   const go = () => {
     const pos = lib.where();
@@ -2593,6 +2612,7 @@ function setBars(visible) { document.body.classList.toggle('bars-hidden', !visib
 
 async function render() {
   if (state.tab !== 'read') setBars(true);
+  document.body.classList.toggle('book-mode', state.tab === 'book'); // the book reader is full screen
   buildNav();
   updateBadge();
   if (state.tab === 'read') return renderReader();
