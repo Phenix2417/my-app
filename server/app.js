@@ -133,7 +133,17 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
     setLibraryPosition: q('UPDATE library_books SET position = ?, opened_at = ? WHERE id = ? AND user_id = ?'),
     setLibraryCover: q('UPDATE library_books SET has_cover = 1 WHERE id = ? AND user_id = ?'),
     deleteLibraryBook: q('DELETE FROM library_books WHERE id = ? AND user_id = ?'),
+    libraryNotes: q('SELECT * FROM library_notes WHERE user_id = ? AND book_id = ? ORDER BY created_at'),
+    libraryNote: q('SELECT * FROM library_notes WHERE id = ?'),
+    upsertLibraryNote: q(`INSERT INTO library_notes (id, user_id, book_id, chapter, block_start, word_start, block_end, word_end, color, quote, body, created_at, updated_at)
+      VALUES (:id, :user_id, :book_id, :chapter, :block_start, :word_start, :block_end, :word_end, :color, :quote, :body, :created, :now)
+      ON CONFLICT (id) DO UPDATE SET chapter = :chapter, block_start = :block_start, word_start = :word_start, block_end = :block_end,
+        word_end = :word_end, color = :color, quote = :quote, body = :body, updated_at = :now`),
+    deleteLibraryNote: q('DELETE FROM library_notes WHERE id = ? AND user_id = ?'),
+    deleteLibraryBookNotes: q('DELETE FROM library_notes WHERE book_id = ? AND user_id = ?'),
   });
+  const libraryNoteOut = (n) => ({ id: n.id, lib: n.book_id, chapter: n.chapter, start: { verse: n.block_start, word: n.word_start },
+    end: { verse: n.block_end, word: n.word_end }, color: n.color, quote: n.quote, body: n.body, createdAt: n.created_at, updatedAt: n.updated_at });
   const libraryOut = (b) => ({ id: b.id, title: b.title, author: b.author, format: b.format, size: b.size, hasCover: !!b.has_cover,
     position: b.position ? JSON.parse(b.position) : null, createdAt: b.created_at, openedAt: b.opened_at });
   const cleanText = (v, max) => String(v ?? '').replace(/[\u0000-\u001f\u007f\u200b-\u200f\u2028-\u202e\u2066-\u2069]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
@@ -282,9 +292,36 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
       }
       return { book: libraryOut(myBook(me, id)) };
     }, true],
+    // Highlights and notes in a book (private, like the book).
+    ['GET', /^\/api\/library\/([\w-]{16})\/notes$/, ({ me, params: [id] }) => {
+      myBook(me, id);
+      return { notes: stmt.libraryNotes.all(me.id, id).map(libraryNoteOut) };
+    }, true],
+    ['PUT', /^\/api\/library-notes\/([\w-]{8,64})$/, ({ me, params: [id], body: b }) => {
+      myBook(me, String(b.lib || ''));
+      const old = stmt.libraryNote.get(id);
+      if (old && old.user_id !== me.id) throw new HttpError(404, 'Note not found');
+      const int = (v, min, max) => Number.isInteger(v) && v >= min && v <= max;
+      if (!int(b.chapter, 0, 100000)) throw new HttpError(400, 'Invalid chapter');
+      for (const p of [b.start, b.end]) if (!p || !int(p.verse, 0, 1000000) || !int(p.word, 0, 1000000)) throw new HttpError(400, 'Invalid selection');
+      if (b.end.verse < b.start.verse || (b.end.verse === b.start.verse && b.end.word < b.start.word)) throw new HttpError(400, 'Selection end is before start');
+      if (!COLORS.has(b.color)) throw new HttpError(400, 'Invalid color');
+      if (typeof b.quote !== 'string' || !b.quote.trim() || b.quote.length > 4000) throw new HttpError(400, 'Invalid quote');
+      const body = b.body ?? '';
+      if (typeof body !== 'string' || body.length > 10000) throw new HttpError(400, 'Note is too long');
+      stmt.upsertLibraryNote.run({ id, user_id: me.id, book_id: b.lib, chapter: b.chapter, block_start: b.start.verse, word_start: b.start.word,
+        block_end: b.end.verse, word_end: b.end.word, color: b.color, quote: b.quote.trim(), body,
+        created: Number.isInteger(b.createdAt) ? Math.min(b.createdAt, now()) : now(), now: now() });
+      return { note: libraryNoteOut(stmt.libraryNote.get(id)) };
+    }, true],
+    ['DELETE', /^\/api\/library-notes\/([\w-]{8,64})$/, ({ me, params: [id] }) => {
+      stmt.deleteLibraryNote.run(id, me.id);
+      return { ok: true };
+    }, true],
     ['DELETE', /^\/api\/library\/([\w-]{16})$/, async ({ me, params: [id] }) => {
       myBook(me, id);
       stmt.deleteLibraryBook.run(id, me.id);
+      stmt.deleteLibraryBookNotes.run(id, me.id);
       if (library) await library.remove(me.id, id);
       return { ok: true };
     }, true],

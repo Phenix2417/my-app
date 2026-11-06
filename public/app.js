@@ -224,6 +224,11 @@ const bookName = (id) => state.books?.find((b) => b.id === id)?.name || id;
 const splitWords = (t) => t.split(/\s+/).filter(Boolean);
 
 function ref(n) {
+  if (n.lib) { // a note in one of the person's own books
+    const t = lib.books?.find((x) => x.id === n.lib)?.title || lib.current?.title || 'Book';
+    const ch = lib.opened.get(n.lib)?.chapterTitle(n.chapter);
+    return ch && ch !== t ? `${t} · ${ch}` : t;
+  }
   const b = bookName(n.book);
   if (n.start.verse === n.end.verse) return `${b} ${n.chapter}:${n.start.verse}`;
   return `${b} ${n.chapter}:${n.start.verse}–${n.end.verse}`;
@@ -392,12 +397,12 @@ function noteEditor(note, { isNew } = {}) {
       h('div', { class: 'sheet-actions' },
         !isNew ? h('button', { class: 'text-btn danger', type: 'button', onclick: () => {
           if (!confirm('Delete this note?')) return;
-          deleteNote(note.id); close(); rerender(); toast('Note deleted');
+          (note.lib ? deleteBookNote : deleteNote)(note.id); close(); rerender(); toast('Note deleted');
         } }, 'Delete') : null,
         h('span', { class: 'spacer' }),
         h('button', { class: 'text-btn', type: 'button', onclick: close }, 'Cancel'),
         h('button', { class: 'filled-btn', type: 'button', onclick: () => {
-          saveNote({ ...note, color, body: ta.value.trim() });
+          (note.lib ? saveBookNote : saveNote)({ ...note, color, body: ta.value.trim() });
           clearSelection(); close(); rerender();
         } }, 'Save')),
     ];
@@ -512,9 +517,14 @@ function chapterNotes() {
   return { mine, friends };
 }
 
+// Notes shown on the text being read: the Bible chapter, or the open chapter of one of the person's books.
+function pageNotes() {
+  if (reader.mode === 'bible') return chapterNotes();
+  if (reader.mode === 'book') return { mine: bookChapterNotes(), friends: [] };
+  return { mine: [], friends: [] };
+}
 function notesAt(p) {
-  if (reader.mode !== 'bible') return { mine: [], friends: [] };
-  const { mine, friends } = chapterNotes();
+  const { mine, friends } = pageNotes();
   const at = (n) => { const [s, e] = noteRange(n); return inRange(p, s, e); };
   return { mine: mine.filter(at), friends: friends.filter(at) };
 }
@@ -522,7 +532,7 @@ function notesAt(p) {
 // Apply highlight colors, friend underlines, note markers and the selection to the rendered words.
 function paint() {
   if (!reader.body) return;
-  const { mine, friends } = reader.mode === 'bible' ? chapterNotes() : { mine: [], friends: [] }; // commentary: selection only
+  const { mine, friends } = pageNotes(); // commentary: selection only
   const top = (list, p) => { let hit = null; for (const n of list) { const [s, e] = noteRange(n); if (inRange(p, s, e)) hit = n; } return hit; };
   const sel = state.selection;
   for (const { v, w, el } of reader.words) {
@@ -613,7 +623,7 @@ function selectionHasFullSentence() {
 function selectedQuote() {
   const { start, end } = state.selection;
   const ws = reader.words.filter((x) => inRange(x, start, end));
-  if (reader.mode === 'commentary') return ws.map((x, i) => (i && x.el.previousSibling?.classList?.contains('g') ? ' ' : '') + x.el.textContent).join('');
+  if (reader.mode !== 'bible') return ws.map((x, i) => (i && x.el.previousSibling?.classList?.contains('g') ? ' ' : '') + x.el.textContent).join('');
   return ws.map((x) => x.el.textContent).join(' ');
 }
 
@@ -731,7 +741,9 @@ function attachReaderGestures(body) {
   body.addEventListener('pointerdown', (e) => {
     if (e.button !== 0 || e.target.closest('.handle, .mark')) return;
     const under = document.elementFromPoint(e.clientX, e.clientY);
-    const wEl = e.target.closest('.w') || (body.contains(under) ? under.closest?.('.w') : null);
+    const gap = body.contains(under) ? under.closest?.('.g') : null; // a press on a space counts as the word before it
+    const wEl = e.target.closest('.w') || (body.contains(under) ? under.closest?.('.w') : null)
+      || (gap?.previousElementSibling?.classList.contains('w') ? gap.previousElementSibling : null);
     cancel();
     const word = wEl ? { v: +wEl.dataset.v, w: +wEl.dataset.w } : null;
     press = { x: e.clientX, y: e.clientY, word, sliding: false, id: e.pointerId };
@@ -776,6 +788,7 @@ function attachReaderGestures(body) {
     const target = e.target;
     const single = () => {
       if (state.selection) { clearSelection(); return; }
+      if (target.closest('a, .bk-link')) return; // a link in a book: it does its own thing
       const vnum = target.closest('.vnum');
       if (vnum) { // tap a verse number to select the whole verse
         const v = +vnum.dataset.v;
@@ -812,6 +825,7 @@ function showToolbar() {
     start: { verse: start.v, word: start.w }, end: { verse: end.v, word: end.w }, color, quote: selectedQuote(), body: '',
   });
   if (reader.mode === 'commentary') return showCommentaryToolbar();
+  if (reader.mode === 'book') return showBookToolbar();
   const bar = h('div', { class: 'sel-toolbar', role: 'toolbar', 'aria-label': 'Selection actions' },
     h('div', { class: 'row' }, ...COLORS.map((c) => h('button', { class: 'swatch', dataset: { c }, 'aria-label': `Highlight ${c}`, onclick: () => {
       saveNote(draft(c)); clearSelection(); toast('Highlighted');
@@ -2310,7 +2324,7 @@ function signOut(expired) {
 
 /* ---------------- Books: the person's own digital books ---------------- */
 const BOOK_ACCEPT = '.epub,.pdf,.txt,application/epub+zip,application/pdf,text/plain';
-const lib = { books: null, opened: new Map(), covers: new Map(), current: null, saveTimer: null };
+const lib = { books: null, opened: new Map(), covers: new Map(), current: null, saveTimer: null, notes: new Map(), chapter: 0, blocks: [] };
 const authHeaders = () => (state.auth ? { Authorization: `Bearer ${state.auth.token}` } : {});
 async function authFetch(path, opts = {}) {
   let res;
@@ -2460,7 +2474,7 @@ async function renderBookReader() {
   const body = h('div', { class: 'book-body', style: `--verse-size:${state.fontSize}px` }, h('p', { class: 'empty-inline' }, 'Opening…'));
   const scroller = h('div', { class: 'c-scroll b-scroll', tabindex: 0 }, body);
   // Reader bars: shown on opening and on a tap, slid away while reading.
-  const toLibrary = () => { saveBookPosition(true); state.tab = 'books'; render(); };
+  const toLibrary = () => { clearSelection(); saveBookPosition(true); state.tab = 'books'; render(); };
   const barBtn = (label, icon, onclick) => h('button', { class: 'icon-btn b-bar-btn', type: 'button', 'aria-label': label, title: label, onclick }, svg(icon));
   const sizePanel = h('div', { class: 'b-size-panel', role: 'group', 'aria-label': 'Text size', hidden: true }, textSizeControl());
   const sizeBtn = barBtn('Text size', ICONS.sliders, () => { sizePanel.hidden = !sizePanel.hidden; sizeBtn.setAttribute('aria-expanded', String(!sizePanel.hidden)); });
@@ -2487,14 +2501,26 @@ async function renderBookReader() {
   if (state.tab !== 'book' || lib.current !== b) return;
 
   let chapter = Math.min(b.position?.chapter ?? 0, book.chapters.length - 1);
+  // The selection bubble works here as on the Bible text: the same word selection, highlights and notes.
+  try { lib.notes.set(b.id, (await api('GET', `/api/library/${b.id}/notes`)).notes); } catch { if (!lib.notes.has(b.id)) lib.notes.set(b.id, []); }
+  if (state.tab !== 'book' || lib.current !== b) return;
+  Object.assign(reader, { mode: 'book', body, scroller, words: [], gaps: [], verseEls: [], handles: null, toolbar: null });
+  body.addEventListener('pointerdown', (e) => { const blk = bookBlockAt(e.target); if (blk) wrapBookBlock(blk); }, { capture: true });
+  attachReaderGestures(body);
   const show = async (i, { frac = 0, anchor = '', slide = 0 } = {}) => {
     chapter = Math.max(0, Math.min(book.chapters.length - 1, i));
+    clearSelection();
     const content = await book.render(chapter);
     if (state.tab !== 'book' || lib.current !== b) return;
+    lib.chapter = chapter;
     const nav = h('div', { class: 'b-nav' },
       chapter > 0 ? h('button', { class: 'text-btn', onclick: () => show(chapter - 1, { slide: -1 }) }, '‹ Previous') : h('span'),
       chapter < book.chapters.length - 1 ? h('button', { class: 'text-btn', onclick: () => show(chapter + 1, { slide: 1 }) }, 'Next ›') : h('span', { class: 'handle-sub' }, 'The end'));
     body.replaceChildren(content, nav);
+    reader.words = []; reader.gaps = []; reader.handles = null;
+    indexBookBlocks(body);
+    for (const n of bookChapterNotes()) for (let v = n.start.verse; v <= n.end.verse; v++) wrapBookBlock(lib.blocks[v - 1]); // so highlights show
+    paint();
     const ct = book.chapterTitle(chapter);
     runEl.textContent = ct && ct !== b.title ? `${b.title} · ${ct}` : b.title;
     whereEl.textContent = `Chapter ${chapter + 1} of ${book.chapters.length}`;
@@ -2536,7 +2562,7 @@ async function renderBookReader() {
   // Links inside the book go to their chapter (and place on the page).
   body.addEventListener('click', (e) => {
     const link = e.target.closest('.bk-link');
-    if (!link) return;
+    if (!link || state.selection) return;
     const i = book.chapters.findIndex((c) => c.href === link.dataset.file);
     if (i >= 0) show(i, { anchor: link.dataset.anchor });
   });
@@ -2545,12 +2571,13 @@ async function renderBookReader() {
   for (const ev of ['pointerdown', 'wheel', 'keydown']) scroller.addEventListener(ev, () => { touched = true; }, { passive: true });
   scroller.addEventListener('scroll', () => {
     const top = scroller.scrollTop;
-    if (touched && top > lastTop + 6 && top > 60) { setBars(false); sizePanel.hidden = true; sizeBtn.setAttribute('aria-expanded', 'false'); }
+    if (state.selection) { positionHandles(); positionToolbar(); }
+    if (touched && top > lastTop + 6 && top > 60 && !state.selection) { setBars(false); sizePanel.hidden = true; sizeBtn.setAttribute('aria-expanded', 'false'); }
     lastTop = top;
     saveBookPosition();
   }, { passive: true });
   scroller.addEventListener('click', (e) => {
-    if (e.target.closest('button, a, .bk-link')) return;
+    if (body.contains(e.target) || e.target.closest('button, a, .bk-link')) return; // taps on the text are handled with the selection
     const show = document.body.classList.contains('bars-hidden');
     setBars(show);
     if (!show) { sizePanel.hidden = true; sizeBtn.setAttribute('aria-expanded', 'false'); }
@@ -2562,6 +2589,66 @@ async function renderBookReader() {
   });
   show(chapter, { frac: b.position?.frac || 0 });
 }
+/* ----- Selecting text in a book ----- */
+// Blocks are the page's paragraphs, headings, list items…; a place in the book is (chapter, block, word).
+const BOOK_BLOCKS = 'p, h1, h2, h3, h4, h5, h6, li, blockquote, dt, dd, td, th, figcaption, pre, caption';
+function indexBookBlocks(body) {
+  const all = [...body.querySelectorAll(BOOK_BLOCKS)].filter((el) => !el.closest('.b-nav'));
+  lib.blocks = all.filter((el) => !el.querySelector(BOOK_BLOCKS)); // innermost only
+  lib.blocks.forEach((el, i) => { el.dataset.blk = i + 1; });
+}
+const bookBlockAt = (el) => el?.closest?.('[data-blk]');
+// Split a block's text into selectable words, keeping its formatting and links (Chinese: one character each).
+function wrapBookBlock(blk) {
+  if (!blk || blk.dataset.wrapped) return;
+  blk.dataset.wrapped = '1';
+  const v = +blk.dataset.blk;
+  let w = -1;
+  const walker = document.createTreeWalker(blk, NodeFilter.SHOW_TEXT);
+  const texts = [];
+  while (walker.nextNode()) texts.push(walker.currentNode);
+  for (const t of texts) {
+    const frag = document.createDocumentFragment();
+    for (const [tok] of t.nodeValue.matchAll(COMMENTARY_TOKENS)) {
+      if (/^\s/.test(tok)) frag.append(w < 0 ? document.createTextNode(tok) : h('span', { class: 'g', dataset: { v, w } }, tok));
+      else frag.append(h('span', { class: 'w', dataset: { v, w: ++w } }, tok));
+    }
+    t.replaceWith(frag);
+  }
+  reader.words = []; reader.gaps = [];
+  for (const el of reader.body.querySelectorAll('[data-wrapped] .w, [data-wrapped] .g')) (el.classList.contains('w') ? reader.words : reader.gaps).push({ v: +el.dataset.v, w: +el.dataset.w, el });
+}
+const bookChapterNotes = () => (lib.notes.get(lib.current?.id) || []).filter((n) => n.chapter === lib.chapter).sort((a, b) => a.createdAt - b.createdAt);
+function saveBookNote(n) {
+  n.updatedAt = Date.now(); n.createdAt ??= n.updatedAt;
+  const list = lib.notes.get(n.lib) || [];
+  lib.notes.set(n.lib, [...list.filter((x) => x.id !== n.id), n]);
+  api('PUT', `/api/library-notes/${n.id}`, n).catch((e) => toast(e instanceof OfflineError ? "You're offline: this note wasn't saved." : `Couldn't save the note: ${e.message}`));
+}
+function deleteBookNote(id) {
+  for (const [k, list] of lib.notes) lib.notes.set(k, list.filter((x) => x.id !== id));
+  api('DELETE', `/api/library-notes/${id}`).catch(() => toast("Couldn't delete the note. Try again when you're connected."));
+}
+function showBookToolbar() {
+  const { start, end } = state.selection;
+  const draft = (color) => ({ id: newId(), lib: lib.current.id, chapter: lib.chapter, start: { verse: start.v, word: start.w }, end: { verse: end.v, word: end.w },
+    color, quote: selectedQuote().slice(0, 4000), body: '' });
+  const bar = h('div', { class: 'sel-toolbar', role: 'toolbar', 'aria-label': 'Selection actions' },
+    h('div', { class: 'row' }, ...COLORS.map((c) => h('button', { class: 'swatch', dataset: { c }, 'aria-label': `Highlight ${c}`, onclick: () => {
+      saveBookNote(draft(c)); clearSelection(); toast('Highlighted');
+    } })),
+    h('span', { class: 'sel-divider', 'aria-hidden': 'true' }),
+    bubbleBtn('Note', ICONS.notes, () => noteEditor(draft('yellow'), { isNew: true })),
+    bubbleBtn('Copy', ICONS.copy, async () => {
+      try { await navigator.clipboard.writeText(selectedQuote()); toast('Copied'); } catch { toast("Couldn't copy"); }
+      clearSelection();
+    }),
+    bubbleBtn('Dictionary', ICONS.dictionary, (e) => toggleDictionary(bar, e.currentTarget), 'dict-btn')));
+  reader.toolbar = bar;
+  document.body.append(bar);
+  positionToolbar();
+}
+
 // Remember where the reader is, on the server (so other devices open there too).
 function saveBookPosition(now) {
   const b = lib.current;
@@ -2597,13 +2684,14 @@ function updateBadge() {
   const n = state.friends?.incoming.length || 0;
   if (b) { if (n) b.dataset.count = n; else delete b.dataset.count; }
 }
-function rerender() { if (state.tab === 'read') paint(); else if (state.tab !== 'commentary' && state.tab !== 'book') render(); }
+function rerender() { if (state.tab === 'read' || state.tab === 'book') paint(); else if (state.tab !== 'commentary') render(); }
 // The part of the Bible text not covered by the top and bottom bars.
 function visibleTextArea() {
   const box = reader.scroller?.getBoundingClientRect();
   if (!box) return null;
   if (document.body.classList.contains('bars-hidden')) return { top: box.top, bottom: box.bottom };
-  const head = document.querySelector(reader.mode === 'commentary' ? '.c-head' : '.r-head')?.getBoundingClientRect(), nav = navEl?.getBoundingClientRect();
+  const head = document.querySelector({ commentary: '.c-head', book: '.b-topbar' }[reader.mode] || '.r-head')?.getBoundingClientRect();
+  const nav = (reader.mode === 'book' ? document.querySelector('.b-toolbar') : navEl)?.getBoundingClientRect();
   return { top: head ? head.bottom : box.top, bottom: nav ? Math.min(box.bottom, nav.top) : box.bottom };
 }
 

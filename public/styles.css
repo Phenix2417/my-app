@@ -580,3 +580,8 @@ body.bars-hidden .b-toolbar { transform: translateY(110%); }
 .b-size-panel { position: fixed; z-index: 15; left: 50%; transform: translateX(-50%); bottom: calc(76px + env(safe-area-inset-bottom, 0px));
   display: flex; align-items: center; gap: 8px; padding: 8px; background: var(--surface); border-radius: 28px; box-shadow: 0 4px 16px rgba(0,0,0,.3); }
 .b-size-panel[hidden] { display: none; }
+
+/* Selecting text in a book */
+.book-body { position: relative; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; touch-action: pan-y; }
+.book-body .w[data-c], .book-body .g[data-c] { color: var(--on-bg); }
+body.bars-hidden .b-size-panel { display: none; }

@@ -75,6 +75,24 @@ export function openDb(file) {
       opened_at INTEGER NOT NULL DEFAULT 0
     );
     CREATE INDEX IF NOT EXISTS library_by_user ON library_books (user_id);
+
+    -- Highlights and notes in those books. A place is (chapter, block, word) in the app's reading of the book.
+    CREATE TABLE IF NOT EXISTS library_notes (
+      id TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      book_id TEXT NOT NULL,
+      chapter INTEGER NOT NULL,
+      block_start INTEGER NOT NULL,
+      word_start INTEGER NOT NULL,
+      block_end INTEGER NOT NULL,
+      word_end INTEGER NOT NULL,
+      color TEXT NOT NULL,
+      quote TEXT NOT NULL,
+      body TEXT NOT NULL DEFAULT '',
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS library_notes_by_book ON library_notes (user_id, book_id);
   `);
   // Databases created before display names existed get the column added.
   const cols = db.prepare('PRAGMA table_info(users)').all().map((c) => c.name);

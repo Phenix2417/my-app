@@ -68,6 +68,15 @@ test('books are private, checked by content, and can be read, renamed, positione
   const cover = await fetch(`${base}/api/library/${book.id}/cover`, { headers: { Authorization: `Bearer ${ann}` } });
   assert.equal(cover.headers.get('content-type'), 'image/jpeg');
 
+  // Highlights and notes in a book: only the owner can add or see them; they go when the book does.
+  const hl = { lib: book.id, chapter: 2, start: { verse: 3, word: 0 }, end: { verse: 3, word: 4 }, color: 'pink', quote: 'Now I saw in my', body: 'Bunyan' };
+  assert.equal((await json('PUT', '/api/library-notes/note-0001', bob, hl)).status, 404);
+  assert.equal((await json('PUT', '/api/library-notes/note-0001', ann, hl)).data.note.body, 'Bunyan');
+  assert.equal((await json('PUT', '/api/library-notes/note-0001', bob, { ...hl, lib: undefined })).status, 404);
+  assert.equal((await json('PUT', '/api/library-notes/note-0002', ann, { ...hl, color: 'red' })).status, 400);
+  assert.deepEqual((await json('GET', `/api/library/${book.id}/notes`, ann)).data.notes.map((n) => [n.chapter, n.start, n.color]), [[2, { verse: 3, word: 0 }, 'pink']]);
+  assert.equal((await json('GET', `/api/library/${book.id}/notes`, bob)).status, 404);
+
   assert.equal((await json('DELETE', `/api/library/${book.id}`, bob)).status, 404);
   assert.equal((await json('DELETE', `/api/library/${book.id}`, ann)).status, 200);
   assert.equal((await json('GET', '/api/library', ann)).data.books.length, 1);
