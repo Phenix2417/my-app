@@ -472,3 +472,7 @@ svg.line-icon { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-line
 .to-top.page-top { position: fixed; z-index: 14; right: max(16px, env(safe-area-inset-right, 0px)); bottom: calc(100px + env(safe-area-inset-bottom, 0px));
   width: 44px; height: 44px; border-radius: 22px; transition: bottom .22s ease; }
 body.bars-hidden .to-top.page-top { bottom: calc(20px + env(safe-area-inset-bottom, 0px)); }
+
+/* Commentary text uses the Bible reader's word selection */
+.c-list { position: relative; }
+.c-list .commentary-text { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }

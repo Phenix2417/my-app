@@ -31,11 +31,11 @@ const svg = (d) => {
   return s;
 };
 const ICONS = {
-  // Reading-page side bar: notes from people, a stack of commentary books, and a serif "Aa".
+  // Reading-page side bar: notes from people, commentary books standing on a shelf, and a serif "Aa".
   friendsNotes: '<path d="M14.5 3.5H6.5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h5"/><path d="M8 8.5h6M8 12h3.5"/><circle cx="17" cy="13" r="2.6"/><path d="M12.6 21c.5-2.5 2.3-3.9 4.4-3.9s3.9 1.4 4.4 3.9"/>',
-  commentaryBooks: '<rect x="3" y="15.5" width="18" height="5" rx="1.2"/><path d="M6.5 18h8"/><rect x="5" y="10" width="15" height="5.5" rx="1.2"/><path d="M8.5 12.75h7"/><rect x="3.5" y="4" width="14.5" height="6" rx="1.2"/><path d="M10.75 5.6v2.8M9.4 6.6h2.7"/>',
+  commentaryBooks: '<rect x="3" y="5" width="5" height="15.5" rx="1"/><path d="M3 8h5M3 17.5h5"/><rect x="8" y="3" width="5.5" height="17.5" rx="1"/><path d="M10.75 6v3.6M9.5 7.3h2.5"/><path d="M8 17.5h5.5"/><rect x="14.3" y="5.5" width="5" height="15" rx="1" transform="rotate(14 14.3 20.5)"/>',
   // Commentary side bar: the commentary books with a pencil (edit your list of commentaries).
-  editShelf: '<rect x="2.5" y="15.5" width="11.5" height="5" rx="1.2"/><path d="M5.5 18h5"/><rect x="4" y="10" width="12" height="5.5" rx="1.2"/><path d="M7 12.75h6"/><rect x="3" y="4" width="12" height="6" rx="1.2"/><path d="M9 5.6v2.8M7.65 6.6h2.7"/><path d="M15.6 21.5l.7-2.9 4.6-4.6a1.3 1.3 0 0 1 1.9 1.9l-4.6 4.6z"/>',
+  editShelf: '<rect x="3" y="5" width="5" height="15.5" rx="1"/><path d="M3 8h5M3 17.5h5"/><rect x="8" y="3" width="5.5" height="17.5" rx="1"/><path d="M10.75 6v3.6M9.5 7.3h2.5"/><path d="M8 17.5h5.5"/><path d="M14.6 21l.7-2.9 5-5a1.3 1.3 0 0 1 1.9 1.9l-5 5z"/>',
   // Selection bubble: copy, translate (文/A) and dictionary (book with a magnifier).
   copy: '<rect x="8.5" y="8.5" width="12" height="12" rx="2"/><path d="M15.5 8.5V5a1.5 1.5 0 0 0-1.5-1.5H5A1.5 1.5 0 0 0 3.5 5v9A1.5 1.5 0 0 0 5 15.5h3.5"/>',
   translate: '<path d="M3 5.5h8M7 3.5v2M9.5 5.5c-.6 3.4-2.6 6.2-6 8M5 8.2c1 2.3 2.7 4 5 5.2"/><path d="M12.5 20.5l3.8-9 3.7 9M13.9 17.3h4.9"/>',
@@ -305,6 +305,7 @@ function noteEditor(note, { isNew } = {}) {
   openSheet((close) => {
     const ta = h('textarea', { placeholder: 'Write a note (optional)', autofocus: true, maxlength: 10000 });
     ta.value = note.body || '';
+    requestAnimationFrame(() => { ta.setSelectionRange(ta.value.length, ta.value.length); ta.scrollTop = ta.scrollHeight; });
     return [
       h('h2', {}, ref(note)),
       h('div', { class: 'quote', dataset: { c: color } }, note.quote),
@@ -327,7 +328,8 @@ function noteEditor(note, { isNew } = {}) {
 }
 
 /* ---------------- Reader ---------------- */
-const reader = { words: [], gaps: [], verseEls: [], body: null, handles: null, toolbar: null, chapterData: null };
+// mode: 'bible' on the Read page, 'commentary' when the same word selection runs on commentary text.
+const reader = { mode: 'bible', words: [], gaps: [], verseEls: [], body: null, handles: null, toolbar: null, chapterData: null };
 const cmp = (a, b) => a.v - b.v || a.w - b.w;
 const inRange = (p, s, e) => cmp(p, s) >= 0 && cmp(p, e) <= 0;
 const noteRange = (n) => [{ v: n.start.verse, w: n.start.word }, { v: n.end.verse, w: n.end.word }];
@@ -371,6 +373,7 @@ async function renderReader() {
     setTimeout(() => toast('Tip: hold a word or tap a verse number to select. Swipe sideways to change chapter.'), 600);
   }
   mount(screen);
+  reader.mode = 'bible';
   reader.body = body;
   reader.scroller = scroller;
   const back = backButton();
@@ -431,6 +434,7 @@ function chapterNotes() {
 }
 
 function notesAt(p) {
+  if (reader.mode !== 'bible') return { mine: [], friends: [] };
   const { mine, friends } = chapterNotes();
   const at = (n) => { const [s, e] = noteRange(n); return inRange(p, s, e); };
   return { mine: mine.filter(at), friends: friends.filter(at) };
@@ -439,7 +443,7 @@ function notesAt(p) {
 // Apply highlight colors, friend underlines, note markers and the selection to the rendered words.
 function paint() {
   if (!reader.body) return;
-  const { mine, friends } = chapterNotes();
+  const { mine, friends } = reader.mode === 'bible' ? chapterNotes() : { mine: [], friends: [] }; // commentary: selection only
   const top = (list, p) => { let hit = null; for (const n of list) { const [s, e] = noteRange(n); if (inRange(p, s, e)) hit = n; } return hit; };
   const sel = state.selection;
   for (const { v, w, el } of reader.words) {
@@ -515,7 +519,7 @@ const wordEl = (p) => reader.words.find((x) => x.v === p.v && x.w === p.w)?.el;
 // Does the selection contain at least one whole sentence (from its first word to its . ? or !)?
 function selectionHasFullSentence() {
   const { start, end } = state.selection;
-  const ends = (i) => /[.!?]['"’”)\]]*$/.test(reader.words[i].el.textContent);
+  const ends = (i) => /[.!?。！？]['"’”)\]）」』]*$/.test(reader.words[i].el.textContent);
   const first = reader.words.findIndex((x) => !cmp(x, start)), last = reader.words.findIndex((x) => !cmp(x, end));
   if (first < 0 || last < 0) return false;
   for (let i = first; i <= last; i++) {
@@ -529,7 +533,9 @@ function selectionHasFullSentence() {
 
 function selectedQuote() {
   const { start, end } = state.selection;
-  return reader.words.filter((x) => inRange(x, start, end)).map((x) => x.el.textContent).join(' ');
+  const ws = reader.words.filter((x) => inRange(x, start, end));
+  if (reader.mode === 'commentary') return ws.map((x, i) => (i && x.el.previousSibling?.classList?.contains('g') ? ' ' : '') + x.el.textContent).join('');
+  return ws.map((x) => x.el.textContent).join(' ');
 }
 
 const KNOB = 22;
@@ -645,7 +651,8 @@ function attachReaderGestures(body) {
   body.addEventListener('contextmenu', (e) => e.preventDefault());
   body.addEventListener('pointerdown', (e) => {
     if (e.button !== 0 || e.target.closest('.handle, .mark')) return;
-    const wEl = e.target.closest('.w');
+    const under = document.elementFromPoint(e.clientX, e.clientY);
+    const wEl = e.target.closest('.w') || (body.contains(under) ? under.closest?.('.w') : null);
     cancel();
     const word = wEl ? { v: +wEl.dataset.v, w: +wEl.dataset.w } : null;
     press = { x: e.clientX, y: e.clientY, word, sliding: false, id: e.pointerId };
@@ -725,6 +732,7 @@ function showToolbar() {
     id: newId(), book: state.pos.book, chapter: state.pos.chapter,
     start: { verse: start.v, word: start.w }, end: { verse: end.v, word: end.w }, color, quote: selectedQuote(), body: '',
   });
+  if (reader.mode === 'commentary') return showCommentaryToolbar();
   const bar = h('div', { class: 'sel-toolbar', role: 'toolbar', 'aria-label': 'Selection actions' },
     h('div', { class: 'row' }, ...COLORS.map((c) => h('button', { class: 'swatch', dataset: { c }, 'aria-label': `Highlight ${c}`, onclick: () => {
       saveNote(draft(c)); clearSelection(); toast('Highlighted');
@@ -737,7 +745,7 @@ function showToolbar() {
       try { await navigator.clipboard.writeText(text); toast('Copied'); } catch { toast("Couldn't copy"); }
       clearSelection();
     }),
-    bubbleBtn('Commentary', ICONS.commentaryBooks, () => { const v = start.v; clearSelection(); openCommentaryPage(v); }),
+    bubbleBtn('Commentary', ICONS.commentaryBooks, () => { const sel = { start, end }; clearSelection(); openCommentaryPage(start.v, sel); }),
     // One word: its dictionary entry. Several words: translate the selection, then look up each word.
     cmp(start, end)
       ? bubbleBtn('Translate', ICONS.translate, (e) => toggleDictionary(bar, e.currentTarget), 'dict-btn')
@@ -1439,7 +1447,7 @@ const LANG_LABEL = { en: 'English', 'zh-Hans': '简体中文', 'zh-Hant': '繁�
 
 /* Commentary has its own page, opened from the side bar or the selection toolbar. */
 const cm = { chips: null, manage: null, status: null, listEl: null, list: null, current: null, manageOpen: false, token: 0,
-  focusVerse: null, returnVerse: null };
+  focusVerse: null, returnVerse: null, origin: null, verses: null, meta: null };
 
 function topVisibleVerse() {
   for (let v = 1; v < reader.verseEls.length; v++) {
@@ -1636,7 +1644,9 @@ function enableHoldToDrag(row, onDrop) {
   row.addEventListener('touchmove', (e) => { if (drag) e.preventDefault(); }, { passive: false });
 }
 
-function openCommentaryPage(verse) {
+function openCommentaryPage(verse, selection) {
+  // The Bible words selected when the page was opened: highlights and notes made on commentary text go there.
+  cm.origin = selection ? { book: state.pos.book, chapter: state.pos.chapter, start: { ...selection.start }, end: { ...selection.end } } : null;
   cm.focusVerse = verse || null;
   cm.returnVerse = verse || null;
   clearSelection();
@@ -1656,6 +1666,10 @@ function renderCommentaryPage() {
   // The header stays put; only this area scrolls. Swiping sideways in it changes commentary.
   cm.scroller = h('div', { class: 'c-scroll', tabindex: 0, 'aria-label': 'Commentary text' }, cm.manage, cm.status, cm.listEl);
   enableCommentarySwipe(cm.scroller);
+  // The selection bubble works on commentary text too, with the Bible reader's word selection.
+  Object.assign(reader, { mode: 'commentary', body: cm.listEl, scroller: cm.scroller, words: [], gaps: [], verseEls: [], handles: null, toolbar: null });
+  cm.listEl.addEventListener('pointerdown', (e) => { const t = e.target.closest('.commentary-text'); if (t) wrapCommentaryWords(t); }, { capture: true });
+  attachReaderGestures(cm.listEl);
   // Same bars as the Read page: a slim title bar on top and the tabs below, both sliding away while reading.
   const head = h('header', { class: 'c-head' },
     h('div', { class: 'c-titlebar' }, h('h1', {}, 'Commentary')),
@@ -1671,7 +1685,8 @@ function renderCommentaryPage() {
   for (const ev of ['pointerdown', 'wheel', 'keydown']) cm.scroller.addEventListener(ev, () => { touched = true; }, { passive: true });
   cm.scroller.addEventListener('scroll', () => {
     const top = cm.scroller.scrollTop;
-    if (touched && top > lastTop + 6 && top > 60 && !cm.manageOpen) setBars(false);
+    if (state.selection) { positionHandles(); positionToolbar(); }
+    if (touched && top > lastTop + 6 && top > 60 && !cm.manageOpen && !state.selection) setBars(false);
     // Below where the page opened: an up arrow. Above it: a down arrow. Either returns there.
     const dir = cm.manageOpen ? 0 : top > cm.homeTop + 300 ? 1 : top < cm.homeTop - 300 ? -1 : 0;
     toTop.hidden = !dir;
@@ -1684,7 +1699,7 @@ function renderCommentaryPage() {
   }, { passive: true });
   // A tap on the text (not a button, link or the list editor) shows or hides the bars.
   cm.scroller.addEventListener('click', (e) => {
-    if (cm.manageOpen || e.target.closest('button, a, input, .manage-panel') || String(window.getSelection?.() || '')) return;
+    if (cm.manageOpen || cm.listEl.contains(e.target) || e.target.closest('button, a, input, .manage-panel')) return; // taps on the text are handled with the selection
     setBars(document.body.classList.contains('bars-hidden'));
   });
   mount(h('main', { class: 'screen commentary-page' },
@@ -1702,6 +1717,7 @@ const BOOKS_FALLBACK = () => [{ id: state.pos.book, name: bookName(state.pos.boo
 async function loadCommentaryPage() {
   const token = ++cm.token;
   const { book, chapter } = state.pos;
+  clearSelection(); reader.words = []; reader.gaps = [];
   const stale = () => token !== cm.token || state.tab !== 'commentary' || state.pos.book !== book || state.pos.chapter !== chapter;
   try { cm.list = await loadCommentaryList(); } catch {
     if (!stale()) setStatus(h('p', { class: 'error' }, "Couldn't load commentaries. Check your connection."));
@@ -1731,6 +1747,7 @@ async function loadCommentaryPage() {
   let verses = [];
   try { verses = (await loadBook(book))[chapter - 1] || []; } catch { /* show commentary without the verse text */ }
   if (stale()) return;
+  cm.verses = verses; cm.meta = meta;
   const verseCount = verses.length || Math.max(0, ...data.entries.map((e) => e.verse));
   setStatus(data.entries.length ? null : h('p', { class: 'empty-inline' }, `${meta.name} has no comments on this chapter.`),
     h('div', { class: 'c-meta' }, credit, swipeHint()));
@@ -1787,11 +1804,12 @@ function enableCommentarySwipe(el) {
   let g = null;
   const list = () => cm.listEl;
   el.addEventListener('pointerdown', (e) => {
-    if ((e.pointerType === 'mouse' && e.button !== 0) || cm.manageOpen || e.target.closest('button, a, input')) return;
+    if ((e.pointerType === 'mouse' && e.button !== 0) || cm.manageOpen || state.selection || e.target.closest('button, a, input, .handle')) return;
     g = { x: e.clientX, y: e.clientY, id: e.pointerId, dx: 0, horiz: null };
   });
   el.addEventListener('pointermove', (e) => {
     if (!g || e.pointerId !== g.id) return;
+    if (state.selection) { g = null; cm.listEl.style.transform = ''; cm.listEl.style.opacity = ''; return; } // a long press started a selection
     const dx = e.clientX - g.x, dy = e.clientY - g.y;
     if (g.horiz === null && Math.hypot(dx, dy) > 10) g.horiz = Math.abs(dx) > Math.abs(dy) * 1.3;
     if (!g.horiz) return;
@@ -1814,6 +1832,7 @@ function enableCommentarySwipe(el) {
   el.addEventListener('pointerup', end);
   el.addEventListener('pointercancel', end);
   el.addEventListener('keydown', (e) => { // keyboard: arrow keys while the commentary area has focus
+    if (e.target.closest('.handle') || state.selection) return; // arrows move a selection handle instead
     if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') { e.preventDefault(); switchCommentary(e.key === 'ArrowRight' ? 1 : -1); }
   });
 }
@@ -1826,6 +1845,79 @@ function commentarySection(meta, label, text, verseText, from, to) {
       : h('div', { class: 'c-label' }, label),
     verseText ? h('p', { class: 'c-verses', lang: 'en' }, verseText) : null,
     h('div', { class: 'commentary-text' }, text));
+}
+
+/* ----- Selecting commentary text ----- */
+// Split a commentary passage into selectable words the first time it's touched (Chinese: one character each).
+const CJK = '\u3000-\u303f\u3400-\u9fff\uf900-\ufaff\uff00-\uffef';
+const COMMENTARY_TOKENS = new RegExp(`\\s+|[${CJK}]|[^\\s${CJK}]+`, 'g');
+function wrapCommentaryWords(textEl) {
+  if (textEl.dataset.wrapped) return;
+  textEl.dataset.wrapped = '1';
+  const v = [...cm.listEl.children].indexOf(textEl.closest('.c-entry')) + 1;
+  let w = -1;
+  const frag = document.createDocumentFragment();
+  for (const [tok] of textEl.textContent.matchAll(COMMENTARY_TOKENS)) {
+    if (/^\s/.test(tok)) frag.append(w < 0 ? document.createTextNode(tok) : h('span', { class: 'g', dataset: { v, w } }, tok));
+    else frag.append(h('span', { class: 'w', dataset: { v, w: ++w } }, tok));
+  }
+  textEl.replaceChildren(frag);
+  reader.words = []; reader.gaps = [];
+  for (const el of cm.listEl.querySelectorAll('.commentary-text[data-wrapped] .w, .commentary-text[data-wrapped] .g')) {
+    (el.classList.contains('w') ? reader.words : reader.gaps).push({ v: +el.dataset.v, w: +el.dataset.w, el });
+  }
+}
+
+// Where a highlight or note made on commentary text goes in the Bible: the words selected when the page was
+// opened (if this passage is about them), otherwise the verses the passage comments on.
+function commentaryTarget() {
+  const { book, chapter } = state.pos;
+  const sec = reader.words.find((x) => !cmp(x, state.selection.start))?.el.closest('.c-entry');
+  const from = +(sec?.dataset.from || 0), to = Math.max(from, +(sec?.dataset.to || 0));
+  const words = (v) => splitWords(cm.verses?.[v - 1]?.[0] || '');
+  const o = cm.origin?.book === book && cm.origin.chapter === chapter ? cm.origin : null;
+  let start, end;
+  if (o && (!from || (o.start.v <= to && o.end.v >= from))) ({ start, end } = o);
+  else if (from) { start = { v: from, w: 0 }; end = { v: to, w: Math.max(0, words(to).length - 1) }; }
+  else { start = { v: 1, w: 0 }; end = { v: 1, w: Math.max(0, words(1).length - 1) }; }
+  const quote = [];
+  for (let v = start.v; v <= end.v; v++) words(v).forEach((t, w) => { if (inRange({ v, w }, start, end)) quote.push(t); });
+  const passage = from ? `${bookName(book)} ${chapter}:${from}${to > from ? `–${to}` : ''}` : `${bookName(book)} ${chapter}`;
+  const existing = Object.values(state.mine.notes).find((n) => n.book === book && n.chapter === chapter
+    && n.start.verse === start.v && n.start.word === start.w && n.end.verse === end.v && n.end.word === end.w);
+  const note = existing ? { ...existing } : { id: newId(), book, chapter, start: { verse: start.v, word: start.w }, end: { verse: end.v, word: end.w },
+    color: 'yellow', quote: (quote.join(' ') || `${bookName(book)} ${chapter}:${start.v}`).slice(0, 4000), body: '' };
+  let cited = selectedQuote();
+  if (cited.length > 1500) cited = cited.slice(0, 1500) + '…';
+  const reference = `“${cited}” — ${cm.meta?.name || 'Commentary'}${from ? ` on ${passage}` : `, introduction to ${passage}`}`;
+  return { note, isNew: !existing, body: note.body ? `${note.body}\n\n${reference}` : reference };
+}
+
+function showCommentaryToolbar() {
+  const toBible = (color) => {
+    const { note, body } = commentaryTarget();
+    saveNote({ ...note, color, body: body.slice(0, 10000) });
+    clearSelection();
+    toast(`Added to your note on ${ref(note)}`);
+  };
+  const bar = h('div', { class: 'sel-toolbar', role: 'toolbar', 'aria-label': 'Selection actions' },
+    h('div', { class: 'row' }, ...COLORS.map((c) => h('button', { class: 'swatch', dataset: { c }, 'aria-label': `Highlight ${c} in the Bible text, with this quote`, onclick: () => toBible(c) })),
+    h('span', { class: 'sel-divider', 'aria-hidden': 'true' }),
+    bubbleBtn('Note on the Bible text', ICONS.notes, () => {
+      const { note, isNew, body } = commentaryTarget();
+      noteEditor({ ...note, body: body.slice(0, 10000) }, { isNew });
+    }),
+    bubbleBtn('Copy', ICONS.copy, async () => {
+      const text = selectionHasFullSentence() ? `${selectedQuote()} — ${cm.meta?.name || 'Commentary'}` : selectedQuote();
+      try { await navigator.clipboard.writeText(text); toast('Copied'); } catch { toast("Couldn't copy"); }
+      clearSelection();
+    }),
+    cmp(state.selection.start, state.selection.end)
+      ? bubbleBtn('Translate', ICONS.translate, (e) => toggleDictionary(bar, e.currentTarget), 'dict-btn')
+      : bubbleBtn('Dictionary', ICONS.dictionary, (e) => toggleDictionary(bar, e.currentTarget), 'dict-btn')));
+  reader.toolbar = bar;
+  document.body.append(bar);
+  positionToolbar();
 }
 
 async function openPicker() {
@@ -2102,7 +2194,7 @@ function visibleTextArea() {
   const box = reader.scroller?.getBoundingClientRect();
   if (!box) return null;
   if (document.body.classList.contains('bars-hidden')) return { top: box.top, bottom: box.bottom };
-  const head = document.querySelector('.r-head')?.getBoundingClientRect(), nav = navEl?.getBoundingClientRect();
+  const head = document.querySelector(reader.mode === 'commentary' ? '.c-head' : '.r-head')?.getBoundingClientRect(), nav = navEl?.getBoundingClientRect();
   return { top: head ? head.bottom : box.top, bottom: nav ? Math.min(box.bottom, nav.top) : box.bottom };
 }
 
