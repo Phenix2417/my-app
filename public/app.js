@@ -791,7 +791,7 @@ function setAudioSource(badge, src) {
 function refreshAudioBadge(badge) {
   if (!badge?.dataset.src) return;
   const ph = badge.parentElement?.querySelector('.ph-src:not(.au-src)');
-  badge.hidden = !!(ph && !ph.hidden && ph.dataset.src === badge.dataset.src);
+  badge.hidden = !!(ph && ph.dataset.src === badge.dataset.src); // compares the real source, even when its badge is hidden
 }
 function setPhSource(badge, src) {
   const s = PH_SOURCES[src];
@@ -800,6 +800,7 @@ function setPhSource(badge, src) {
   badge.textContent = s[0];
   badge.dataset.src = src;
   badge.title = `Phonetic from ${s[1]}`;
+  badge.hidden = src === 'youdao'; // Youdao is the default source for phonetics: no badge
   refreshAudioBadge(badge.parentElement?.querySelector('.au-src'));
 }
 function pronButton(word, accent, fallback) {
