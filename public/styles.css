@@ -92,7 +92,7 @@ h1 { font-size: 28px; font-weight: 500; margin: 18px 0 24px; }
 [data-c="pink"] { background: var(--hl-pink); }
 [data-c="purple"] { background: var(--hl-purple); }
 /* How many Bible dictionaries have this word: a small number after it (Read ⋯ → Dictionary counts). */
-.w .dn::after { content: attr(data-n); font: 600 .5em/1 system-ui, sans-serif; color: var(--muted); vertical-align: sub; margin: 0 .05em 0 .1em; }
+.w .dn::after { content: attr(data-n); font: 600 .5em/1 system-ui, sans-serif; color: var(--muted); vertical-align: super; margin: 0 .05em 0 .1em; }
 body.no-word-marks .w .dn { display: none; }
 .w[data-f], .g[data-f] { text-decoration: underline 3px; text-underline-offset: 6px; text-decoration-skip-ink: none; }
 .w[data-f="yellow"], .g[data-f="yellow"] { text-decoration-color: #d9b44a; }
