@@ -514,6 +514,21 @@ function clearSelection() {
 }
 const wordEl = (p) => reader.words.find((x) => x.v === p.v && x.w === p.w)?.el;
 
+// Does the selection contain at least one whole sentence (from its first word to its . ? or !)?
+function selectionHasFullSentence() {
+  const { start, end } = state.selection;
+  const ends = (i) => /[.!?]['"’”)\]]*$/.test(reader.words[i].el.textContent);
+  const first = reader.words.findIndex((x) => !cmp(x, start)), last = reader.words.findIndex((x) => !cmp(x, end));
+  if (first < 0 || last < 0) return false;
+  for (let i = first; i <= last; i++) {
+    const startsSentence = i === 0 || ends(i - 1);
+    if (!startsSentence) continue;
+    for (let j = i; j <= last; j++) if (ends(j)) return true;
+    return false; // the sentence starting here runs past the selection, and so would any later one
+  }
+  return false;
+}
+
 function selectedQuote() {
   const { start, end } = state.selection;
   return reader.words.filter((x) => inRange(x, start, end)).map((x) => x.el.textContent).join(' ');
@@ -718,7 +733,8 @@ function showToolbar() {
       h('button', { class: 'text-btn dict-btn', 'aria-expanded': 'false', onclick: (e) => toggleDictionary(bar, e.currentTarget) },
         cmp(start, end) ? 'Translate' : 'Dictionary'),
       h('button', { class: 'text-btn', onclick: async () => {
-        const text = `${selectedQuote()} — ${ref(draft('yellow'))} (WEB)`;
+        // A complete sentence gets its reference; a word or phrase is copied as is.
+        const text = selectionHasFullSentence() ? `${selectedQuote()} — ${ref(draft('yellow'))}` : selectedQuote();
         try { await navigator.clipboard.writeText(text); toast('Copied'); } catch { toast("Couldn't copy"); }
         clearSelection();
       } }, 'Copy')));
