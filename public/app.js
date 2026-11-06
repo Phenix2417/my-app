@@ -759,7 +759,8 @@ function buildVerses(verses, alt = null, altVersion = null) {
     // numbered as verse v + 0.5, so they sort right after verse v and never mix with its words.
     const altText = alt?.[vi]?.[0];
     if (altText) {
-      const box = h('span', { class: 'verse-alt', lang: versionInfo(altVersion).lang });
+      // The grey arrow is a real element so it can be tapped (selects this version's verse) and has room for a finger.
+      const box = h('span', { class: 'verse-alt', lang: versionInfo(altVersion).lang }, h('span', { class: 'alt-mark', dataset: { v: v + 0.5 }, 'aria-hidden': 'true' }));
       const av = v + 0.5;
       verseTokens(altText, altVersion).forEach(({ t: word, gap }, w) => {
         const el = h('span', { class: 'w', dataset: { v: av, w } }, word);
@@ -1099,16 +1100,19 @@ function attachReaderGestures(body) {
       return;
     }
     const target = e.target;
+    // A verse number selects the verse; the grey arrow selects the second version's verse. A second (double) tap
+    // keeps it selected rather than clearing it.
+    const mark = target.closest('.vnum, .alt-mark');
+    if (mark) {
+      const v = +mark.dataset.v;
+      const ws = reader.words.filter((x) => x.v === v);
+      const already = state.selection && !cmp(state.selection.start, { v, w: 0 }) && ws.length && !cmp(state.selection.end, { v, w: ws.at(-1).w });
+      if (ws.length && !already) setSelection({ v, w: 0 }, { v, w: ws.at(-1).w });
+      return;
+    }
     const single = () => {
       if (state.selection) { clearSelection(); return; }
       if (target.closest('a, .bk-link')) return; // a link in a book: it does its own thing
-      const vnum = target.closest('.vnum');
-      if (vnum) { // tap a verse number to select the whole verse
-        const v = +vnum.dataset.v;
-        const ws = reader.words.filter((x) => x.v === v);
-        if (ws.length) setSelection({ v, w: 0 }, { v, w: ws[ws.length - 1].w });
-        return;
-      }
       // A tap on a word with notes opens them; any other tap shows or hides the top and bottom bars.
       const here = p.word ? notesAt(p.word) : { mine: [], friends: [] };
       if (here.mine.length || here.friends.length) showNotesAt(p.word);
