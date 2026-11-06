@@ -1063,6 +1063,7 @@ function nudgeHandle(e, which) {
 function attachReaderGestures(body) {
   let press = null; // {timer, x, y, word, sliding}
   let lastTap = null; // {word, time, timer}: a short tap on a word, waiting to see if a second tap follows
+  let lastMarkTap = null; // a tap on a verse number or arrow, waiting to see if it's a double tap
   const cancel = () => { if (press) clearTimeout(press.timer); press = null; };
 
   body.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -1114,14 +1115,22 @@ function attachReaderGestures(body) {
       return;
     }
     const target = e.target;
-    // A verse number selects the verse; the grey arrow selects the second version's verse. A second (double) tap
-    // keeps it selected rather than clearing it.
+    // Double tap a verse number: select the verse; double tap the grey arrow: the second version's verse.
+    // A single tap there acts like any other tap (after a moment, once it's clear no second tap is coming).
     const mark = target.closest('.vnum, .alt-mark');
     if (mark) {
       const v = +mark.dataset.v;
-      const ws = reader.words.filter((x) => x.v === v);
-      const already = state.selection && !cmp(state.selection.start, { v, w: 0 }) && ws.length && !cmp(state.selection.end, { v, w: ws.at(-1).w });
-      if (ws.length && !already) setSelection({ v, w: 0 }, { v, w: ws.at(-1).w });
+      if (lastMarkTap && lastMarkTap.v === v && now - lastMarkTap.time < 350) {
+        clearTimeout(lastMarkTap.timer); lastMarkTap = null;
+        const ws = reader.words.filter((x) => x.v === v);
+        if (ws.length) setSelection({ v, w: 0 }, { v, w: ws.at(-1).w });
+        return;
+      }
+      clearTimeout(lastMarkTap?.timer);
+      lastMarkTap = { v, time: now, timer: setTimeout(() => {
+        lastMarkTap = null;
+        if (state.selection) clearSelection(); else setBars(document.body.classList.contains('bars-hidden'));
+      }, 300) };
       return;
     }
     const single = () => {
