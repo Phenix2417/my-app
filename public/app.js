@@ -638,17 +638,28 @@ async function markBibleWords() {
   // A capitalised word that also appears in lower case in the chapter ("Come", "come") isn't a name.
   const lower = new Set(words.map((x) => x.el.textContent).filter((t) => /^[^A-Za-z]*[a-z]/.test(t)).map(dictKey));
   const nameOf = new Map(), capOf = new Map(); // names to ask about; every capitalised word (to colour a known name anywhere)
+  const startOf = new Map(), midCaps = new Set();
   words.forEach((x, i) => {
     const prev = words[i - 1];
     const starts = !prev || prev.v !== x.v || /[.?!:;“"‘(—]$/.test(prev.el.textContent) || /^[“"‘(]/.test(x.el.textContent);
     const n = x.el.textContent.replace(/[’']s$/, '').replace(/^[^A-Za-z]+|[^A-Za-z]+$/g, '');
-    if (/^[A-Z][a-z'-]+$/.test(n)) capOf.set(x, n);
+    startOf.set(x, starts);
+    if (/^[A-Z][A-Za-z'-]+$/.test(n)) { capOf.set(x, n); if (!starts) midCaps.add(n); }
     if (!starts && /^[A-Z][a-z'-]+$/.test(n) && !lower.has(dictKey(n))) nameOf.set(x, n);
   });
+  // Numbers only on names — people, God, places, named things (capitalised in English: mid-sentence, or at the start of a
+  // sentence when the chapter also has it capitalised mid-sentence) — and sacred buildings, written in lower case.
+  const BUILDINGS = new Set(['temple', 'tabernacle', 'sanctuary', 'synagogue']);
+  const ALWAYS = new Set(['God', 'Lord', 'LORD', 'GOD', 'Yahweh', 'Jesus', 'Christ']); // God's names count even at the start of a sentence
+  const isName = (x) => {
+    const n = capOf.get(x);
+    if (n) return n !== 'I' && (ALWAYS.has(n) || !startOf.get(x) || midCaps.has(n));
+    return BUILDINGS.has(keyOf.get(x));
+  };
   // A small number after the word: how many dictionaries have it (a dictionary in two languages counts once).
   const apply = () => {
     for (const x of words) {
-      const n = (wordMarks.dict.get(keyOf.get(x)) || []).length + (wordMarks.wiki.get(capOf.get(x)) === true ? 1 : 0);
+      const n = !isName(x) ? 0 : (wordMarks.dict.get(keyOf.get(x)) || []).length + (wordMarks.wiki.get(capOf.get(x)) === true ? 1 : 0);
       // An empty marker right after the letters ("vision₃," not "vision,₃"); the number is drawn by CSS, so the
       // word's text (copying, quotes, notes) doesn't change.
       const old = x.el.querySelector('.dn');

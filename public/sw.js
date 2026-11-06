@@ -1,6 +1,6 @@
 // Offline support: app shell is network-first, Bible text is cache-first, API is never cached here
 // (the app keeps its own saved copy of notes).
-const CACHE = 'bible-study-v23';
+const CACHE = 'bible-study-v24';
 const SHELL = ['/', '/index.html', '/app.js', '/epub.js', '/i18n.js', '/styles.css', '/manifest.webmanifest', '/icon.svg'];
 
 self.addEventListener('install', (e) => {
