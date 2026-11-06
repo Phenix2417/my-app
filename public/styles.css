@@ -469,3 +469,8 @@ svg.line-icon { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-line
   display: grid; place-items: center; padding: 0; }
 .bubble-btn svg { width: 23px; height: 23px; }
 .bubble-btn:active { background: color-mix(in srgb, var(--primary) 14%, transparent); }
+
+/* Back-to-top arrow on the commentary page, clear of the bottom tabs */
+.to-top.page-top { position: fixed; z-index: 14; right: max(16px, env(safe-area-inset-right, 0px)); bottom: calc(100px + env(safe-area-inset-bottom, 0px));
+  width: 44px; height: 44px; border-radius: 22px; transition: bottom .22s ease; }
+body.bars-hidden .to-top.page-top { bottom: calc(20px + env(safe-area-inset-bottom, 0px)); }

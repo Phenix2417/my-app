@@ -1663,11 +1663,16 @@ function renderCommentaryPage() {
       h('button', { class: 'text-btn back-btn', onclick: () => goTo(state.pos, cm.returnVerse) }, `‹ Back to ${meta.name} ${chapter}`)),
     cm.chips);
   new ResizeObserver(() => { cm.scroller.style.paddingTop = `${head.offsetHeight + 10}px`; }).observe(head);
+  // The dictionary panel's up arrow, once you've scrolled down: it returns to where the page opened.
+  cm.homeTop = 0;
+  const toTop = h('button', { class: 'to-top page-top', type: 'button', hidden: true, 'aria-label': 'Back to where you started', title: 'Back to where you started',
+    onclick: () => cm.scroller.scrollTo({ top: cm.homeTop, behavior: 'smooth' }) }, '↑');
   let lastTop = 0, touched = false; // jumping to the verse on opening isn't reading on, so wait for the reader to scroll
   for (const ev of ['pointerdown', 'wheel', 'keydown']) cm.scroller.addEventListener(ev, () => { touched = true; }, { passive: true });
   cm.scroller.addEventListener('scroll', () => {
     const top = cm.scroller.scrollTop;
     if (touched && top > lastTop + 6 && top > 60 && !cm.manageOpen) setBars(false);
+    toTop.hidden = top < cm.homeTop + 300 || cm.manageOpen;
     lastTop = top;
   }, { passive: true });
   // A tap on the text (not a button, link or the list editor) shows or hides the bars.
@@ -1678,6 +1683,7 @@ function renderCommentaryPage() {
   mount(h('main', { class: 'screen commentary-page' },
     head,
     cm.scroller,
+    toTop,
     sideDock([
       { id: 'side-edit-list', label: 'Edit commentary list', icon: ICONS.editShelf, toggle: { get: () => cm.manageOpen, set: setManageOpen, announce: false } },
     ])));
@@ -1741,9 +1747,12 @@ async function loadCommentaryPage() {
     const v = cm.focusVerse;
     const target = sections.find((el) => +el.dataset.from <= v && v <= +el.dataset.to);
     if (target) {
-      requestAnimationFrame(() => { cm.scroller.scrollTop = target.offsetTop - cm.scroller.offsetTop - 8; target.classList.add('flash'); });
-    } else toast(`No comment on verse ${v} in ${meta.name}. Showing the whole chapter.`);
-  } else cm.scroller.scrollTop = 0;
+      requestAnimationFrame(() => {
+        cm.scroller.scrollTop = target.offsetTop - cm.scroller.offsetTop - 8; target.classList.add('flash');
+        cm.homeTop = cm.scroller.scrollTop; // where the page opened; the arrow brings you back here
+      });
+    } else { toast(`No comment on verse ${v} in ${meta.name}. Showing the whole chapter.`); cm.homeTop = cm.scroller.scrollTop; }
+  } else { cm.scroller.scrollTop = 0; cm.homeTop = 0; }
 }
 
 function swipeHint() {
