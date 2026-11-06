@@ -37,7 +37,7 @@ const svg = (d) => {
 // The same purpose always uses the same icon.
 const ICONS = {
   read: '<path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/>',
-  notes: '<path d="M14 3H6.5a1.5 1.5 0 0 0-1.5 1.5v15A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5V8Z"/><path d="M14 3v5h5"/><path d="M8.5 13h7M8.5 16.5h4.5"/>', // a note page; narrower than a full square so it isn't heavier than the open icons beside it
+  notes: '<path d="M15.6 3.9H5.7a1.8 1.8 0 0 0-1.8 1.8v12.6a1.8 1.8 0 0 0 1.8 1.8h12.6a1.8 1.8 0 0 0 1.8-1.8V8.4Z"/><path d="M14.7 3.9v3.6a1.8 1.8 0 0 0 1.8 1.8h3.6"/>', // Lucide sticky-note at 90%, so its closed square isn't heavier than the open icons beside it
   books: '<path d="M2 21h20"/><rect width="5" height="13" x="3" y="5" rx="1"/><rect width="5" height="15" x="8" y="3" rx="1"/><path d="M8 7h5"/><path d="M21.3 16.7c.1.5-.2 1.1-.7 1.2l-2 .5c-.5.1-1.1-.2-1.2-.7L14.2 5.6c-.1-.5.2-1.1.7-1.2l2-.5c.5-.1 1.1.2 1.2.7Z"/>', // a bookshelf (Lucide's library, standing on a shelf)
   addBook: '<path d="M12 7v6"/><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a1 1 0 0 1 0-5H20"/><path d="M9 10h6"/>',
   friends: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
