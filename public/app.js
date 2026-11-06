@@ -1166,7 +1166,8 @@ function toggleDictionary(bar, btn) {
     ];
     const bibleSlot = h('div', { class: 'bd-slot' });
     // Not in the English dictionary: still show the word (the Bible dictionary buttons attach to it).
-    if (!e || (!e.t && !e.d && !e.base)) body.replaceChildren(h('div', { class: 'dict-head' }, h('span', { class: 'dict-word' }, w)),
+    const noEnglish = !e || (!e.t && !e.d && !e.base);
+    if (noEnglish) body.replaceChildren(h('div', { class: 'dict-head' }, h('span', { class: 'dict-word' }, w)),
       h('p', { class: 'dict-muted' }, 'Not in the English dictionary.'), bibleSlot);
     else body.replaceChildren(...[...block(e, !e.base), ...(e.base ? [h('div', { class: 'dict-base' }, `Base form: ${e.base.word}`), ...block(e.base, true)] : []), bibleSlot].filter(Boolean));
     positionToolbar();
@@ -1201,9 +1202,11 @@ function toggleDictionary(bar, btn) {
       if (box) box.scrollBy({ top: section.getBoundingClientRect().top - box.getBoundingClientRect().top - 6, behavior: 'smooth' });
       section.classList.remove('flash'); void section.offsetWidth; section.classList.add('flash');
     };
-    body.querySelector('.dict-head')?.append(
-      h('button', { class: 'bd-jump', type: 'button', 'aria-label': 'Show the Chinese Bible dictionary entry', onclick: toggle('zh') }, '圣经辞典'),
+    const zhBtn = h('button', { class: 'bd-jump', type: 'button', 'aria-label': 'Show the Chinese Bible dictionary entry', onclick: toggle('zh') }, '圣经辞典');
+    body.querySelector('.dict-head')?.append(zhBtn,
       h('button', { class: 'bd-jump', type: 'button', lang: 'en', 'aria-label': 'Show the English Bible dictionary entry', onclick: toggle('en') }, 'Bible Dictionary'));
+    // No English dictionary entry: show the Chinese Bible dictionary entry straight away.
+    if (noEnglish) toggle('zh')({ currentTarget: zhBtn });
     positionToolbar();
   };
   const dictBox = h('div', { class: 'dict' }, trans, body,
