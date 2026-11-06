@@ -476,3 +476,10 @@ body.bars-hidden .to-top.page-top { bottom: calc(20px + env(safe-area-inset-bott
 /* Commentary text uses the Bible reader's word selection */
 .c-list { position: relative; }
 .c-list .commentary-text { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+
+/* Commentary quotes in notes link back to the commentary */
+.qref { text-align: left; }
+.quote-links { margin: -4px 0 14px; }
+.quote-links p { margin: 6px 0; font-size: 15px; color: var(--muted); }
+.c-list .w.quoted, .c-list .g.quoted { background: color-mix(in srgb, var(--primary) 20%, transparent); }
+.c-list .w.quoted.sel, .c-list .g.quoted.sel { background: var(--sel); }

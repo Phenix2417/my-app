@@ -297,7 +297,52 @@ function noteCard(n, { onClick, friend } = {}) {
     onkeydown: onClick ? (e) => { if (e.key === 'Enter') onClick(); } : null },
   h('div', { class: 'card-head' }, h('span', {}, ref(n)), friend ? h('span', { class: 'who', title: '@' + n.author.username }, dn(n.author)) : null),
   h('div', { class: 'quote', dataset: { c: n.color } }, n.quote),
-  n.body ? h('p', { class: 'note-body' }, n.body) : null);
+  n.body ? h('p', { class: 'note-body' }, noteBodyNodes(n.body)) : null);
+}
+
+/* ----- Commentary quotes in notes: “quote” — Matthew Henry on John 1:1–5 ----- */
+const QUOTE_REF = /“([^”]+)” — (.+?)(?: on (.+?) (\d+):(\d+)(?:–\d+)?|, introduction to (.+?) (\d+))(?![\d–:])/g;
+function quoteRefs(body) {
+  return [...String(body).matchAll(QUOTE_REF)].map((m) => ({ index: m.index, length: m[0].length, quoteLength: m[1].length + 2, text: m[1], name: m[2],
+    bookName: m[3] || m[6], chapter: +(m[4] || m[7]), from: m[5] ? +m[5] : 0 }));
+}
+// A note's text, with each commentary quote as a link to where it was quoted.
+function noteBodyNodes(body) {
+  const out = [];
+  let last = 0;
+  for (const q of quoteRefs(body)) {
+    out.push(body.slice(last, q.index), quoteLink(q), body.slice(q.index + q.quoteLength, q.index + q.length));
+    last = q.index + q.length;
+  }
+  out.push(body.slice(last));
+  return out.filter((x) => x !== '');
+}
+const quoteLink = (q) => h('button', { class: 'vref qref', type: 'button', title: `Open in ${q.name}`,
+  onclick: (e) => { e.stopPropagation(); openQuotedCommentary(q); } }, `“${q.text}”`);
+// In the note editor (a plain text box), the quotes are listed as links below it.
+function quoteLinks(ta) {
+  const box = h('div', { class: 'quote-links' });
+  const draw = () => {
+    const qs = quoteRefs(ta.value);
+    box.hidden = !qs.length;
+    box.replaceChildren(h('div', { class: 'section-label' }, 'Quoted from commentary'),
+      ...qs.map((q) => h('p', {}, quoteLink(q), ` — ${q.name}`)));
+  };
+  ta.addEventListener('input', draw);
+  draw();
+  return box;
+}
+async function openQuotedCommentary(q) {
+  let list;
+  try { list = await loadCommentaryList(); await loadBooks(); } catch { toast("Couldn't load commentaries. Check your connection."); return; }
+  const c = list.find((x) => x.name === q.name), book = state.books?.find((b) => b.name === q.bookName);
+  if (!c || !book) { toast("Couldn't find where this was quoted."); return; }
+  for (const close of [...openSheets.values()]) close();
+  clearSelection();
+  state.pos = { book: book.id, chapter: q.chapter }; store.set('pos', state.pos);
+  cm.quote = { id: c.id, from: q.from, text: q.text };
+  cm.current = c.id;
+  openCommentaryPage(q.from || null);
 }
 
 function noteEditor(note, { isNew } = {}) {
@@ -312,6 +357,7 @@ function noteEditor(note, { isNew } = {}) {
       h('div', { style: 'height:14px' }),
       swatchRow(color, (c) => { color = c; ta.closest('.sheet').querySelector('.quote').dataset.c = c; }),
       h('label', { class: 'field' }, h('span', {}, 'Note'), ta),
+      quoteLinks(ta),
       h('div', { class: 'sheet-actions' },
         !isNew ? h('button', { class: 'text-btn danger', type: 'button', onclick: () => {
           if (!confirm('Delete this note?')) return;
@@ -1529,6 +1575,7 @@ function drawCommentaryChips() {
   if (!cm.chips || !cm.list) return;
   const { book } = state.pos;
   const ids = myCommentaryIds(cm.list);
+  if (cm.current && !ids.includes(cm.current) && cm.list.some((c) => c.id === cm.current)) ids.push(cm.current); // opened from a quote
   cm.chips.replaceChildren(...ids.map((id) => cm.list.find((c) => c.id === id)).map((c) => h('button', {
     class: 'chip' + (c.missingBooks.includes(book) ? ' unavailable' : ''), 'aria-pressed': String(c.id === cm.current), lang: c.lang,
     title: c.missingBooks.includes(book) ? `${c.name} doesn't cover ${bookName(book)}` : c.about,
@@ -1725,7 +1772,8 @@ async function loadCommentaryPage() {
   }
   if (stale()) return;
   const ids = myCommentaryIds(cm.list);
-  cm.current = ids.includes(cm.current) ? cm.current : ids.includes(store.get('commentary', null)) ? store.get('commentary', null) : ids[0] || null;
+  cm.current = cm.quote && cm.list.some((c) => c.id === cm.quote.id) ? cm.quote.id
+    : ids.includes(cm.current) ? cm.current : ids.includes(store.get('commentary', null)) ? store.get('commentary', null) : ids[0] || null;
   drawCommentaryChips(); drawManage();
   cm.listEl.replaceChildren();
   if (!cm.current) return setStatus(h('p', { class: 'empty-inline' }, 'Your commentary list is empty. Open the side bar and tap the pencil to add some.'));
@@ -1768,6 +1816,8 @@ async function loadCommentaryPage() {
     cm.slideFrom = 0;
   }
 
+  const quote = cm.quote; cm.quote = null;
+  if (quote && quote.id === meta.id && showQuoted(sections, quote)) return;
   if (cm.focusVerse) {
     const v = cm.focusVerse;
     const target = sections.find((el) => +el.dataset.from <= v && v <= +el.dataset.to);
@@ -1845,6 +1895,31 @@ function commentarySection(meta, label, text, verseText, from, to) {
       : h('div', { class: 'c-label' }, label),
     verseText ? h('p', { class: 'c-verses', lang: 'en' }, verseText) : null,
     h('div', { class: 'commentary-text' }, text));
+}
+
+// Mark the quoted words in their passage and scroll to them. False if the quote can't be found.
+function showQuoted(sections, quote) {
+  const sec = sections.find((el) => +el.dataset.from === quote.from);
+  const textEl = sec?.querySelector('.commentary-text');
+  if (!textEl) return false;
+  wrapCommentaryWords(textEl);
+  const v = sections.indexOf(sec) + 1;
+  const ws = reader.words.filter((x) => x.v === v);
+  let str = '';
+  const spans = ws.map((x, i) => { if (i && x.el.previousSibling?.classList?.contains('g')) str += ' '; const a = str.length; str += x.el.textContent; return [a, str.length]; });
+  const needle = quote.text.replace(/…$/, '').replace(/\s+/g, ' ').trim();
+  const at = needle ? str.indexOf(needle) : -1;
+  if (at < 0) return false;
+  const hit = ws.filter((_, i) => spans[i][1] > at && spans[i][0] < at + needle.length);
+  const first = hit[0].w, last = hit[hit.length - 1].w;
+  hit.forEach((x) => x.el.classList.add('quoted'));
+  reader.gaps.forEach((g) => { if (g.v === v && g.w >= first && g.w < last) g.el.classList.add('quoted'); });
+  requestAnimationFrame(() => {
+    const pad = parseFloat(cm.scroller.style.paddingTop) || 60;
+    cm.scroller.scrollTop += hit[0].el.getBoundingClientRect().top - cm.scroller.getBoundingClientRect().top - pad - 60;
+    cm.homeTop = cm.scroller.scrollTop;
+  });
+  return true;
 }
 
 /* ----- Selecting commentary text ----- */
