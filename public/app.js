@@ -31,11 +31,11 @@ const svg = (d) => {
   return s;
 };
 const ICONS = {
-  // Reading-page side bar: notes from people, an open Bible with a quill, and a serif "Aa".
+  // Reading-page side bar: notes from people, a stack of commentary books, and a serif "Aa".
   friendsNotes: '<path d="M14.5 3.5H6.5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h5"/><path d="M8 8.5h6M8 12h3.5"/><circle cx="17" cy="13" r="2.6"/><path d="M12.6 21c.5-2.5 2.3-3.9 4.4-3.9s3.9 1.4 4.4 3.9"/>',
-  bibleQuill: '<path d="M12 7.2C9.8 5.6 6.5 5.2 3 6v12.5c3.5-.8 6.8-.4 9 1.2 2.2-1.6 5.5-2 9-1.2V12"/><path d="M12 7.2v12.5"/><path d="M21.5 2.5c-3.6.7-5.9 3.3-6.8 7.6l-.5 2.4"/><path d="M21.5 2.5c-.2 3.6-1.9 6.4-5 7.5"/>',
-  // Commentary side bar: a shelf of books with a pencil (edit your list of commentaries).
-  editShelf: '<rect x="2.5" y="4" width="12" height="3.4" rx="1"/><rect x="4" y="9.3" width="10.5" height="3.4" rx="1"/><rect x="2.5" y="14.6" width="9" height="3.4" rx="1"/><path d="M14.6 21l.7-2.9 5-5a1.3 1.3 0 0 1 1.9 1.9l-5 5z"/>',
+  commentaryBooks: '<rect x="3" y="15.5" width="18" height="5" rx="1.2"/><path d="M6.5 18h8"/><rect x="5" y="10" width="15" height="5.5" rx="1.2"/><path d="M8.5 12.75h7"/><rect x="3.5" y="4" width="14.5" height="6" rx="1.2"/><path d="M10.75 5.6v2.8M9.4 6.6h2.7"/>',
+  // Commentary side bar: the commentary books with a pencil (edit your list of commentaries).
+  editShelf: '<rect x="2.5" y="15.5" width="11.5" height="5" rx="1.2"/><path d="M5.5 18h5"/><rect x="4" y="10" width="12" height="5.5" rx="1.2"/><path d="M7 12.75h6"/><rect x="3" y="4" width="12" height="6" rx="1.2"/><path d="M9 5.6v2.8M7.65 6.6h2.7"/><path d="M15.6 21.5l.7-2.9 4.6-4.6a1.3 1.3 0 0 1 1.9 1.9l-4.6 4.6z"/>',
   // Selection bubble: copy, translate (文/A) and dictionary (book with a magnifier).
   copy: '<rect x="8.5" y="8.5" width="12" height="12" rx="2"/><path d="M15.5 8.5V5a1.5 1.5 0 0 0-1.5-1.5H5A1.5 1.5 0 0 0 3.5 5v9A1.5 1.5 0 0 0 5 15.5h3.5"/>',
   translate: '<path d="M3 5.5h8M7 3.5v2M9.5 5.5c-.6 3.4-2.6 6.2-6 8M5 8.2c1 2.3 2.7 4 5 5.2"/><path d="M12.5 20.5l3.8-9 3.7 9M13.9 17.3h4.9"/>',
@@ -362,7 +362,7 @@ async function renderReader() {
     scroller,
     sideDock([
       { id: 'show-friends', label: "Friends' notes", icon: ICONS.friendsNotes, toggle: { get: () => state.showFriends, set: setShowFriends } },
-      { id: 'open-commentary', label: 'Commentary', icon: ICONS.bibleQuill, action: () => openCommentaryPage(topVisibleVerse()) },
+      { id: 'open-commentary', label: 'Commentary', icon: ICONS.commentaryBooks, action: () => openCommentaryPage(topVisibleVerse()) },
       { id: 'text-size', label: 'Text size', icon: ICONS.serifAa, popover: textSizeControl },
     ]));
   enableChapterSwipe(scroller, body, goChapter);
@@ -737,7 +737,7 @@ function showToolbar() {
       try { await navigator.clipboard.writeText(text); toast('Copied'); } catch { toast("Couldn't copy"); }
       clearSelection();
     }),
-    bubbleBtn('Commentary', ICONS.bibleQuill, () => { const v = start.v; clearSelection(); openCommentaryPage(v); }),
+    bubbleBtn('Commentary', ICONS.commentaryBooks, () => { const v = start.v; clearSelection(); openCommentaryPage(v); }),
     // One word: its dictionary entry. Several words: translate the selection, then look up each word.
     cmp(start, end)
       ? bubbleBtn('Translate', ICONS.translate, (e) => toggleDictionary(bar, e.currentTarget), 'dict-btn')
