@@ -293,11 +293,16 @@ export async function parseBibleEpub(buf, books) {
     const tag = node.localName.toLowerCase(), c = cls(node), id = node.getAttribute('id') || '';
     if (/^(script|style|head|nav|aside|title|meta|link)$/.test(tag)) return;
     // 1. Exact verse ids: v43003016, 43003016, John.3.16, JHN_3_16 …
-    let m = /^v?(\d{1,2})(\d{3})(\d{3})$/.exec(id);
-    if (m && +m[1] >= 1 && +m[1] <= 66 && +m[3] >= 1) { setVerse(books[+m[1] - 1], +m[2], +m[3]); byIds++; }
-    else if ((m = /^(?:v-?)?([1-3]?[A-Za-z]{2,6})[._](\d{1,3})[._](\d{1,3})$/.exec(id)) && osis.has(m[1].toLowerCase())) { setVerse(osis.get(m[1].toLowerCase()), +m[2], +m[3]); byIds++; }
-    // Footnotes, cross references and section headings aren't Bible text.
+    let m = /^v?(\d{1,2})(\d{3})(\d{3})$/.exec(id), idVerse = false;
+    if (m && +m[1] >= 1 && +m[1] <= 66 && +m[2] >= 1 && +m[3] >= 1) { setVerse(books[+m[1] - 1], +m[2], +m[3]); byIds++; idVerse = true; }
+    else if ((m = /^(?:v-?)?([1-3]?[A-Za-z]{2,6})[._](\d{1,3})[._](\d{1,3})$/.exec(id)) && osis.has(m[1].toLowerCase())) { setVerse(osis.get(m[1].toLowerCase()), +m[2], +m[3]); byIds++; idVerse = true; }
+    // An id'd marker that only shows the number ("1", "23:1") isn't text.
+    if (idVerse && /^\s*\d{1,3}(\s*:\s*\d{1,3})?\s*$/.test(node.textContent || '')) return;
+    // Footnotes, cross references and section headings aren't Bible text: footnote and cross-reference markers
+    // ([52], a, *, †…), and the footnote list itself (whose entries link back to their verses).
+    if (tag === 'a' && /#/.test(node.getAttribute('href') || '') && /^\s*(\[\w{1,5}\]|[a-z]{1,2}|\*|†|‡)\s*$/.test(node.textContent || '')) return;
     if (tag === 'a' && /^#/.test(node.getAttribute('href') || '') && !/^\s*\d{1,3}\s*$/.test(node.textContent)) return;
+    if (BLOCK.test(tag) && node.querySelector?.('a[id^="f"][href*="#"], a[id^="fn"], a[href*="#b"][id]')) return;
     if (SKIP_CLASS.test(c) && !/verse|chapter/i.test(c)) return;
     if (/^h[1-6]$/.test(tag)) {
       const text = node.textContent.replace(/\s+/g, ' ').trim();
@@ -310,14 +315,14 @@ export async function parseBibleEpub(buf, books) {
     }
     // 2. Chapter and verse number markers.
     const n = num(node);
-    if (n && !byIds && book && (/chapter|chap-?num|chapnum|drop-?cap|\bc-?num/i.test(c))) { setVerse(book, n, 1); byMarkers++; return; }
-    if (n && !byIds && book && ch && (/verse|vnum|v-?num|versenum|\bv\b/i.test(c) || (tag === 'sup' && !node.querySelector('a')))) {
+    if (n && book && (/chapter|chap-?num|chapnum|drop-?cap|\bc-?num/i.test(c))) { if (n !== ch) setVerse(book, n, 1); byMarkers++; return; }
+    if (n && book && ch && (/verse|vnum|v-?num|versenum|\bv\b/i.test(c) || (tag === 'sup' && !node.querySelector('a')))) {
       if (n === 1 && v > 1) setVerse(book, ch + 1, 1); // a new chapter without a chapter marker
       else if (n > v) setVerse(book, ch, n);
       byMarkers++;
       return;
     }
-    if (n && byIds && (/verse|vnum|chapter|chap/i.test(c) || tag === 'sup' || n === v || n === ch)) return; // the number shown for an id'd verse
+    if (n && byIds && (n === v || n === ch)) return; // the number shown for an id'd verse
     if (BLOCK.test(tag)) { blockStart = true; if (book && v) append(' '); }
     for (const k of node.childNodes) walk(k);
     if (BLOCK.test(tag)) { blockStart = true; if (book && v) append(' '); }
@@ -328,7 +333,8 @@ export async function parseBibleEpub(buf, books) {
     if (!text) continue;
     let doc = new DOMParser().parseFromString(text, 'application/xhtml+xml');
     if (doc.getElementsByTagName('parsererror').length) doc = new DOMParser().parseFromString(text, 'text/html');
-    if (tocBook.has(href) && !byIds) { book = tocBook.get(href); ch = 0; v = 0; }
+    if (tocBook.has(href) && !byIds) { book = tocBook.get(href); ch = 0; }
+    v = 0; // text before the first verse marker in a file (titles, contents pages…) isn't verse text
     blockStart = true;
     const body = doc.getElementsByTagNameNS('*', 'body')[0] || doc.documentElement;
     walk(body);
