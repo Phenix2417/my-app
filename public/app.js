@@ -3044,7 +3044,7 @@ async function renderNotes() {
       const notes = Object.values(state.mine.notes).sort((a, b) => b.updatedAt - a.updatedAt);
       list.replaceChildren(...(notes.length ? notes.map((n) => noteCard(n, { onClick: open(n), menu: [
         { id: `note-share-${n.id}`, label: 'Share to chat', icon: ICONS.message, action: () => shareVerse(
-          { book: n.book, chapter: n.chapter, start: n.start.verse, end: n.end.verse, version: n.version || 'web', label: versionInfo(n.version || 'web').short, text: n.quote.slice(0, 2000) }, n.body) },
+          noteVerse(n), n.body) },
         { id: `note-edit-${n.id}`, label: 'Edit note', icon: ICONS.pencil, action: () => noteEditor(n) },
         { id: `note-delete-${n.id}`, label: 'Delete', icon: ICONS.close, action: () => confirmDeleteNote(n, () => renderNotes()) },
       ] }))
@@ -3111,6 +3111,21 @@ function verseCard(v) {
 }
 
 // Send a verse (from the reading bubble): to the chat it was picked for, or to one chosen now.
+// A note as a shared verse. A note made while reading two versions side by side can quote both (English and Chinese
+// mixed): its words are separated by script, the second version's named after the one read alongside.
+function noteVerse(n) {
+  const version = n.version || 'web';
+  const v = { book: n.book, chapter: n.chapter, start: n.start.verse, end: n.end.verse, version, label: versionInfo(version).short, text: n.quote.slice(0, 2000) };
+  const CJK = /[\u3000-\u303f\u3400-\u9fff\uf900-\ufaff\uff00-\uffef「」『』]/;
+  const runs = String(n.quote).match(/[\u3000-\u303f\u3400-\u9fff\uf900-\ufaff\uff00-\uffef「」『』]+|[^\u3000-\u303f\u3400-\u9fff\uf900-\ufaff\uff00-\uffef「」『』]+/g) || [];
+  const zh = runs.filter((r) => CJK.test(r)).join(''), latin = runs.filter((r) => !CJK.test(r) && /[A-Za-z]/.test(r)).map((r) => r.trim()).join(' ');
+  if (!zh || !latin) return v;
+  const mainZh = isChineseVersion(version);
+  const other = state.parallel && isChineseVersion(state.parallel) !== mainZh ? state.parallel : null;
+  return { ...v, text: (mainZh ? zh : latin).slice(0, 2000),
+    alt: { version: other || version, label: other ? versionInfo(other).short : (mainZh ? 'English' : '中文'), text: (mainZh ? latin : zh).slice(0, 2000) } };
+}
+
 // text: words to send with it (a note's text).
 async function shareVerse(verse, text = '') {
   const message = { ref: verse, ...(text ? { body: text } : {}) };
