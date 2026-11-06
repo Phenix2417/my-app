@@ -33,3 +33,11 @@ test('the built-in data loads (public domain Easton and ISBE)', () => {
   assert.ok(enc.entry('easton', 'grace').entries[0].text.includes('⟦'));
   assert.ok(enc.entry('isbe', 'moses').entries.length >= 1);
 });
+
+test('links to other entries: kept when they lead somewhere, plain text otherwise', async () => {
+  const { resolveLinks } = await import('../scripts/build-encyclopedias.mjs');
+  const out = resolveLinks([['ABRAM', 'See ⟦@ABRAHAM|ABRAHAM⟧ and ⟦@BAPTISM.|BAPTISM⟧ and ⟦@I. INTRODUCTORY|I. INTRODUCTORY⟧.'], ['ABRAHAM', 'x'], ['BAPTISM, CHRISTIAN', 'y']]);
+  assert.equal(out[0][1], 'See ⟦@abraham|ABRAHAM⟧ and ⟦@baptism|BAPTISM⟧ and I. INTRODUCTORY.');
+  const enc = createEncyclopedias({ data: { easton: [['BAPTISM, CHRISTIAN', 'y']], isbe: [] } });
+  assert.equal(enc.entry('easton', 'baptism').entries[0].term, 'BAPTISM, CHRISTIAN');
+});

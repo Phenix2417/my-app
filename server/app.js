@@ -425,7 +425,7 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
       }
     }, true],
     // Which Bible dictionary topics a word has (from the built-in index, no outside request) — for the buttons.
-    ['GET', /^\/api\/bible-dictionary\/([a-z' %-]{1,60})$/, ({ params: [word] }) => {
+    ['GET', /^\/api\/bible-dictionary\/([a-zA-Z0-9' %,-]{1,120})$/, ({ params: [word] }) => {
       if (!bibleDict) throw new HttpError(503, 'The Bible dictionary is not set up on this server');
       const w = decodeURIComponent(word);
       // Also: whether Easton's and the ISBE have an entry (answered from memory).
@@ -456,7 +456,7 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
       return { names: await wiki.names(Array.isArray(body?.names) ? body.names.slice(0, 200).map(String) : []) };
     }, true],
     // An Easton's Bible Dictionary or ISBE entry (built in, public domain).
-    ['GET', /^\/api\/encyclopedia\/(easton|isbe)\/([a-z' %-]{1,60})$/, ({ params: [source, word] }) => {
+    ['GET', /^\/api\/encyclopedia\/(easton|isbe)\/([a-zA-Z0-9' %,-]{1,120})$/, ({ params: [source, word] }) => {
       if (!encyclopedias) throw new HttpError(503, 'Easton and the ISBE are not set up on this server');
       const found = encyclopedias.entry(source, decodeURIComponent(word));
       if (!found) throw new HttpError(404, source === 'easton' ? "Not in Easton's Bible Dictionary" : 'Not in the ISBE');

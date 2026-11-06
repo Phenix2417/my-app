@@ -1590,12 +1590,18 @@ function encyclopediaFor(source, word) {
 // OSIS book abbreviations, in Bible order (the same order as state.books).
 const OSIS_BOOKS = 'Gen Exod Lev Num Deut Josh Judg Ruth 1Sam 2Sam 1Kgs 2Kgs 1Chr 2Chr Ezra Neh Esth Job Ps Prov Eccl Song Isa Jer Lam Ezek Dan Hos Joel Amos Obad Jonah Mic Nah Hab Zeph Hag Zech Mal Matt Mark Luke John Acts Rom 1Cor 2Cor Gal Eph Phil Col 1Thess 2Thess 1Tim 2Tim Titus Phlm Heb Jas 1Pet 2Pet 1John 2John 3John Jude Rev'.split(' ');
 // Text with ⟦Gen.6.8|Gen. 6:8⟧ references -> text and tappable reference buttons (like the Bible dictionary's).
-function osisLinks(text) {
+// ⟦@abraham|ABRAHAM⟧ links to another entry: tapping it calls onXref('abraham').
+function osisLinks(text, onXref = null) {
   const out = [];
   let last = 0;
   for (const m of String(text).matchAll(/⟦([^|⟧]*)\|([^⟧]*)⟧/g)) {
     out.push(text.slice(last, m.index));
     last = m.index + m[0].length;
+    if (m[1].startsWith('@')) {
+      const key = m[1].slice(1);
+      out.push(onXref ? h('button', { class: 'xref', type: 'button', title: `Look up ${key}`, onclick: (e) => { e.stopPropagation(); onXref(key); } }, m[2]) : m[2]);
+      continue;
+    }
     const [from, to] = m[1].split('-');
     const [b, c, v] = from.split('.'), end = to?.split('.');
     const meta = state.books?.[OSIS_BOOKS.indexOf(b)];
@@ -1616,16 +1622,16 @@ function shortenOsis(full, limit) {
   }
   return i >= full.length ? full : `${full.slice(0, i).replace(/\s+[^\s⟧]*$/, '')}…`;
 }
-function encyclopediaSection(found, source) {
+function encyclopediaSection(found, source, onXref) {
   const LIMIT = source === 'isbe' ? 420 : 360;
   return h('section', { class: 'bd bd-english', lang: 'en' },
     h('div', { class: 'bd-head' }, source === 'isbe' ? 'ISBE' : 'Easton', h('span', { class: 'bd-src' }, ` · ${found.source}`)),
     ...found.entries.map((entry) => {
       const full = entry.text, long = plainOsis(full).length > LIMIT;
-      const text = h('p', { class: 'bd-text' }, ...osisLinks(long ? shortenOsis(full, LIMIT) : full));
+      const text = h('p', { class: 'bd-text' }, ...osisLinks(long ? shortenOsis(full, LIMIT) : full, onXref));
       const more = long ? h('button', { class: 'text-btn bd-more', type: 'button', onclick: () => {
         const open = more.textContent === 'More';
-        text.replaceChildren(...osisLinks(open ? full : shortenOsis(full, LIMIT)));
+        text.replaceChildren(...osisLinks(open ? full : shortenOsis(full, LIMIT), onXref));
         more.textContent = open ? 'Less' : 'More';
         positionToolbar();
       } }, 'More') : null;
@@ -1780,7 +1786,21 @@ function toggleDictionary(bar, btn) {
       positionToolbar();
     });
   }
-  const show = async (w) => {
+  // Look up a word; `openSrc` ('easton', 'isbe', …) opens that source's entry straight away (from a "See ABRAHAM" link).
+  // English words inside a Chinese definition ("等于Abraham") look that word up when tapped.
+  const wordLinks = (text, self) => {
+    const out = [];
+    let last = 0;
+    for (const m of String(text).matchAll(/[A-Za-z][A-Za-z'-]{2,}/g)) {
+      const key = dictKey(m[0]);
+      if (!key || key === self || /^(sth|sb)$/.test(key)) continue;
+      out.push(text.slice(last, m.index), h('button', { class: 'xref', type: 'button', title: `Look up ${m[0]}`, onclick: (e) => { e.stopPropagation(); body.closest('.dict')?.scrollTo({ top: 0 }); show(key); } }, m[0]));
+      last = m.index + m[0].length;
+    }
+    out.push(text.slice(last));
+    return out.filter((x) => x !== '');
+  };
+  const show = async (w, openSrc = null) => {
     trans?.querySelectorAll('.tw').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.w === w)));
     trans?.querySelector('.g-btn')?.setAttribute('aria-pressed', 'false');
     body.replaceChildren(h('p', { class: 'dict-muted' }, 'Looking up…'));
@@ -1793,7 +1813,7 @@ function toggleDictionary(bar, btn) {
       h('div', { class: 'dict-head' }, h('span', { class: 'dict-word' }, x.word)),
       // British and American phonetics; tapping either plays that recording.
       h('div', { class: 'dict-prons' }, pronButton(x.word, 'uk', x.p), pronButton(x.word, 'us', x.p)),
-      x.t ? h('p', { class: 'dict-zh', lang: 'zh-Hans' }, x.t) : rows[x.word]?.length ? chineseLines(rows[x.word]) : null,
+      x.t ? h('p', { class: 'dict-zh', lang: 'zh-Hans' }, ...wordLinks(x.t, x.word)) : rows[x.word]?.length ? chineseLines(rows[x.word]) : null,
       !main ? null : x.d ? h('p', { class: 'dict-en' }, x.d) : englishLines(englishFor(x.word, x.t)),
     ];
     const bibleSlot = h('div', { class: 'bd-slot' }), wikiSlot = h('div', { class: 'bd-slot' });
@@ -1855,7 +1875,7 @@ function toggleDictionary(bar, btn) {
         try {
           section = sections[lang] = lang === 'zh' || lang === 'en'
             ? bibleSection(await bibleTextFor(bdWord, lang), { english: lang === 'en' })
-            : encyclopediaSection(await encyclopediaFor(lang, bdWord), lang);
+            : encyclopediaSection(await encyclopediaFor(lang, bdWord), lang, (key) => show(key, lang));
         } catch (err) {
           btn.classList.remove('loading');
           toast(err instanceof OfflineError ? 'The Bible dictionary needs a connection.' : err.message);
@@ -1874,7 +1894,7 @@ function toggleDictionary(bar, btn) {
       if (box) box.scrollBy({ top: section.getBoundingClientRect().top - box.getBoundingClientRect().top - 6, behavior: 'smooth' });
       section.classList.remove('flash'); void section.offsetWidth; section.classList.add('flash');
     };
-    const btn = (lang, label, aria) => h('button', { class: 'bd-jump bd-dict', type: 'button', lang: lang === 'zh' ? 'zh-Hans' : 'en', 'aria-label': aria, onclick: toggle(lang) }, label);
+    const btn = (lang, label, aria) => h('button', { class: 'bd-jump bd-dict', type: 'button', lang: lang === 'zh' ? 'zh-Hans' : 'en', dataset: { src: lang }, 'aria-label': aria, onclick: toggle(lang) }, label);
     const buttons = [
       topics.length ? btn('zh', '圣经辞典', 'Show the Chinese Bible dictionary entry') : null,
       topics.length ? btn('en', 'Bible Dictionary', 'Show the English Bible dictionary entry') : null,
@@ -1884,7 +1904,9 @@ function toggleDictionary(bar, btn) {
     const head = body.querySelector('.dict-head'), wikiBtn = head?.querySelector('.bd-wiki');
     if (wikiBtn) wikiBtn.before(...buttons); else head?.append(...buttons);
     // No English dictionary entry: show the first Bible dictionary entry straight away.
-    if (noEnglish && buttons[0]) buttons[0].click();
+    const wanted = openSrc && buttons.find((b) => b.dataset.src === openSrc);
+    if (wanted) wanted.click();
+    else if (noEnglish && buttons[0]) buttons[0].click();
     positionToolbar();
   };
   const dictBox = h('div', { class: 'dict' }, trans, body,

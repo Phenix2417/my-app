@@ -33,13 +33,15 @@ export function createEncyclopedias({ dir = path.join(here, 'data'), data = null
     }
     return loaded[source];
   };
-  const normalize = (raw) => { const w = String(raw || '').toLowerCase().replace(/[’]/g, "'").trim(); return /^[a-z][a-z' -]{0,40}$/.test(w) ? w : null; };
+  const normalize = (raw) => { const w = String(raw || '').toLowerCase().replace(/[’]/g, "'").trim(); return /^[a-z][a-z' ,-]{0,60}$/.test(w) ? w : null; };
   // The entry numbers for a word: the word itself, else its first base form that has entries.
   const find = (source, raw) => {
     const word = normalize(raw);
     if (!word) return [];
     const { index } = load(source);
     for (const f of baseForms(word)) if (index.has(f)) return index.get(f).slice(0, MAX_ENTRIES);
+    // "baptism" -> "BAPTISM, CHRISTIAN" (an entry filed under a longer heading)
+    for (const [h, list] of index) if (h.startsWith(`${word}, `)) return list.slice(0, MAX_ENTRIES);
     return [];
   };
 
