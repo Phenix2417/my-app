@@ -261,14 +261,17 @@ button.c-label:focus-visible { outline: 2px solid var(--primary); outline-offset
 .manage-head h2 { margin: 0; font-size: 19px; font-weight: 500; }
 
 /* Commentary page: fixed header, commentary scrolls on its own */
-.commentary-page { height: 100dvh; display: flex; flex-direction: column; overflow: hidden;
-  padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px)); }
-.c-head { flex: none; padding-bottom: 8px; border-bottom: 1px solid var(--divider); }
-.c-titlebar { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
-.c-titlebar h1 { margin: 12px 0 14px; font-size: 24px; order: -1; }
-.commentary-page .back-btn { margin: 0; padding: 8px 0 8px 8px; font-size: 15px; }
-.commentary-page .chips { margin: 12px 0 0; }
-.c-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; padding: 10px 2px 24px; }
+.commentary-page { height: 100dvh; display: flex; flex-direction: column; overflow: hidden; position: relative; padding-block: 0; }
+.c-head { position: absolute; z-index: 12; top: 0; left: 0; right: 0; background: var(--bg); transition: transform .22s ease;
+  border-bottom: 1px solid var(--divider);
+  padding: 14px max(16px, env(safe-area-inset-right, 0px)) 8px max(16px, env(safe-area-inset-left, 0px)); }
+body.bars-hidden .c-head { transform: translateY(-100%); }
+.c-titlebar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.c-titlebar h1 { margin: 0; padding: 6px 0; font-size: 17px; font-weight: 500; color: var(--primary); }
+.commentary-page .back-btn { margin: 0; padding: 6px 0 6px 8px; font-size: 15px; }
+.commentary-page .chips { margin: 8px 0 4px; }
+.c-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y;
+  padding: 60px 2px calc(110px + env(safe-area-inset-bottom, 0px)); }
 .c-scroll:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
 .c-meta { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 12px; }
 .swipe-hint { color: var(--muted); font-size: 13px; }

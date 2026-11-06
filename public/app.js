@@ -1539,6 +1539,7 @@ function setManageOpen(open) {
   cm.manageOpen = open;
   if (cm.manage) cm.manage.hidden = !open;
   for (const el of [cm.chips, cm.status, cm.listEl]) if (el) el.hidden = open;
+  if (open) setBars(true); // keep the Done button and tabs in reach while editing
   drawManage(); drawCommentaryChips();
   if (cm.scroller) cm.scroller.scrollTop = 0;
   document.getElementById('side-edit-list')?.setAttribute('aria-pressed', String(open));
@@ -1655,12 +1656,27 @@ function renderCommentaryPage() {
   // The header stays put; only this area scrolls. Swiping sideways in it changes commentary.
   cm.scroller = h('div', { class: 'c-scroll', tabindex: 0, 'aria-label': 'Commentary text' }, cm.manage, cm.status, cm.listEl);
   enableCommentarySwipe(cm.scroller);
+  // Same bars as the Read page: a slim title bar on top and the tabs below, both sliding away while reading.
+  const head = h('header', { class: 'c-head' },
+    h('div', { class: 'c-titlebar' },
+      h('h1', {}, 'Commentary'),
+      h('button', { class: 'text-btn back-btn', onclick: () => goTo(state.pos, cm.returnVerse) }, `‹ Back to ${meta.name} ${chapter}`)),
+    cm.chips);
+  new ResizeObserver(() => { cm.scroller.style.paddingTop = `${head.offsetHeight + 10}px`; }).observe(head);
+  let lastTop = 0, touched = false; // jumping to the verse on opening isn't reading on, so wait for the reader to scroll
+  for (const ev of ['pointerdown', 'wheel', 'keydown']) cm.scroller.addEventListener(ev, () => { touched = true; }, { passive: true });
+  cm.scroller.addEventListener('scroll', () => {
+    const top = cm.scroller.scrollTop;
+    if (touched && top > lastTop + 6 && top > 60 && !cm.manageOpen) setBars(false);
+    lastTop = top;
+  }, { passive: true });
+  // A tap on the text (not a button, link or the list editor) shows or hides the bars.
+  cm.scroller.addEventListener('click', (e) => {
+    if (cm.manageOpen || e.target.closest('button, a, input, .manage-panel') || String(window.getSelection?.() || '')) return;
+    setBars(document.body.classList.contains('bars-hidden'));
+  });
   mount(h('main', { class: 'screen commentary-page' },
-    h('div', { class: 'c-head' },
-      h('div', { class: 'c-titlebar' },
-        h('button', { class: 'text-btn back-btn', onclick: () => goTo(state.pos, cm.returnVerse) }, `‹ Back to ${meta.name} ${chapter}`),
-        h('h1', {}, 'Commentary')),
-      cm.chips),
+    head,
     cm.scroller,
     sideDock([
       { id: 'side-edit-list', label: 'Edit commentary list', icon: ICONS.editShelf, toggle: { get: () => cm.manageOpen, set: setManageOpen, announce: false } },
