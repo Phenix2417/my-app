@@ -1043,7 +1043,7 @@ function openDictionaryFor(word) {
 
 function toggleDictionary(bar, btn) {
   const open = bar.querySelector('.dict');
-  if (open) { open.remove(); btn.setAttribute('aria-expanded', 'false'); positionToolbar(); return; }
+  if (open) { open.remove(); bar.querySelector('.to-top')?.remove(); btn.setAttribute('aria-expanded', 'false'); positionToolbar(); return; }
   btn.setAttribute('aria-expanded', 'true');
   const all = reader.words.filter((x) => inRange(x, state.selection.start, state.selection.end)).map((x) => x.el.textContent);
   const multi = all.length > 1;
@@ -1129,8 +1129,13 @@ function toggleDictionary(bar, btn) {
       h('button', { class: 'bd-jump', type: 'button', lang: 'en', 'aria-pressed': 'false', 'aria-label': 'Show the English Bible dictionary entry', onclick: toggle('en') }, 'Bible Dictionary'));
     positionToolbar();
   };
-  bar.append(h('div', { class: 'dict' }, trans, body,
-    h('p', { class: 'dict-credit' }, multi ? 'Translation, phonetics & audio: Youdao · Dictionary: ECDICT · 圣经辞典: 信望爱' : 'ECDICT English–Chinese dictionary · Phonetics & audio: Youdao · 圣经辞典: 信望爱')));
+  const dictBox = h('div', { class: 'dict' }, trans, body,
+    h('p', { class: 'dict-credit' }, multi ? 'Translation, phonetics & audio: Youdao · Dictionary: ECDICT · 圣经辞典: 信望爱' : 'ECDICT English–Chinese dictionary · Phonetics & audio: Youdao · 圣经辞典: 信望爱'));
+  // An ↑ button appears once the panel is scrolled down, and takes it back to the top.
+  const toTop = h('button', { class: 'to-top', type: 'button', hidden: true, 'aria-label': 'Back to top', title: 'Back to top',
+    onclick: () => dictBox.scrollTo({ top: 0, behavior: 'smooth' }) }, '↑');
+  dictBox.addEventListener('scroll', () => { toTop.hidden = dictBox.scrollTop < 40; }, { passive: true });
+  bar.append(dictBox, toTop);
   if (multi) body.replaceChildren(h('p', { class: 'dict-muted' }, 'Tap any word above for its definition, or Grammar to analyse the passage.'));
   else show(words[0]);
 }
