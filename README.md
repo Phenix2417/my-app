@@ -21,9 +21,11 @@ Read the Bible, highlight passages, write notes, and see the notes your friends 
   word used in the Bible text: `node scripts/build-dict.mjs ecdict.csv` regenerates `public/dict/`.
   Tap the phonetic or the **UK** / **US** speaker buttons to hear recorded British or American pronunciation
   (Youdao audio, fetched by the server once per word and kept in the data folder).
-- **圣经辞典 (Chinese Bible dictionary)** — when a word's dictionary entry is shown, the server finds matching topics
-  in Nave's and Torrey's Topical Bibles (public domain) and fetches their Chinese translations from the 信望愛 (FHL)
-  JSON API (`st.php`), adding them below the entry: Chinese points with verse references. Results are cached.
+- **圣经辞典 / Bible Dictionary** — Nave's and Torrey's Topical Bibles (public domain), in the 信望愛 (FHL) Chinese
+  translation and in English. Whether a word has an entry is checked against a built-in index of topic titles
+  (`server/data/topics.json`, 5,952 titles, no text; rebuild with `node scripts/build-topic-index.mjs`), so the
+  **圣经辞典** / **Bible Dictionary** buttons cost nothing to show. Tapping one fetches that text from FHL's JSON API
+  (`st.php`); the server keeps a copy.
 - **Grammar** — in the Translate panel, tap **Grammar** after the selected text: every word gets its part of speech in Chinese
   (colour-coded), each verb its tense and voice (e.g. 一般过去时 · 被动语态), plus subject/verb and prepositional and
   noun phrases. It runs on the phone with [compromise](https://github.com/spencermountain/compromise) 14.19.0 (MIT),

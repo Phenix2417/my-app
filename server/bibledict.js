@@ -1,9 +1,12 @@
-// Chinese Bible dictionary: the 信望愛 (FHL) Chinese translations of Nave's and Torrey's Topical Bibles
-// (originals public domain; FHL's own material may be reused freely, see fhl.net/main/fhl/fhl8.html).
-// An English word is matched to English topic titles, then the same topics are fetched in Chinese.
-// Results are cached in memory and on disk.
+// Bible dictionary: Torrey's and Nave's Topical Bibles (public domain), in English and in the 信望愛 (FHL)
+// Chinese translations (FHL material may be reused freely, see fhl.net/main/fhl/fhl8.html).
+// Whether a word has an entry is answered from a built-in index of topic titles (server/data/topics.json),
+// with no network request. The text is fetched from FHL only when asked for, and cached.
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const here = path.dirname(fileURLToPath(import.meta.url));
 
 export class BibleDictError extends Error {
   constructor(status, message) { super(message); this.status = status; }
@@ -33,9 +36,27 @@ export function topicMatches(title, word) {
   return t === word || t.startsWith(`${word} `) || t.startsWith(`${word},`);
 }
 
-export function createBibleDictionary({ cacheDir, fetchImpl = globalThis.fetch, upstream = 'https://bible.fhl.net/json/st.php', maxTopics = 3 } = {}) {
+const SOURCES = {
+  zh: { name: '信望爱 主题查经（Nave’s / Torrey’s 中译）', N: (book) => (book === 0 ? '2' : '3') },
+  en: { name: 'Nave’s / Torrey’s Topical Bible', N: (book) => String(book) },
+};
+
+export function createBibleDictionary({
+  cacheDir, fetchImpl = globalThis.fetch, upstream = 'https://bible.fhl.net/json/st.php',
+  indexFile = path.join(here, 'data', 'topics.json'), index = null, maxTopics = 3,
+} = {}) {
+  let topics = index; // [book (0 Torrey, 1 Nave), number, English title]
   const memory = new Map();
   const inflight = new Map();
+  const loadIndex = () => { if (!topics) { try { topics = JSON.parse(fs.readFileSync(indexFile, 'utf8')); } catch { topics = []; } } return topics; };
+  const normalize = (raw) => { const w = String(raw || '').toLowerCase().trim(); return /^[a-z][a-z' -]{0,40}$/.test(w) ? w : null; };
+
+  // Matching topics for a word, exact titles first (no network).
+  function match(word) {
+    const found = loadIndex().filter(([, , title]) => topicMatches(title, word));
+    found.sort((a, b) => (b[2].toLowerCase() === word) - (a[2].toLowerCase() === word));
+    return found.slice(0, maxTopics);
+  }
 
   async function call(params) {
     let res;
@@ -46,35 +67,38 @@ export function createBibleDictionary({ cacheDir, fetchImpl = globalThis.fetch, 
     try { return parseFhlJson(await res.text()); } catch { throw new BibleDictError(502, 'The Bible dictionary sent something unexpected'); }
   }
 
-  async function load(word) {
-    const file = cacheDir && path.join(cacheDir, `${word}.v2.json`); // v2: includes the English text
+  async function load(word, lang) {
+    const file = cacheDir && path.join(cacheDir, lang, `${word}.json`);
     if (file) { try { return JSON.parse(await fs.promises.readFile(file, 'utf8')); } catch { /* not cached */ } }
-    // English Torrey (N=0) and Nave (N=1) topics whose title is about this word.
-    const found = [];
-    for (const [en, zh] of [['0', '2'], ['1', '3']]) {
-      const d = await call({ N: en, keyword: word });
-      for (const r of d?.record || []) if (topicMatches(r.topic, word)) found.push({ id: r.id, english: r.topic, englishText: r.text, zhN: zh, exact: r.topic.toLowerCase() === word });
-    }
-    found.sort((a, b) => b.exact - a.exact);
     const entries = [];
-    for (const t of found.slice(0, maxTopics)) {
-      const d = await call({ N: t.zhN, k: String(t.id).replace(/\D/g, '') });
+    for (const [book, num, title] of match(word)) {
+      const d = await call({ N: SOURCES[lang].N(book), k: String(num).padStart(7, '0') });
       const r = d?.record?.[0];
-      if (r?.topic && r?.text) entries.push({ term: String(r.topic).trim(), english: t.english, text: cleanTopicText(r.text), englishText: cleanTopicText(t.englishText || '', { english: true }) });
+      if (r?.text) entries.push({ term: lang === 'zh' ? String(r.topic || title).trim() : title, english: title, text: cleanTopicText(r.text, { english: lang === 'en' }) });
     }
-    const value = entries.length ? { source: '信望爱 主题查经（Nave’s / Torrey’s 中译）', englishSource: 'Nave’s / Torrey’s Topical Bible', entries } : null;
-    if (file) { try { await fs.promises.mkdir(cacheDir, { recursive: true }); await fs.promises.writeFile(file, JSON.stringify(value)); } catch { /* best effort */ } }
+    const value = entries.length ? { source: SOURCES[lang].name, entries } : null;
+    if (file) { try { await fs.promises.mkdir(path.dirname(file), { recursive: true }); await fs.promises.writeFile(file, JSON.stringify(value)); } catch { /* best effort */ } }
     return value;
   }
 
-  return async function lookUp(raw) {
-    const word = String(raw || '').toLowerCase().trim();
-    if (!/^[a-z][a-z' -]{0,40}$/.test(word)) return null;
-    if (memory.has(word)) return memory.get(word);
-    if (!inflight.has(word)) inflight.set(word, load(word).finally(() => inflight.delete(word)));
-    const value = await inflight.get(word);
-    memory.set(word, value);
-    if (memory.size > 2000) memory.delete(memory.keys().next().value);
-    return value;
+  return {
+    // Does this word have a Bible dictionary entry? Answered from the built-in index.
+    has(raw) {
+      const word = normalize(raw);
+      return word ? match(word).map(([, , title]) => title) : [];
+    },
+    // The full entry in 'zh' or 'en', fetched from FHL on first request and cached.
+    async entry(raw, lang) {
+      const word = normalize(raw);
+      if (!word || !SOURCES[lang]) return null;
+      const key = `${lang}/${word}`;
+      if (memory.has(key)) return memory.get(key);
+      if (!match(word).length) return null;
+      if (!inflight.has(key)) inflight.set(key, load(word, lang).finally(() => inflight.delete(key)));
+      const value = await inflight.get(key);
+      memory.set(key, value);
+      if (memory.size > 2000) memory.delete(memory.keys().next().value);
+      return value;
+    },
   };
 }

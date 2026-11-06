@@ -990,27 +990,35 @@ async function analyzeGrammar(text) {
   return [...sections, h('p', { class: 'g-note' }, 'Tap a part to see what it does. Automatic analysis (compromise) · may be wrong for unusual word order')];
 }
 
-// Chinese Bible dictionary (FHL's Chinese Nave's/Torrey's topics, via the server): the entry for a word, or null.
-const bibleCache = new Map();
-function bibleEntryFor(word) {
+// Bible dictionary (Nave's/Torrey's, Chinese and English, via the server).
+// Whether a word has topics is a cheap check against the server's built-in index; the text is fetched on tap.
+const bibleTopicsCache = new Map();
+function bibleTopicsFor(word) {
   const w = String(word || '').toLowerCase();
-  if (!w) return Promise.resolve(null);
-  if (!bibleCache.has(w)) {
-    bibleCache.set(w, api('GET', `/api/bible-dictionary/${encodeURIComponent(w)}`).catch((err) => {
-      if (err?.status !== 404) bibleCache.delete(w); // try again next time unless it's simply not there
-      return null;
-    }));
+  if (!w) return Promise.resolve([]);
+  if (!bibleTopicsCache.has(w)) {
+    bibleTopicsCache.set(w, api('GET', `/api/bible-dictionary/${encodeURIComponent(w)}`).then((r) => r.topics || []).catch(() => { bibleTopicsCache.delete(w); return []; }));
   }
-  return bibleCache.get(w);
+  return bibleTopicsCache.get(w);
+}
+const bibleTextCache = new Map();
+function bibleTextFor(word, lang) {
+  const key = `${lang}/${word}`;
+  if (!bibleTextCache.has(key)) {
+    const p = api('GET', `/api/bible-dictionary/${encodeURIComponent(word)}/${lang}`);
+    bibleTextCache.set(key, p);
+    p.catch(() => bibleTextCache.delete(key));
+  }
+  return bibleTextCache.get(key);
 }
 // Cut a long entry at a word boundary, without leaving an empty bullet line at the end.
 const shorten = (full, limit) => `${full.slice(0, limit).replace(/\s+\S*$/, '').replace(/\n[•·\s]*$/, '')}…`;
 function bibleSection(found, { english = false } = {}) {
   const LIMIT = english ? 360 : 260;
   return h('section', { class: 'bd' + (english ? ' bd-english' : ''), lang: english ? 'en' : 'zh-Hans' },
-    h('div', { class: 'bd-head' }, english ? 'Bible Dictionary' : '圣经辞典', h('span', { class: 'bd-src' }, ` · ${english ? found.englishSource : found.source}`)),
-    ...found.entries.filter((entry) => !english || entry.englishText).map((entry) => {
-      const full = english ? entry.englishText : entry.text;
+    h('div', { class: 'bd-head' }, english ? 'Bible Dictionary' : '圣经辞典', h('span', { class: 'bd-src' }, ` · ${found.source}`)),
+    ...found.entries.map((entry) => {
+      const full = entry.text;
       const long = full.length > LIMIT;
       const text = h('p', { class: 'bd-text' }, long ? shorten(full, LIMIT) : full);
       const more = long ? h('button', { class: 'text-btn bd-more', type: 'button', onclick: () => {
@@ -1085,32 +1093,40 @@ function toggleDictionary(bar, btn) {
     if (!e || (!e.t && !e.d && !e.base)) body.replaceChildren(h('p', { class: 'dict-muted' }, `“${w}” isn't in the English dictionary.`), bibleSlot);
     else body.replaceChildren(...[...block(e, !e.base), ...(e.base ? [h('div', { class: 'dict-base' }, `Base form: ${e.base.word}`), ...block(e.base, true)] : []), bibleSlot].filter(Boolean));
     positionToolbar();
-    // Also look the word (or its base form) up in the Bible dictionary, and add the entry if there is one.
-    const found = (await bibleEntryFor(w)) || (e?.base ? await bibleEntryFor(e.base.word) : null);
-    if (!found || !bibleSlot.isConnected) return; // another word was tapped meanwhile
-    const hasEnglish = found.entries.some((x) => x.englishText);
-    // The Bible dictionary entries stay hidden until their button is tapped.
-    const zhSection = bibleSection(found);
-    const enSection = hasEnglish ? bibleSection(found, { english: true }) : null;
-    zhSection.hidden = true;
-    if (enSection) enSection.hidden = true;
-    bibleSlot.replaceChildren(...[zhSection, enSection].filter(Boolean));
-    // Buttons after the word: show (and scroll to) the Chinese or English entry; tap again to hide it.
-    const toggle = (section) => (ev) => {
+    // Bible dictionary buttons, only if the word (or its base form) has topics. The text is fetched on tap.
+    let bdWord = w;
+    let topics = await bibleTopicsFor(w);
+    if (!topics.length && e?.base) { bdWord = e.base.word; topics = await bibleTopicsFor(bdWord); }
+    if (!topics.length || !bibleSlot.isConnected) return; // none, or another word was tapped meanwhile
+    const sections = {};
+    const toggle = (lang) => async (ev) => {
       const btn = ev.currentTarget;
-      const opening = section.hidden;
-      section.hidden = !opening;
-      btn.setAttribute('aria-pressed', String(opening));
+      let section = sections[lang];
+      if (section && !section.hidden) { section.hidden = true; btn.setAttribute('aria-pressed', 'false'); positionToolbar(); return; }
+      btn.setAttribute('aria-pressed', 'true');
+      if (!section) {
+        btn.classList.add('loading');
+        try {
+          section = sections[lang] = bibleSection(await bibleTextFor(bdWord, lang), { english: lang === 'en' });
+        } catch (err) {
+          btn.classList.remove('loading'); btn.setAttribute('aria-pressed', 'false');
+          toast(err instanceof OfflineError ? 'The Bible dictionary needs a connection.' : err.message);
+          return;
+        }
+        btn.classList.remove('loading');
+        if (!bibleSlot.isConnected) return;
+        // Chinese above English, whichever was opened first.
+        if (lang === 'zh') bibleSlot.prepend(section); else bibleSlot.append(section);
+      }
+      section.hidden = false;
       positionToolbar();
-      if (!opening) return;
       const box = body.closest('.dict');
       if (box) box.scrollBy({ top: section.getBoundingClientRect().top - box.getBoundingClientRect().top - 6, behavior: 'smooth' });
       section.classList.remove('flash'); void section.offsetWidth; section.classList.add('flash');
     };
-    body.querySelector('.dict-head')?.append(...[
-      h('button', { class: 'bd-jump', type: 'button', 'aria-pressed': 'false', 'aria-label': 'Show the Chinese Bible dictionary entry', onclick: toggle(zhSection) }, '圣经辞典'),
-      enSection ? h('button', { class: 'bd-jump', type: 'button', lang: 'en', 'aria-pressed': 'false', 'aria-label': 'Show the English Bible dictionary entry', onclick: toggle(enSection) }, 'Bible Dictionary') : null,
-    ].filter(Boolean));
+    body.querySelector('.dict-head')?.append(
+      h('button', { class: 'bd-jump', type: 'button', 'aria-pressed': 'false', 'aria-label': 'Show the Chinese Bible dictionary entry', onclick: toggle('zh') }, '圣经辞典'),
+      h('button', { class: 'bd-jump', type: 'button', lang: 'en', 'aria-pressed': 'false', 'aria-label': 'Show the English Bible dictionary entry', onclick: toggle('en') }, 'Bible Dictionary'));
     positionToolbar();
   };
   bar.append(h('div', { class: 'dict' }, trans, body,

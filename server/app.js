@@ -195,10 +195,16 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
         throw e;
       }
     }, true],
-    ['GET', /^\/api\/bible-dictionary\/([a-z' %-]{1,60})$/, async ({ params: [word] }) => {
+    // Which Bible dictionary topics a word has (from the built-in index, no outside request) — for the buttons.
+    ['GET', /^\/api\/bible-dictionary\/([a-z' %-]{1,60})$/, ({ params: [word] }) => {
+      if (!bibleDict) throw new HttpError(503, 'The Bible dictionary is not set up on this server');
+      return { topics: bibleDict.has(decodeURIComponent(word)) };
+    }, true],
+    // The full entry, in Chinese (zh) or English (en), fetched when a button is tapped.
+    ['GET', /^\/api\/bible-dictionary\/([a-z' %-]{1,60})\/(zh|en)$/, async ({ params: [word, lang] }) => {
       if (!bibleDict) throw new HttpError(503, 'The Bible dictionary is not set up on this server');
       let found;
-      try { found = await bibleDict(decodeURIComponent(word)); } catch (e) {
+      try { found = await bibleDict.entry(decodeURIComponent(word), lang); } catch (e) {
         if (e instanceof BibleDictError) throw new HttpError(e.status, e.message);
         throw e;
       }
