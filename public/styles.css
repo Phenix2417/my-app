@@ -18,6 +18,7 @@
   --hl-purple: #5a4287;
   --scrim: rgba(0, 0, 0, 0.55);
   --verse-size: 22px;
+  --mark-dict: #8fdcc4; --mark-wiki: #c3b4ff;
   color-scheme: dark;
 }
 
@@ -28,6 +29,7 @@
     --error: #ba1a1a; --on-error: #fff; --divider: #d4dedb; --handle: #e08a10; --sel: rgba(242, 166, 59, 0.28);
     --hl-yellow: #f6e08e; --hl-green: #b9e4c6; --hl-blue: #bdd6f5; --hl-pink: #f3c3d9; --hl-purple: #dacbf5;
     --scrim: rgba(0, 0, 0, 0.35);
+    --mark-dict: #006b58; --mark-wiki: #5a45c8;
     color-scheme: light;
   }
 }
@@ -89,6 +91,10 @@ h1 { font-size: 28px; font-weight: 500; margin: 18px 0 24px; }
 [data-c="blue"] { background: var(--hl-blue); }
 [data-c="pink"] { background: var(--hl-pink); }
 [data-c="purple"] { background: var(--hl-purple); }
+/* Words with a Bible dictionary entry, and names with a Bible wiki article (Read ⋯ → Colour Bible words). */
+.w.wm-dict { color: var(--mark-dict); }
+.w.wm-wiki { color: var(--mark-wiki); }
+body.no-word-marks .w.wm-dict, body.no-word-marks .w.wm-wiki { color: inherit; }
 .w[data-f], .g[data-f] { text-decoration: underline 3px; text-underline-offset: 6px; text-decoration-skip-ink: none; }
 .w[data-f="yellow"], .g[data-f="yellow"] { text-decoration-color: #d9b44a; }
 .w[data-f="green"], .g[data-f="green"] { text-decoration-color: #5fbf80; }
@@ -677,3 +683,7 @@ body.bars-hidden .b-size-panel { display: none; }
 .wiki-actions { display: flex; align-items: center; gap: 14px; }
 .wiki-link { font-size: 14px; color: var(--primary); text-decoration: none; padding: 2px 0; }
 .wiki-link::after { content: " ↗"; }
+/* The dictionary panel's buttons use the same colours as the words in the text. */
+.bd-jump.bd-dict, .bd-jump.bd-dict:active { color: var(--mark-dict); border-color: var(--mark-dict); }
+.bd-jump.bd-wiki, .bd-jump.bd-wiki:active { color: var(--mark-wiki); border-color: var(--mark-wiki); }
+.wiki .bd-head { color: var(--mark-wiki); }

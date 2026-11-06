@@ -55,6 +55,10 @@ Read the Bible, highlight passages, write notes, and see the notes your friends 
   (CC BY-SA 4.0), in Chinese (simplified, when Wikipedia has one) and English, with a link to the full article.
   One request asks for Bible-specific titles at once ("Grace (Bible)", "Grace in Christianity", …); the bare word
   counts only if its opening is about the Bible. The server keeps a copy (`server/wiki.js`).
+- **Coloured Bible words** — in the English text, words with a Bible dictionary entry are coloured like the
+  **圣经辞典 / Bible Dictionary** buttons, and names with a Bible wiki article (and no dictionary entry) like the
+  **Bible Wiki** button. Dictionary words come from the built-in topic index (no network); names are checked with one
+  Wikipedia request per chapter at most, and the answers are kept. Turn it off in Read ⋯ → Colour Bible words.
 - **Grammar** — in the Translate panel, tap **Grammar** after the selected text: every word gets its part of speech in Chinese
   (colour-coded), each verb its tense and voice (e.g. 一般过去时 · 被动语态), plus subject/verb and prepositional and
   noun phrases. It runs on the phone with [compromise](https://github.com/spencermountain/compromise) 14.19.0 (MIT),

@@ -12,7 +12,7 @@ export class WikiError extends Error {
 
 const UA = 'BibleStudyApp/1.0 (+https://github.com/Phenix2417/my-app)';
 const MAX_TEXT = 1500;
-const BIBLE_WORDS = /\b(Bible|biblical|Hebrew|Israel(ite)?s?|Jesus|Christ|God|Christian(ity)?|Jewish|Judaism|Old Testament|New Testament|Genesis|Exodus|Torah|Gospels?|prophets?|apostles?|patriarchs?|Tanakh|scripture)\b/i;
+const BIBLE_WORDS = /\b(Bible|Abrahamic|biblical|Hebrew|Israel(ite)?s?|Jesus|Christ|God|Christian(ity)?|Jewish|Judaism|Old Testament|New Testament|Genesis|Exodus|Torah|Gospels?|prophets?|apostles?|patriarchs?|Tanakh|scripture)\b/i;
 
 export function candidateTitles(word) {
   const w = String(word).trim().toLowerCase();
@@ -21,17 +21,20 @@ export function candidateTitles(word) {
     `${W} (Christianity)`, `Divine ${w}`, `${W} (theology)`, `${W} in Judaism`, W];
 }
 
+// The page a title leads to in a batch query's answer (after normalising and redirects), or null.
+export function findPage(query, title) {
+  let t = title;
+  for (const n of query?.normalized || []) if (n.from === t) t = n.to;
+  for (const r of query?.redirects || []) if (r.from === t) t = r.to;
+  const p = (query?.pages || []).find((x) => x.title === t);
+  return p && !p.missing && !p.invalid ? p : null;
+}
+
 // From a batch query's answer, the best page: the first candidate (in order) that exists and isn't a
 // disambiguation page; the bare word only if its opening mentions the Bible.
 export function pickPage(query, titles) {
-  const pages = new Map((query?.pages || []).filter((p) => !p.missing && !p.invalid).map((p) => [p.title, p]));
-  const follow = (t) => {
-    for (const n of query?.normalized || []) if (n.from === t) t = n.to;
-    for (const r of query?.redirects || []) if (r.from === t) t = r.to;
-    return t;
-  };
   for (const [i, t] of titles.entries()) {
-    const p = pages.get(follow(t));
+    const p = findPage(query, t);
     if (!p || p.pageprops?.disambiguation !== undefined || !p.extract) continue;
     if (i === titles.length - 1 && !BIBLE_WORDS.test(p.extract.slice(0, 600))) continue;
     return p;
@@ -75,7 +78,36 @@ export function createWikiService({ cacheDir, fetchImpl = globalThis.fetch } = {
     return out;
   }
 
-  return async function wiki(raw) {
+  // Which of these names have a Bible-related Wikipedia article (for colouring names in the text). One request
+  // per 16 names, asking for "Name", "Name (biblical figure)" and "Name (Bible)" with their short descriptions;
+  // answers are kept (in memory and on disk) so each name is asked about once.
+  let known = null;
+  const knownFile = cacheDir && path.join(cacheDir, '_names.json');
+  async function names(list) {
+    if (!known) { known = new Map(); if (knownFile) { try { known = new Map(Object.entries(JSON.parse(await fs.promises.readFile(knownFile, 'utf8')))); } catch { /* none yet */ } } }
+    const wanted = [...new Set(list.map((n) => String(n).trim()).filter((n) => /^[A-Z][a-z'-]{1,30}$/.test(n)))].slice(0, 80);
+    const todo = wanted.filter((n) => !known.has(n));
+    for (let i = 0; i < todo.length; i += 16) {
+      const batch = todo.slice(i, i + 16);
+      const titles = batch.flatMap((n) => [n, `${n} (biblical figure)`, `${n} (Bible)`]);
+      const q = new URLSearchParams({ action: 'query', format: 'json', formatversion: '2', redirects: '1', prop: 'description|pageprops', ppprop: 'disambiguation', titles: titles.join('|') });
+      const r = await get(`https://en.wikipedia.org/w/api.php?${q}`);
+      if (!r.json?.query) break; // unreachable: try again another time
+      const query = r.json.query;
+      for (const n of batch) {
+        // A qualified title ("Name (biblical figure)") counts if it exists; the bare name if its description is about the Bible.
+        const ok = [n, `${n} (biblical figure)`, `${n} (Bible)`].some((t, j) => {
+          const p = findPage(query, t);
+          return p && p.pageprops?.disambiguation === undefined && (j > 0 || BIBLE_WORDS.test(p.description || ''));
+        });
+        known.set(n, ok);
+      }
+    }
+    if (knownFile && todo.length) { try { await fs.promises.mkdir(cacheDir, { recursive: true }); await fs.promises.writeFile(knownFile, JSON.stringify(Object.fromEntries(known))); } catch { /* best effort */ } }
+    return wanted.filter((n) => known.get(n));
+  }
+
+  const wiki = async function wiki(raw) {
     const word = String(raw ?? '').trim().toLowerCase();
     if (!/^[a-z][a-z' -]{0,59}$/.test(word)) throw new WikiError(400, 'Not a word');
     const file = cacheDir && path.join(cacheDir, `${encodeURIComponent(word)}.json`);
@@ -85,4 +117,6 @@ export function createWikiService({ cacheDir, fetchImpl = globalThis.fetch } = {
     if (file) { try { await fs.promises.mkdir(cacheDir, { recursive: true }); await fs.promises.writeFile(file, JSON.stringify(value)); } catch { /* best effort */ } }
     return value;
   };
+  wiki.names = names;
+  return wiki;
 }

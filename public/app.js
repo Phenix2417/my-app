@@ -88,6 +88,7 @@ const state = {
   parallel: store.get('parallel', null), // a second version shown under each verse (reading only), or null
   versions: store.get('versions', null),
   showFriends: store.get('showFriends', true),
+  markWords: store.get('markWords', true), // colour words with a Bible dictionary entry / Bible wiki article
   fontSize: store.get('fontSize', 22),
   notesTab: 'mine',
   mine: { notes: {}, queue: [] }, // my notes + pending sync ops
@@ -569,6 +570,7 @@ async function renderReader() {
       { id: 'show-friends', label: "Friends' notes", icon: ICONS.friendsNotes, toggle: { get: () => state.showFriends, set: setShowFriends } },
       { id: 'open-commentary', label: 'Commentary', icon: ICONS.commentaryBooks, action: () => openCommentaryPage(topVisibleVerse()) },
       { id: 'bible-version', label: 'Bible versions', icon: ICONS.versions, action: () => openVersionPicker() },
+      { id: 'word-marks', label: 'Colour Bible words', icon: ICONS.dictionary, toggle: { get: () => state.markWords, set: (on) => { state.markWords = on; store.set('markWords', on); markBibleWords(); } } },
       { id: 'text-size', label: 'Text size', icon: ICONS.serifAa, popover: textSizeControl },
     ])),
     scroller);
@@ -607,8 +609,52 @@ async function renderReader() {
   if (state.pos.book !== book || state.pos.chapter !== chapter || state.tab !== 'read' || state.version !== version) return;
   buildVerses(data || [], alt, parallel);
   paint();
+  markBibleWords();
   if (reader.slideFrom) { body.classList.add(reader.slideFrom > 0 ? 'slide-from-right' : 'slide-from-left'); reader.slideFrom = 0; }
   refreshChapterFriendNotes().then(() => { if (reader.body === body) paint(); });
+}
+
+// Colour the words that have a Bible dictionary entry, and the names that have a Bible wiki article (each its own
+// colour, matching the buttons in the Dictionary panel). English text only; the Read ⋯ menu turns it off.
+const wordMarks = { dict: new Map(), wiki: new Map() }; // word -> true/false, as answered by the server
+async function markBibleWords() {
+  document.body.classList.toggle('no-word-marks', !state.markWords);
+  if (!state.markWords || reader.mode !== 'bible') return;
+  const words = reader.words.filter((x) => !isChineseVersion(Number.isInteger(x.v) ? state.version : reader.altVersion));
+  if (!words.length) return;
+  const keyOf = new Map(words.map((x) => [x, dictKey(x.el.textContent)]));
+  // Names: capitalised words that don't start a sentence ("And Abraham said" — not "And" at the start).
+  // A capitalised word that also appears in lower case in the chapter ("Come", "come") isn't a name.
+  const lower = new Set(words.map((x) => x.el.textContent).filter((t) => /^[^A-Za-z]*[a-z]/.test(t)).map(dictKey));
+  const nameOf = new Map(), capOf = new Map(); // names to ask about; every capitalised word (to colour a known name anywhere)
+  words.forEach((x, i) => {
+    const prev = words[i - 1];
+    const starts = !prev || prev.v !== x.v || /[.?!:;“"‘(—]$/.test(prev.el.textContent) || /^[“"‘(]/.test(x.el.textContent);
+    const n = x.el.textContent.replace(/[’']s$/, '').replace(/^[^A-Za-z]+|[^A-Za-z]+$/g, '');
+    if (/^[A-Z][a-z'-]+$/.test(n)) capOf.set(x, n);
+    if (!starts && /^[A-Z][a-z'-]+$/.test(n) && !lower.has(dictKey(n))) nameOf.set(x, n);
+  });
+  const apply = () => {
+    for (const x of words) {
+      const dict = wordMarks.dict.get(keyOf.get(x)) === true;
+      x.el.classList.toggle('wm-dict', dict);
+      x.el.classList.toggle('wm-wiki', !dict && wordMarks.wiki.get(capOf.get(x)) === true);
+    }
+  };
+  const ask = async (kind, list, url, field) => {
+    const todo = [...new Set(list)].filter((w) => w && !wordMarks[kind].has(w));
+    if (!todo.length) return;
+    const r = await api('POST', url, { [field]: todo });
+    const yes = new Set(r[field] || []);
+    for (const w of todo) wordMarks[kind].set(w, yes.has(w));
+  };
+  const firstWord = words[0].el;
+  apply();
+  try { await ask('dict', [...keyOf.values()], '/api/bible-dictionary/marks', 'words'); } catch { /* offline: no colours */ }
+  if (!firstWord.isConnected) return;
+  apply();
+  try { await ask('wiki', [...nameOf.values()].filter((n) => wordMarks.dict.get(dictKey(n)) !== true), '/api/wiki/names', 'names'); } catch { /* Wikipedia unreachable */ }
+  if (firstWord.isConnected) apply();
 }
 
 function buildVerses(verses, alt = null, altVersion = null) {
@@ -1711,7 +1757,7 @@ function toggleDictionary(bar, btn) {
     const isName = /^[A-Z]/.test(token.replace(/^[^A-Za-z]+/, ''));
     if (topics.length || isName) {
       let wikiBox = null;
-      const wikiBtn = h('button', { class: 'bd-jump', type: 'button', lang: 'en', 'aria-label': 'Show the Bible wiki article', onclick: async () => {
+      const wikiBtn = h('button', { class: 'bd-jump bd-wiki', type: 'button', lang: 'en', 'aria-label': 'Show the Bible wiki article', onclick: async () => {
         if (!wikiBox) {
           if (wikiBtn.classList.contains('loading')) return;
           wikiBtn.classList.add('loading');
@@ -1758,8 +1804,8 @@ function toggleDictionary(bar, btn) {
       if (box) box.scrollBy({ top: section.getBoundingClientRect().top - box.getBoundingClientRect().top - 6, behavior: 'smooth' });
       section.classList.remove('flash'); void section.offsetWidth; section.classList.add('flash');
     };
-    const zhBtn = h('button', { class: 'bd-jump', type: 'button', 'aria-label': 'Show the Chinese Bible dictionary entry', onclick: toggle('zh') }, '圣经辞典');
-    const enBtn = h('button', { class: 'bd-jump', type: 'button', lang: 'en', 'aria-label': 'Show the English Bible dictionary entry', onclick: toggle('en') }, 'Bible Dictionary');
+    const zhBtn = h('button', { class: 'bd-jump bd-dict', type: 'button', 'aria-label': 'Show the Chinese Bible dictionary entry', onclick: toggle('zh') }, '圣经辞典');
+    const enBtn = h('button', { class: 'bd-jump bd-dict', type: 'button', lang: 'en', 'aria-label': 'Show the English Bible dictionary entry', onclick: toggle('en') }, 'Bible Dictionary');
     const head = body.querySelector('.dict-head'), wikiBtn = head?.querySelector('[aria-label="Show the Bible wiki article"]');
     if (wikiBtn) wikiBtn.before(zhBtn, enBtn); else head?.append(zhBtn, enBtn);
     // No English dictionary entry: show the Chinese Bible dictionary entry straight away.

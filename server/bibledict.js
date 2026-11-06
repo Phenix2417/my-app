@@ -81,7 +81,23 @@ export function createBibleDictionary({
     return value;
   }
 
+  // For colouring words in the Bible text: the first word of every topic title ("grace" from "Grace of God"),
+  // less common words that are rarely what the topic is about ("on", "will", "so", …).
+  let heads = null;
+  const MARK_SKIP = new Set('on i will no so new time first years way state good put present second form example company college interest one two all'.split(' '));
+  const headSet = () => {
+    if (!heads) heads = new Set(loadIndex().map(([, , t]) => String(t).toLowerCase().trim().split(/[ ,]/)[0]).filter((w) => w && !MARK_SKIP.has(w)));
+    return heads;
+  };
+  // Simple English base forms, so "kings", "loved", "blessing" find "king", "love", "bless".
+  const forms = (w) => [w, w.replace(/ies$/, 'y'), w.replace(/es$/, ''), w.replace(/s$/, ''), w.replace(/ed$/, ''), w.replace(/d$/, ''), w.replace(/ing$/, ''), w.replace(/ing$/, 'e')];
+
   return {
+    // Which of these words have Bible dictionary entries (for colouring the text; no network).
+    marks(words) {
+      const set = headSet();
+      return [...new Set(words)].filter((raw) => { const w = normalize(raw); return w && forms(w).some((f) => f.length > 1 && set.has(f)); });
+    },
     // Does this word have a Bible dictionary entry? Answered from the built-in index.
     has(raw) {
       const word = normalize(raw);

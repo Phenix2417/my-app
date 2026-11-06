@@ -440,6 +440,17 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
       if (!found) throw new HttpError(404, 'Not in the Bible dictionary');
       return found;
     }, true],
+    // For colouring the Bible text: which words have Bible dictionary entries (no network).
+    ['POST', /^\/api\/bible-dictionary\/marks$/, ({ body }) => {
+      if (!bibleDict) throw new HttpError(503, 'The Bible dictionary is not set up on this server');
+      const words = Array.isArray(body?.words) ? body.words.slice(0, 2000).map(String) : [];
+      return { words: bibleDict.marks(words) };
+    }, true],
+    // …and which names have a Bible wiki article (one Wikipedia request per chapter at most, then kept).
+    ['POST', /^\/api\/wiki\/names$/, async ({ body }) => {
+      if (!wiki?.names) throw new HttpError(503, 'The Bible wiki is not set up on this server');
+      return { names: await wiki.names(Array.isArray(body?.names) ? body.names.slice(0, 200).map(String) : []) };
+    }, true],
     // Bible wiki: the Wikipedia article about a Bible word or name, English and Chinese.
     ['GET', /^\/api\/wiki\/([a-z' %-]{1,60})$/, async ({ params: [word] }) => {
       if (!wiki) throw new HttpError(503, 'The Bible wiki is not set up on this server');

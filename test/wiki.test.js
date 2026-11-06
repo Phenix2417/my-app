@@ -57,3 +57,31 @@ test('an unreachable Wikipedia is a 503', async () => {
   const wiki = createWikiService({ fetchImpl: async () => reply({}, 429) });
   await assert.rejects(wiki('moses'), (e) => e.status === 503);
 });
+
+test('names: one batched request, Bible-related only, remembered', async () => {
+  let calls = 0;
+  const fetchImpl = async (url) => {
+    calls++;
+    const titles = new URL(url).searchParams.get('titles').split('|');
+    assert.ok(titles.includes('Nathanael') && titles.includes('Nathanael (biblical figure)') && titles.includes('Philip'));
+    return reply({ query: {
+      redirects: [{ from: 'Nathanael (biblical figure)', to: 'Nathanael (follower of Jesus)' }],
+      pages: [
+        { title: 'Nathanael (follower of Jesus)', description: 'Disciple of Jesus' },
+        { title: 'Philip', description: 'Topics referred to by the same term', pageprops: { disambiguation: '' } },
+        { title: 'Bethsaida', description: 'Place mentioned in the New Testament' },
+        { title: 'Smith', description: 'Surname' },
+      ].concat(titles.filter((t) => !['Nathanael', 'Philip', 'Bethsaida', 'Smith'].includes(t)).map((t) => ({ title: t, missing: true }))) } });
+  };
+  const wiki = createWikiService({ fetchImpl });
+  assert.deepEqual(await wiki.names(['Nathanael', 'Philip', 'Bethsaida', 'Smith', 'Nathanael', 'not a name']), ['Nathanael', 'Bethsaida']);
+  assert.equal(calls, 1);
+  await wiki.names(['Nathanael', 'Smith']);
+  assert.equal(calls, 1);
+});
+
+test('Bible dictionary marks come from the built-in index, with simple base forms', async () => {
+  const { createBibleDictionary } = await import('../server/bibledict.js');
+  const d = createBibleDictionary({ index: [[0, 1, 'Grace of God'], [1, 2, 'King'], [1, 3, 'Love'], [1, 4, 'On the Sabbath']] });
+  assert.deepEqual(d.marks(['grace', 'kings', 'loved', 'on', 'the', 'grace']), ['grace', 'kings', 'loved']);
+});
