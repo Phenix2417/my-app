@@ -36,10 +36,9 @@ const ICONS = {
   commentaryBooks: '<rect x="3" y="5" width="5" height="15.5" rx="1"/><path d="M3 8h5M3 17.5h5"/><rect x="8" y="3" width="5.5" height="17.5" rx="1"/><path d="M10.75 6v3.6M9.5 7.3h2.5"/><path d="M8 17.5h5.5"/><rect x="14.3" y="5.5" width="5" height="15" rx="1" transform="rotate(14 14.3 20.5)"/>',
   // Commentary side bar: the commentary books with a pencil (edit your list of commentaries).
   editShelf: '<rect x="3" y="5" width="5" height="15.5" rx="1"/><path d="M3 8h5M3 17.5h5"/><rect x="8" y="3" width="5.5" height="17.5" rx="1"/><path d="M10.75 6v3.6M9.5 7.3h2.5"/><path d="M8 17.5h5.5"/><path d="M14.6 21l.7-2.9 5-5a1.3 1.3 0 0 1 1.9 1.9l-5 5z"/>',
-  // Selection bubble: copy, translate (文/A) and dictionary (book with a magnifier).
+  // Selection bubble: copy, and dictionary (an open book with a magnifier) for one word or several.
   copy: '<rect x="8.5" y="8.5" width="12" height="12" rx="2"/><path d="M15.5 8.5V5a1.5 1.5 0 0 0-1.5-1.5H5A1.5 1.5 0 0 0 3.5 5v9A1.5 1.5 0 0 0 5 15.5h3.5"/>',
-  translate: '<path d="M3 5.5h8M7 3.5v2M9.5 5.5c-.6 3.4-2.6 6.2-6 8M5 8.2c1 2.3 2.7 4 5 5.2"/><path d="M12.5 20.5l3.8-9 3.7 9M13.9 17.3h4.9"/>',
-  dictionary: '<path d="M5 4.5A1.5 1.5 0 0 1 6.5 3H18v14H6.5A1.5 1.5 0 0 0 5 18.5z"/><path d="M5 18.5A1.5 1.5 0 0 0 6.5 20H12"/><circle cx="16.5" cy="17.5" r="2.6"/><path d="M18.4 19.4l2.1 2.1"/>',
+  dictionary: '<path d="M12 7C10 5.4 6.8 5 2.8 5.8v12.6c4-.8 7.2-.4 9.2 1.2 2-1.6 5.2-2 9.2-1.2V5.8C17.2 5 14 5.4 12 7z"/><path d="M12 7v12.6"/><circle cx="16.5" cy="12.5" r="3.2"/><path d="M18.8 14.8l2.1 2.1"/>',
   pencil: '<path d="M4.5 19.5l.9-4 10.8-10.8a1.9 1.9 0 0 1 2.7 0l.4.4a1.9 1.9 0 0 1 0 2.7L8.5 18.6z"/><path d="M14.6 6.3l3.1 3.1"/>',
   serifAa: '<text x="1.5" y="19.5" font-family="Georgia,\'Noto Serif\',serif" font-size="17" font-weight="700" fill="currentColor" stroke="none">A</text><text x="13.5" y="19.5" font-family="Georgia,\'Noto Serif\',serif" font-size="12" font-weight="700" fill="currentColor" stroke="none">a</text>',
   read: 'M21 5c-1.1-.35-2.3-.5-3.5-.5-1.95 0-4.05.4-5.5 1.5-1.45-1.1-3.55-1.5-5.5-1.5S2.45 4.9 1 6v14.65c0 .25.25.5.5.5.1 0 .15-.05.25-.05C3.1 20.45 5.05 20 6.5 20c1.95 0 4.05.4 5.5 1.5 1.35-.85 3.8-1.5 5.5-1.5 1.65 0 3.35.3 4.75 1.05.1.05.15.05.25.05.25 0 .5-.25.5-.5V6c-.6-.45-1.25-.75-2-1zm0 13.5c-1.1-.35-2.3-.5-3.5-.5-1.7 0-4.15.65-5.5 1.5V8c1.35-.85 3.8-1.5 5.5-1.5 1.2 0 2.4.15 3.5.5v11.5zM17.5 10.5c.88 0 1.73.09 2.5.26V9.24c-.79-.15-1.64-.24-2.5-.24-1.7 0-3.24.29-4.5.83v1.66c1.13-.64 2.7-.99 4.5-.99zM13 12.49v1.66c1.13-.64 2.7-.99 4.5-.99.88 0 1.73.09 2.5.26V11.9c-.79-.15-1.64-.24-2.5-.24-1.7 0-3.24.3-4.5.83zM17.5 14.33c-1.7 0-3.24.29-4.5.83v1.66c1.13-.64 2.7-.99 4.5-.99.88 0 1.73.09 2.5.26v-1.52c-.79-.16-1.64-.24-2.5-.24z',
@@ -815,10 +814,8 @@ function showToolbar() {
       clearSelection();
     }),
     bubbleBtn('Commentary', ICONS.commentaryBooks, () => { const sel = { start, end }; clearSelection(); openCommentaryPage(start.v, sel); }),
-    // One word: its dictionary entry. Several words: translate the selection, then look up each word.
-    cmp(start, end)
-      ? bubbleBtn('Translate', ICONS.translate, (e) => toggleDictionary(bar, e.currentTarget), 'dict-btn')
-      : bubbleBtn('Dictionary', ICONS.dictionary, (e) => toggleDictionary(bar, e.currentTarget), 'dict-btn')));
+    // One word: its dictionary entry. Several words: the selection translated, then each word to look up.
+    bubbleBtn('Dictionary', ICONS.dictionary, (e) => toggleDictionary(bar, e.currentTarget), 'dict-btn')));
   reader.toolbar = bar;
   document.body.append(bar);
   positionToolbar();
@@ -2038,9 +2035,7 @@ function showCommentaryToolbar() {
       try { await navigator.clipboard.writeText(selectedQuote()); toast('Copied'); } catch { toast("Couldn't copy"); }
       clearSelection();
     }),
-    cmp(state.selection.start, state.selection.end)
-      ? bubbleBtn('Translate', ICONS.translate, (e) => toggleDictionary(bar, e.currentTarget), 'dict-btn')
-      : bubbleBtn('Dictionary', ICONS.dictionary, (e) => toggleDictionary(bar, e.currentTarget), 'dict-btn')));
+    bubbleBtn('Dictionary', ICONS.dictionary, (e) => toggleDictionary(bar, e.currentTarget), 'dict-btn')));
   reader.toolbar = bar;
   document.body.append(bar);
   positionToolbar();
