@@ -428,11 +428,12 @@ body.bars-hidden .bottom-nav { transform: translateY(100%); }
 body.bars-hidden .back-pill { bottom: calc(20px + env(safe-area-inset-bottom, 0px)); }
 .back-pill:focus-visible { outline: 2px solid var(--on-bg); outline-offset: 2px; }
 
-/* Source badge before each phonetic: M Merriam-Webster, Y Youdao, W Wiktionary, i ipa-dict, E ECDICT */
+/* Source badge before each phonetic: F Free Dictionary API, M Merriam-Webster, Y Youdao, W Wiktionary, i ipa-dict, E ECDICT */
 .ph-src { display: inline-grid; place-items: center; width: 15px; height: 15px; border-radius: 4px; font: 700 10px/1 var(--font-ui, Roboto, system-ui, sans-serif);
   color: #fff; background: var(--muted); flex: none; }
 .ph-src[data-src="youdao"] { background: #d0453b; }
 .ph-src[data-src="mw"] { background: #2b3550; }
+.ph-src[data-src="freedict"] { background: #2e8b57; }
 .ph-src[data-src="wiktionary"] { background: #3a6fb0; }
 .ph-src[data-src="ipa-dict"] { background: #6b5aa8; }
 .ph-src[data-src="ecdict"] { background: #6d7775; }

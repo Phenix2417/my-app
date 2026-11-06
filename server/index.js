@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { openDb } from './db.js';
 import { createServer, seedTestUsers } from './app.js';
 import { createCommentaryService } from './commentary.js';
-import { createPronounceService, createPhoneticsService } from './pronounce.js';
+import { createPronounceService, createPhoneticsService, createFreeDictionary } from './pronounce.js';
 import { createTranslateService } from './translate.js';
 import { createBibleDictionary } from './bibledict.js';
 
@@ -27,8 +27,9 @@ if (process.env.SEED_TEST_USERS !== '0') {
 
 const commentary = createCommentaryService({ cacheDir: path.join(dataDir, 'commentary-cache') });
 
-const pronounce = createPronounceService({ cacheDir: path.join(dataDir, 'audio-cache') });
-const phonetics = createPhoneticsService({ cacheDir: path.join(dataDir, 'phonetics-cache') });
+const freeDict = createFreeDictionary();
+const pronounce = createPronounceService({ cacheDir: path.join(dataDir, 'audio-cache'), freeDict });
+const phonetics = createPhoneticsService({ cacheDir: path.join(dataDir, 'phonetics-cache'), freeDict });
 const translate = createTranslateService({ cacheDir: path.join(dataDir, 'translate-cache') });
 
 createServer(db, { publicDir: path.join(root, 'public'), trustProxy, commentary, pronounce, phonetics, translate, bibleDict: createBibleDictionary({ cacheDir: path.join(dataDir, 'bibledict-cache') }) }).listen(port, host, () => {

@@ -739,7 +739,7 @@ function namePronRow(word) {
 }
 // Where a phonetic came from: a small badge before it.
 const PH_SOURCES = {
-  mw: ['M', 'Merriam-Webster'], youdao: ['Y', 'Youdao'], wiktionary: ['W', 'Wiktionary'], 'ipa-dict': ['i', 'ipa-dict'], ecdict: ['E', 'ECDICT (offline dictionary)'],
+  freedict: ['F', 'Free Dictionary API (Wiktionary)'], mw: ['M', 'Merriam-Webster'], youdao: ['Y', 'Youdao'], wiktionary: ['W', 'Wiktionary'], 'ipa-dict': ['i', 'ipa-dict'], ecdict: ['E', 'ECDICT (offline dictionary)'],
 };
 function setPhSource(badge, src) {
   const s = PH_SOURCES[src];
@@ -1232,7 +1232,7 @@ function toggleDictionary(bar, btn) {
     positionToolbar();
   };
   const dictBox = h('div', { class: 'dict' }, trans, body,
-    h('p', { class: 'dict-credit' }, multi ? 'Translation, phonetics & audio: Youdao · Dictionary: ECDICT · 圣经辞典: 信望爱' : 'ECDICT English–Chinese dictionary · Phonetics & audio: Youdao · 圣经辞典: 信望爱'));
+    h('p', { class: 'dict-credit' }, multi ? 'Translation: Youdao · Phonetics & audio: Free Dictionary API, Youdao · Dictionary: ECDICT · 圣经辞典: 信望爱' : 'ECDICT English–Chinese dictionary · Phonetics & audio: Free Dictionary API, Youdao · 圣经辞典: 信望爱'));
   // An ↑ button appears once the panel is scrolled down, and takes it back to the top.
   const toTop = h('button', { class: 'to-top', type: 'button', hidden: true, 'aria-label': 'Back to top', title: 'Back to top',
     onclick: () => dictBox.scrollTo({ top: 0, behavior: 'smooth' }) }, '↑');
