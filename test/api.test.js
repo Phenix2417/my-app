@@ -210,10 +210,10 @@ test('a shared verse can carry two versions, each with its name', async () => {
 test('a note on two versions read side by side keeps both versions’ words', async () => {
   const u = (await api('POST', '/api/register', { body: { username: 'twover', password: 'password1' } })).data;
   const note = { book: 'galatians', chapter: 4, version: 'web', start: { verse: 2, word: 0 }, end: { verse: 3, word: 6 }, color: 'yellow',
-    quote: 'but is under guardians', body: 'n', alt: { version: 'eng_kjv', quote: 'But is under tutors' } };
+    quote: 'but is under guardians', body: 'n', alt: { version: 'eng_kjv', quote: 'But is under tutors', start: { verse: 2, word: 0 }, end: { verse: 2, word: 3 } } };
   assert.equal((await api('PUT', '/api/notes/note-twover-1', { token: u.token, body: note })).status, 200);
   const [n] = (await api('GET', '/api/notes', { token: u.token })).data.notes;
-  assert.deepEqual([n.quote, n.alt.version, n.alt.quote], ['but is under guardians', 'eng_kjv', 'But is under tutors']);
+  assert.deepEqual([n.quote, n.alt.version, n.alt.quote, n.alt.end.word], ['but is under guardians', 'eng_kjv', 'But is under tutors', 3]);
   // An unknown second version is dropped, not stored.
   await api('PUT', '/api/notes/note-twover-1', { token: u.token, body: { ...note, alt: { version: 'nope', quote: 'x' } } });
   assert.equal((await api('GET', '/api/notes', { token: u.token })).data.notes[0].alt, undefined);

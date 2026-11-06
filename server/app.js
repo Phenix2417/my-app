@@ -137,10 +137,10 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
     myNotes: q('SELECT * FROM notes WHERE user_id = ? ORDER BY updated_at DESC'),
     myChapterNotes: q('SELECT * FROM notes WHERE user_id = ? AND book = ? AND chapter = ? ORDER BY created_at'),
     note: q('SELECT * FROM notes WHERE id = ?'),
-    upsertNote: q(`INSERT INTO notes (id, user_id, book, chapter, version, verse_start, word_start, verse_end, word_end, color, quote, body, alt_version, alt_quote, created_at, updated_at)
-      VALUES (:id, :user_id, :book, :chapter, :version, :verse_start, :word_start, :verse_end, :word_end, :color, :quote, :body, :alt_version, :alt_quote, :now, :now)
+    upsertNote: q(`INSERT INTO notes (id, user_id, book, chapter, version, verse_start, word_start, verse_end, word_end, color, quote, body, alt_version, alt_quote, alt_range, created_at, updated_at)
+      VALUES (:id, :user_id, :book, :chapter, :version, :verse_start, :word_start, :verse_end, :word_end, :color, :quote, :body, :alt_version, :alt_quote, :alt_range, :now, :now)
       ON CONFLICT (id) DO UPDATE SET book = :book, chapter = :chapter, version = :version, verse_start = :verse_start, word_start = :word_start,
-        verse_end = :verse_end, word_end = :word_end, color = :color, quote = :quote, body = :body, alt_version = :alt_version, alt_quote = :alt_quote, updated_at = :now`),
+        verse_end = :verse_end, word_end = :word_end, color = :color, quote = :quote, body = :body, alt_version = :alt_version, alt_quote = :alt_quote, alt_range = :alt_range, updated_at = :now`),
     deleteNote: q('DELETE FROM notes WHERE id = ? AND user_id = ?'),
     // Notes from friends who have allowed `viewer` to see them.
     friendNotes: q(`SELECT n.*, u.username, u.display_name FROM notes n
@@ -227,7 +227,7 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
     id: n.id, book: n.book, chapter: n.chapter, version: n.version || 'web', // words are counted in this version's text
     start: { verse: n.verse_start, word: n.word_start }, end: { verse: n.verse_end, word: n.word_end },
     color: n.color, quote: n.quote, body: n.body, createdAt: n.created_at, updatedAt: n.updated_at,
-    ...(n.alt_quote ? { alt: { version: n.alt_version, quote: n.alt_quote, ...(n.alt_label ? { label: n.alt_label } : {}) } } : {}),
+    ...(n.alt_quote ? { alt: { version: n.alt_version, quote: n.alt_quote, ...(n.alt_label ? { label: n.alt_label } : {}), ...(n.alt_range ? JSON.parse(n.alt_range) : {}) } } : {}),
     ...(n.version_label ? { versionLabel: n.version_label } : {}),
     ...(n.username ? { author: userOut(n.user_id, n.username, n.display_name) } : {}),
   });
@@ -254,7 +254,11 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
       // The second version's words, when the selection covered both versions read side by side.
       ...(() => {
         const a = b.alt, q = typeof a?.quote === 'string' ? a.quote.trim().slice(0, 4000) : '';
-        return q && (VERSION_IDS.has(a.version) || ownVersion(me, a.version)) ? { alt_version: a.version, alt_quote: q } : { alt_version: null, alt_quote: null };
+        if (!q || !(VERSION_IDS.has(a.version) || ownVersion(me, a.version))) return { alt_version: null, alt_quote: null, alt_range: null };
+        // Where its words are in that version (for highlighting them), if given and sensible.
+        const ok = (x) => x && int(x.verse, 1, 200) && int(x.word, 0, 500);
+        const range = ok(a.start) && ok(a.end) ? JSON.stringify({ start: { verse: a.start.verse, word: a.start.word }, end: { verse: a.end.verse, word: a.end.word } }) : null;
+        return { alt_version: a.version, alt_quote: q, alt_range: range };
       })() };
   }
 

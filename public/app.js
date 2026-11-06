@@ -798,11 +798,22 @@ function pageNotes() {
     if (!reader.altVersion) return { mine, friends };
     // Notes made in the second version, placed on its text (verse v + 0.5); _orig is the note itself.
     const { book, chapter } = state.pos;
-    const here = (n) => n.book === book && n.chapter === chapter && (n.version || 'web') === reader.altVersion;
+    const inChapter = (n) => n.book === book && n.chapter === chapter;
+    const here = (n) => inChapter(n) && (n.version || 'web') === reader.altVersion;
     const shift = (n) => ({ ...n, start: { ...n.start, verse: n.start.verse + 0.5 }, end: { ...n.end, verse: n.end.verse + 0.5 }, _orig: n });
+    // A note covering both versions also highlights its words in the other one (same colour, no second marker).
+    const shadows = (list) => list.filter((n) => inChapter(n) && n.alt?.start && n.alt?.end).flatMap((n) => {
+      const alt = n.alt;
+      if ((n.version || 'web') === state.version && alt.version === reader.altVersion) {
+        return [{ ...n, body: '', start: { ...alt.start, verse: alt.start.verse + 0.5 }, end: { ...alt.end, verse: alt.end.verse + 0.5 }, _orig: n }];
+      }
+      if ((n.version || 'web') === reader.altVersion && alt.version === state.version) return [{ ...n, body: '', start: alt.start, end: alt.end, _orig: n }];
+      return [];
+    });
+    const allMine = Object.values(state.mine.notes), allFriends = state.showFriends ? state.friendNotes : [];
     return {
-      mine: [...mine, ...Object.values(state.mine.notes).filter(here).sort((a, b) => a.createdAt - b.createdAt).map(shift)],
-      friends: [...friends, ...(state.showFriends ? state.friendNotes.filter(here).map(shift) : [])],
+      mine: [...mine, ...allMine.filter(here).sort((a, b) => a.createdAt - b.createdAt).map(shift), ...shadows(allMine)],
+      friends: [...friends, ...allFriends.filter(here).map(shift), ...shadows(allFriends)],
     };
   }
   if (reader.mode === 'book') return { mine: bookChapterNotes(), friends: [] };
@@ -877,11 +888,10 @@ function enableChapterSwipe(el, content, onSwipe) {
 }
 
 /* ----- selection with draggable handles ----- */
-// Keep a selection within one version's text (the one `anchor` is in) when two versions are shown.
-function withinOneText(sel, anchor = sel.start) {
-  if (!reader.altVersion || isAltWord(sel.start) === isAltWord(sel.end)) return sel;
-  const ws = reader.words.filter((x) => inRange(x, sel.start, sel.end) && isAltWord(x) === isAltWord(anchor));
-  return ws.length ? { start: { v: ws[0].v, w: ws[0].w }, end: { v: ws.at(-1).v, w: ws.at(-1).w } } : { start: anchor, end: anchor };
+// A selection may cover both versions read side by side (a note keeps each version's words apart), so it can end in
+// either text. (Kept as a hook; it used to keep the selection within the text `anchor` is in.)
+function withinOneText(sel) {
+  return sel;
 }
 function setSelection(start, end, anchor = start) {
   if (cmp(start, end) > 0) [start, end] = [end, start];
@@ -991,11 +1001,15 @@ function startHandleDrag(e, handle) {
   reader.toolbar?.remove(); reader.toolbar = null;
   const role = handle.dataset.role;
   const anchor = role === 'start' ? state.selection.end : state.selection.start;
-  // Aim at the text line, not at the knob under the finger.
-  const offsetY = role === 'start' ? 24 : -24;
+  // Aim at the word the handle is on, as it was when grabbed: keep the finger's offset from that word's edge, so the
+  // handle follows the finger wherever on the knob it was taken (a fixed offset could land between two lines).
+  const held = wordEl(role === 'start' ? state.selection.start : state.selection.end);
+  const rects = held ? [...held.getClientRects()] : [];
+  const r = role === 'start' ? rects[0] : rects[rects.length - 1];
+  const grab = r ? { dx: e.clientX - (role === 'start' ? r.left + 2 : r.right - 2), dy: e.clientY - (r.top + r.height / 2) } : { dx: 0, dy: role === 'start' ? -24 : 24 };
   let last = { x: e.clientX, y: e.clientY };
   const update = () => {
-    const p = wordAtPoint(last.x, last.y + offsetY);
+    const p = wordAtPoint(last.x - grab.dx, last.y - grab.dy);
     if (!p) return;
     const before = cmp(p, anchor) < 0;
     const next = before ? { start: p, end: anchor } : { start: anchor, end: p };
@@ -1123,10 +1137,15 @@ function showToolbar() {
   const textVersion = inAlt ? reader.altVersion : state.version;
   // Reading two versions side by side, a selection can cover both: the note keeps each version's words apart.
   const ownQ = selectedQuote(inAlt ? 'alt' : 'main'), otherQ = reader.altVersion ? selectedQuote(inAlt ? 'main' : 'alt') : '';
+  // The note's place: from the first to the last of its own version's selected words (the selection may end in the other).
+  const own = reader.words.filter((x) => inRange(x, start, end) && isAltWord(x) === inAlt);
+  const others = reader.words.filter((x) => inRange(x, start, end) && isAltWord(x) !== inAlt);
+  const otherRange = others.length ? { start: { verse: Math.floor(others[0].v), word: others[0].w }, end: { verse: Math.floor(others.at(-1).v), word: others.at(-1).w } } : {};
+  const from = own[0] || start, to = own.at(-1) || end;
   const draft = (color) => ({
     id: newId(), book: state.pos.book, chapter: state.pos.chapter, version: textVersion,
-    start: { verse: Math.floor(start.v), word: start.w }, end: { verse: Math.floor(end.v), word: end.w }, color, quote: ownQ || selectedQuote(), body: '',
-    ...(ownQ && otherQ ? { alt: { version: inAlt ? state.version : reader.altVersion, quote: otherQ } } : {}),
+    start: { verse: Math.floor(from.v), word: from.w }, end: { verse: Math.floor(to.v), word: to.w }, color, quote: ownQ || selectedQuote(), body: '',
+    ...(ownQ && otherQ ? { alt: { version: inAlt ? state.version : reader.altVersion, quote: otherQ, ...otherRange } } : {}),
   });
   if (reader.mode === 'commentary') return showCommentaryToolbar();
   if (reader.mode === 'book') return showBookToolbar();
