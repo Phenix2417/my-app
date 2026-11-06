@@ -447,7 +447,6 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
       if (!bibleDict) throw new HttpError(503, 'The Bible dictionary is not set up on this server');
       const words = Array.isArray(body?.words) ? body.words.slice(0, 2000).map(String) : [];
       const found = new Set(bibleDict.marks(words));
-      // In Chinese only 圣经辞典 is offered, so Easton's words aren't coloured then.
       if (encyclopedias && body?.lang !== 'zh') for (const w of encyclopedias.marks(words, MARK_SKIP)) found.add(w);
       return { words: words.filter((w) => found.has(w)) };
     }, true],

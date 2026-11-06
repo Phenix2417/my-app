@@ -127,6 +127,6 @@ Icons are from [Lucide](https://lucide.dev) (ISC License; portions from Feather,
 The interface is in English or Chinese (简体中文): switch in any ⋯ menu (**中文界面** / **English interface**) or on the
 sign-in page. The first time, it follows the phone's language. Text is translated where it's put on screen
 (`public/i18n.js`: exact strings, then templates such as `Added “{0}”`); content — Bible text, notes, dictionary entries,
-book titles, people's names — never is. Bible book names follow the language (约翰福音 / John). In the dictionary panel,
-only the sources in the interface language are offered: Chinese 圣经辞典 and 圣经wiki; English Bible Dictionary, Easton,
-ISBE and Bible Wiki. The coloured Bible words follow the same sources.
+book titles, people's names — never is. Bible book names follow the language (约翰福音 / John). In the dictionary panel, a
+source in both languages shows only the interface language's version (圣经辞典 or Bible Dictionary; 圣经wiki or Bible Wiki,
+falling back to the other when Wikipedia has only that one); a source in one language (Easton, ISBE) shows in both.

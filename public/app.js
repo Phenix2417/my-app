@@ -655,7 +655,7 @@ async function markBibleWords() {
   const ask = async (kind, list, url, field) => {
     const todo = [...new Set(list)].filter((w) => w && !wordMarks[kind].has(w));
     if (!todo.length) return;
-    const r = await api('POST', url, { [field]: todo, lang: LANG });
+    const r = await api('POST', url, { [field]: todo });
     const yes = new Set(r[field] || []);
     for (const w of todo) wordMarks[kind].set(w, yes.has(w));
   };
@@ -1868,8 +1868,9 @@ function toggleDictionary(bar, btn) {
         found = r;
         if (!wikiSlot.isConnected) return;
         body.querySelector('.dict-head')?.append(...[
-          found.zh && LANG === 'zh' ? h('button', { class: 'bd-jump bd-wiki', type: 'button', lang: 'zh-Hans', 'aria-label': 'Show the Chinese Bible wiki article', onclick: wikiToggle('zh') }, '圣经wiki') : null,
-          found.en && LANG !== 'zh' ? h('button', { class: 'bd-jump bd-wiki', type: 'button', lang: 'en', 'aria-label': 'Show the English Bible wiki article', onclick: wikiToggle('en') }, 'Bible Wiki') : null,
+          // The wiki in the interface language; if Wikipedia has no article in it, the one it has.
+          found.zh && (LANG === 'zh' || !found.en) ? h('button', { class: 'bd-jump bd-wiki', type: 'button', lang: 'zh-Hans', 'aria-label': 'Show the Chinese Bible wiki article', onclick: wikiToggle('zh') }, '圣经wiki') : null,
+          found.en && (LANG !== 'zh' || !found.zh) ? h('button', { class: 'bd-jump bd-wiki', type: 'button', lang: 'en', 'aria-label': 'Show the English Bible wiki article', onclick: wikiToggle('en') }, 'Bible Wiki') : null,
         ].filter(Boolean));
         positionToolbar();
       }).catch(() => { /* no article, or Wikipedia unreachable: no buttons */ });
@@ -1907,11 +1908,12 @@ function toggleDictionary(bar, btn) {
     };
     const btn = (lang, label, aria) => h('button', { class: 'bd-jump bd-dict', type: 'button', lang: lang === 'zh' ? 'zh-Hans' : 'en', dataset: { src: lang }, 'aria-label': aria, onclick: toggle(lang) }, label);
     const buttons = [
-      // Only the sources in the interface language: Chinese 圣经辞典; English Bible Dictionary, Easton and ISBE.
+      // A source in both languages (圣经辞典 / Bible Dictionary) shows only the interface language's version;
+      // one in a single language (Easton, ISBE: English) shows whatever it has.
       topics.length && LANG === 'zh' ? btn('zh', '圣经辞典', 'Show the Chinese Bible dictionary entry') : null,
       topics.length && LANG !== 'zh' ? btn('en', 'Bible Dictionary', 'Show the English Bible dictionary entry') : null,
-      info.easton && LANG !== 'zh' ? btn('easton', 'Easton', "Show the Easton's Bible Dictionary entry") : null,
-      info.isbe && LANG !== 'zh' ? btn('isbe', 'ISBE', 'Show the International Standard Bible Encyclopedia entry') : null,
+      info.easton ? btn('easton', 'Easton', "Show the Easton's Bible Dictionary entry") : null,
+      info.isbe ? btn('isbe', 'ISBE', 'Show the International Standard Bible Encyclopedia entry') : null,
     ].filter(Boolean);
     const head = body.querySelector('.dict-head'), wikiBtn = head?.querySelector('.bd-wiki');
     if (wikiBtn) wikiBtn.before(...buttons); else head?.append(...buttons);
