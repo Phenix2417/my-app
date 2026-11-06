@@ -3362,7 +3362,6 @@ function bookOptions(b, { onSaved = renderLibrary, onDeleted = renderLibrary } =
 
 // The person's own Bible versions imported from this ebook: linked by its fingerprint, or — for versions imported before
 // that was recorded — recognised from the title ("HOLY BIBLE (ESV-CUV)" -> ESV and 和合本), then linked for next time.
-// The interface language's translation comes first.
 async function bibleVersionsOf(b) {
   if (b.format !== 'epub') return [];
   const own = (await loadVersions().catch(() => state.versions || [])).filter((v) => v.mine);
@@ -3372,8 +3371,8 @@ async function bibleVersionsOf(b) {
     found = own.filter((v) => !v.source && shorts.includes(v.short));
     if (b.sha256) for (const v of found) { v.source = b.sha256; api('PUT', `/api/my-versions/${v.id}`, { source: b.sha256 }).catch(() => {}); }
   }
-  const mineFirst = (v) => (/^zh/.test(v.lang) === (LANG === 'zh') ? 0 : 1);
-  return found.sort((a, c) => mineFirst(a) - mineFirst(c)).slice(0, 2);
+  // In the ebook's own order: its translations are imported (and listed by the server) in the order the book prints them.
+  return found.slice(0, 2);
 }
 
 // asEbook: open an imported Bible as the ebook anyway (from the book's options).
