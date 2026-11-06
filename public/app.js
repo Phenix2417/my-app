@@ -484,7 +484,7 @@ function noteCard(n, { onClick, friend, onEdit, onDelete, title, menu } = {}) {
 // A note's highlighted words; a note on two versions read side by side shows the second's under the first's.
 function noteQuote(n) {
   return h('div', { class: 'quote', dataset: { c: n.color } }, n.quote,
-    n.alt ? h('span', { class: 'quote-alt' }, h('span', { class: 'quote-alt-name' }, `${n.alt.label || versionInfo(n.alt.version).short} `), n.alt.quote) : null);
+    n.alt ? h('span', { class: 'quote-alt', title: n.alt.label || versionInfo(n.alt.version).short }, n.alt.quote) : null);
 }
 
 /* ----- Commentary quotes in notes: “quote” — Matthew Henry on John 1:1–5 ----- */
