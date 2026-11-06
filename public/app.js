@@ -310,7 +310,11 @@ function ref(n) {
 }
 
 // A note's title: its reference, plus the Bible version when it isn't the World English Bible.
-const noteRef = (n) => (n.lib || !n.version || n.version === 'web' ? ref(n) : `${ref(n)} · ${n.versionLabel || versionInfo(n.version).short}`);
+const noteRef = (n) => {
+  if (n.lib) return ref(n);
+  const names = [n.version && (n.version !== 'web' || n.alt) ? n.versionLabel || versionInfo(n.version).short : null, n.alt ? n.alt.label || versionInfo(n.alt.version).short : null].filter(Boolean);
+  return names.length ? `${ref(n)} · ${names.join(' + ')}` : ref(n);
+};
 
 /* ---------------- shared UI ---------------- */
 // A small info bubble attached to an element (for long presses). Returns { set(text) } to update it.
@@ -474,8 +478,13 @@ function noteCard(n, { onClick, friend, onEdit, onDelete, title, menu } = {}) {
   h('div', { class: 'card-head' }, h('span', { class: 'note-title' }, title || noteRef(n), noteTime(n)), friend ? h('span', { class: 'who', title: '@' + n.author.username }, dn(n.author)) : null,
     onEdit || onDelete ? h('span', { class: 'note-actions' }, onEdit ? editNoteBtn(onEdit) : null, onDelete ? deleteNoteBtn(onDelete) : null) : null,
     menu ? h('span', { class: 'card-menu', onclick: (e) => e.stopPropagation(), onkeydown: (e) => e.stopPropagation() }, moreMenu(menu, { lang: false })) : null),
-  h('div', { class: 'quote', dataset: { c: n.color } }, n.quote),
+  noteQuote(n),
   n.body ? h('p', { class: 'note-body' }, noteBodyNodes(n.body)) : null);
+}
+// A note's highlighted words; a note on two versions read side by side shows the second's under the first's.
+function noteQuote(n) {
+  return h('div', { class: 'quote', dataset: { c: n.color } }, n.quote,
+    n.alt ? h('span', { class: 'quote-alt' }, h('span', { class: 'quote-alt-name' }, `${n.alt.label || versionInfo(n.alt.version).short} `), n.alt.quote) : null);
 }
 
 /* ----- Commentary quotes in notes: “quote” — Matthew Henry on John 1:1–5 ----- */
@@ -536,7 +545,7 @@ function noteMenu(note, { close, afterDelete } = {}) {
 function noteViewer(note) {
   openSheet((close) => [
     h('div', { class: 'title-row note-view-head' }, h('h2', {}, noteRef(note), noteTime(note)), noteMenu(note, { close })),
-    h('div', { class: 'quote', dataset: { c: note.color } }, note.quote),
+    noteQuote(note),
     note.body ? h('p', { class: 'note-body' }, noteBodyNodes(note.body)) : null,
   ], { label: 'Note' });
 }
@@ -1112,9 +1121,12 @@ function showToolbar() {
   const { start, end } = state.selection;
   const inAlt = isAltWord(start); // the second version's text: the note belongs to that version
   const textVersion = inAlt ? reader.altVersion : state.version;
+  // Reading two versions side by side, a selection can cover both: the note keeps each version's words apart.
+  const ownQ = selectedQuote(inAlt ? 'alt' : 'main'), otherQ = reader.altVersion ? selectedQuote(inAlt ? 'main' : 'alt') : '';
   const draft = (color) => ({
     id: newId(), book: state.pos.book, chapter: state.pos.chapter, version: textVersion,
-    start: { verse: Math.floor(start.v), word: start.w }, end: { verse: Math.floor(end.v), word: end.w }, color, quote: selectedQuote(), body: '',
+    start: { verse: Math.floor(start.v), word: start.w }, end: { verse: Math.floor(end.v), word: end.w }, color, quote: ownQ || selectedQuote(), body: '',
+    ...(ownQ && otherQ ? { alt: { version: inAlt ? state.version : reader.altVersion, quote: otherQ } } : {}),
   });
   if (reader.mode === 'commentary') return showCommentaryToolbar();
   if (reader.mode === 'book') return showBookToolbar();
@@ -3136,7 +3148,8 @@ function verseCard(v) {
 // mixed): its words are separated by script, the second version's named after the one read alongside.
 function noteVerse(n) {
   const version = n.version || 'web';
-  const v = { kind: 'note', book: n.book, chapter: n.chapter, start: n.start.verse, end: n.end.verse, version, label: versionInfo(version).short, text: n.quote.slice(0, 2000) };
+  const v = { kind: 'note', book: n.book, chapter: n.chapter, start: n.start.verse, end: n.end.verse, version, label: n.versionLabel || versionInfo(version).short, text: n.quote.slice(0, 2000) };
+  if (n.alt) return { ...v, alt: { version: n.alt.version, label: n.alt.label || versionInfo(n.alt.version).short, text: n.alt.quote.slice(0, 2000) } };
   const CJK = /[\u3000-\u303f\u3400-\u9fff\uf900-\ufaff\uff00-\uffef「」『』]/;
   const runs = String(n.quote).match(/[\u3000-\u303f\u3400-\u9fff\uf900-\ufaff\uff00-\uffef「」『』]+|[^\u3000-\u303f\u3400-\u9fff\uf900-\ufaff\uff00-\uffef「」『』]+/g) || [];
   const zh = runs.filter((r) => CJK.test(r)).join(''), latin = runs.filter((r) => !CJK.test(r) && /[A-Za-z]/.test(r)).map((r) => r.trim()).join(' ');

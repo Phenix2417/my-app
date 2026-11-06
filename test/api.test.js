@@ -206,3 +206,15 @@ test('a shared verse can carry two versions, each with its name', async () => {
   assert.deepEqual([m.ref.label, m.ref.text, m.ref.alt.label, m.ref.alt.text, m.ref.kind], ['ESV', 'but he is under guardians', '和合本', '乃在师傅和管家的手下', undefined]);
   assert.deepEqual([n.ref.kind, n.body], ['note', 'My note']);
 });
+
+test('a note on two versions read side by side keeps both versions’ words', async () => {
+  const u = (await api('POST', '/api/register', { body: { username: 'twover', password: 'password1' } })).data;
+  const note = { book: 'galatians', chapter: 4, version: 'web', start: { verse: 2, word: 0 }, end: { verse: 3, word: 6 }, color: 'yellow',
+    quote: 'but is under guardians', body: 'n', alt: { version: 'eng_kjv', quote: 'But is under tutors' } };
+  assert.equal((await api('PUT', '/api/notes/note-twover-1', { token: u.token, body: note })).status, 200);
+  const [n] = (await api('GET', '/api/notes', { token: u.token })).data.notes;
+  assert.deepEqual([n.quote, n.alt.version, n.alt.quote], ['but is under guardians', 'eng_kjv', 'But is under tutors']);
+  // An unknown second version is dropped, not stored.
+  await api('PUT', '/api/notes/note-twover-1', { token: u.token, body: { ...note, alt: { version: 'nope', quote: 'x' } } });
+  assert.equal((await api('GET', '/api/notes', { token: u.token })).data.notes[0].alt, undefined);
+});

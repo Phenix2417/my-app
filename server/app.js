@@ -137,10 +137,10 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
     myNotes: q('SELECT * FROM notes WHERE user_id = ? ORDER BY updated_at DESC'),
     myChapterNotes: q('SELECT * FROM notes WHERE user_id = ? AND book = ? AND chapter = ? ORDER BY created_at'),
     note: q('SELECT * FROM notes WHERE id = ?'),
-    upsertNote: q(`INSERT INTO notes (id, user_id, book, chapter, version, verse_start, word_start, verse_end, word_end, color, quote, body, created_at, updated_at)
-      VALUES (:id, :user_id, :book, :chapter, :version, :verse_start, :word_start, :verse_end, :word_end, :color, :quote, :body, :now, :now)
+    upsertNote: q(`INSERT INTO notes (id, user_id, book, chapter, version, verse_start, word_start, verse_end, word_end, color, quote, body, alt_version, alt_quote, created_at, updated_at)
+      VALUES (:id, :user_id, :book, :chapter, :version, :verse_start, :word_start, :verse_end, :word_end, :color, :quote, :body, :alt_version, :alt_quote, :now, :now)
       ON CONFLICT (id) DO UPDATE SET book = :book, chapter = :chapter, version = :version, verse_start = :verse_start, word_start = :word_start,
-        verse_end = :verse_end, word_end = :word_end, color = :color, quote = :quote, body = :body, updated_at = :now`),
+        verse_end = :verse_end, word_end = :word_end, color = :color, quote = :quote, body = :body, alt_version = :alt_version, alt_quote = :alt_quote, updated_at = :now`),
     deleteNote: q('DELETE FROM notes WHERE id = ? AND user_id = ?'),
     // Notes from friends who have allowed `viewer` to see them.
     friendNotes: q(`SELECT n.*, u.username, u.display_name FROM notes n
@@ -227,6 +227,7 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
     id: n.id, book: n.book, chapter: n.chapter, version: n.version || 'web', // words are counted in this version's text
     start: { verse: n.verse_start, word: n.word_start }, end: { verse: n.verse_end, word: n.word_end },
     color: n.color, quote: n.quote, body: n.body, createdAt: n.created_at, updatedAt: n.updated_at,
+    ...(n.alt_quote ? { alt: { version: n.alt_version, quote: n.alt_quote, ...(n.alt_label ? { label: n.alt_label } : {}) } } : {}),
     ...(n.version_label ? { versionLabel: n.version_label } : {}),
     ...(n.username ? { author: userOut(n.user_id, n.username, n.display_name) } : {}),
   });
@@ -249,7 +250,12 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
     if (typeof body !== 'string' || body.length > 10000) throw new HttpError(400, 'Note is too long');
     return { book: book.id, chapter: b.chapter, verse_start: b.start.verse, word_start: b.start.word,
       verse_end: b.end.verse, word_end: b.end.word, color: b.color, quote: b.quote.trim(), body,
-      version: b.version == null ? 'web' : VERSION_IDS.has(b.version) || ownVersion(me, b.version) ? b.version : (() => { throw new HttpError(400, 'Unknown Bible version'); })() };
+      version: b.version == null ? 'web' : VERSION_IDS.has(b.version) || ownVersion(me, b.version) ? b.version : (() => { throw new HttpError(400, 'Unknown Bible version'); })(),
+      // The second version's words, when the selection covered both versions read side by side.
+      ...(() => {
+        const a = b.alt, q = typeof a?.quote === 'string' ? a.quote.trim().slice(0, 4000) : '';
+        return q && (VERSION_IDS.has(a.version) || ownVersion(me, a.version)) ? { alt_version: a.version, alt_quote: q } : { alt_version: null, alt_quote: null };
+      })() };
   }
 
   function friendsPayload(me) {
@@ -762,13 +768,18 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
       // version with the same short name and language) sees it in their copy; anyone else sees it labelled with its name.
       const mine = stmt.myVersions.all(me.id), owners = new Map();
       const visible = [];
-      for (const n of rows) {
-        if (!/^u/.test(n.version || '')) { visible.push(n); continue; }
-        if (!owners.has(n.version)) owners.set(n.version, stmt.versionById.get(n.version));
-        const theirs = owners.get(n.version);
+      // A version as the viewer knows it: built in; their copy of the friend's own Bible; or the friend's, named.
+      const place = (id) => {
+        if (!/^u/.test(id || '')) return { id };
+        if (!owners.has(id)) owners.set(id, stmt.versionById.get(id));
+        const theirs = owners.get(id);
         const match = theirs && mine.find((v) => v.lang === theirs.lang && ((theirs.source_sha && v.source_sha === theirs.source_sha) || v.short === theirs.short));
-        // Without that Bible, the note is shared as it is, labelled with the Bible's short name.
-        visible.push(match ? { ...n, version: match.id } : { ...n, version_label: theirs?.short || 'Bible' });
+        return match ? { id: match.id } : { id, label: theirs?.short || 'Bible' };
+      };
+      for (const n of rows) {
+        const main = place(n.version), alt = n.alt_version ? place(n.alt_version) : null;
+        visible.push({ ...n, version: main.id, ...(main.label ? { version_label: main.label } : {}),
+          ...(alt ? { alt_version: alt.id, ...(alt.label ? { alt_label: alt.label } : {}) } : {}) });
       }
       return { notes: visible.map(noteOut) };
     }, true],
