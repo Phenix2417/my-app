@@ -626,7 +626,7 @@ async function renderReader() {
 
 // Colour the words that have a Bible dictionary entry, and the names that have a Bible wiki article (each its own
 // colour, matching the buttons in the Dictionary panel). English text only; the Read ⋯ menu turns it off.
-const wordMarks = { dict: new Map(), wiki: new Map(), lang: LANG }; // word -> true/false, as answered by the server (for this language)
+const wordMarks = { dict: new Map(), wiki: new Map(), lang: LANG }; // dict: word -> ['bd', 'easton', 'isbe']; wiki: name -> true/false
 async function markBibleWords() {
   document.body.classList.toggle('no-word-marks', !state.markWords);
   if (!state.markWords || reader.mode !== 'bible') return;
@@ -645,26 +645,33 @@ async function markBibleWords() {
     if (/^[A-Z][a-z'-]+$/.test(n)) capOf.set(x, n);
     if (!starts && /^[A-Z][a-z'-]+$/.test(n) && !lower.has(dictKey(n))) nameOf.set(x, n);
   });
+  // Each dictionary has its own colour; a word in several gets a rainbow of their colours.
   const apply = () => {
     for (const x of words) {
-      const dict = wordMarks.dict.get(keyOf.get(x)) === true;
-      x.el.classList.toggle('wm-dict', dict);
-      x.el.classList.toggle('wm-wiki', !dict && wordMarks.wiki.get(capOf.get(x)) === true);
+      const list = [...(wordMarks.dict.get(keyOf.get(x)) || []), ...(wordMarks.wiki.get(capOf.get(x)) === true ? ['wiki'] : [])];
+      x.el.classList.remove('wm-bd', 'wm-easton', 'wm-isbe', 'wm-wiki', 'wm-multi');
+      x.el.style.removeProperty('--wm-grad'); x.el.style.removeProperty('--wm-first');
+      if (list.length === 1) x.el.classList.add(`wm-${list[0]}`);
+      else if (list.length > 1) {
+        x.el.classList.add('wm-multi');
+        x.el.style.setProperty('--wm-grad', `linear-gradient(90deg, ${list.map((src) => `var(--mark-${src})`).join(', ')})`);
+        x.el.style.setProperty('--wm-first', `var(--mark-${list[0]})`);
+      }
     }
   };
   const ask = async (kind, list, url, field) => {
     const todo = [...new Set(list)].filter((w) => w && !wordMarks[kind].has(w));
     if (!todo.length) return;
     const r = await api('POST', url, { [field]: todo });
-    const yes = new Set(r[field] || []);
-    for (const w of todo) wordMarks[kind].set(w, yes.has(w));
+    if (kind === 'dict') for (const w of todo) wordMarks.dict.set(w, r.marks?.[w] || []);
+    else { const yes = new Set(r.names || []); for (const w of todo) wordMarks.wiki.set(w, yes.has(w)); }
   };
   const firstWord = words[0].el;
   apply();
   try { await ask('dict', [...keyOf.values()], '/api/bible-dictionary/marks', 'words'); } catch { /* offline: no colours */ }
   if (!firstWord.isConnected) return;
   apply();
-  try { await ask('wiki', [...nameOf.values()].filter((n) => wordMarks.dict.get(dictKey(n)) !== true), '/api/wiki/names', 'names'); } catch { /* Wikipedia unreachable */ }
+  try { await ask('wiki', [...nameOf.values()], '/api/wiki/names', 'names'); } catch { /* Wikipedia unreachable */ }
   if (firstWord.isConnected) apply();
 }
 
@@ -1580,7 +1587,7 @@ function wikiSection(found, lang) {
     more.textContent = tr(open ? 'Less' : 'More');
     positionToolbar();
   } }, 'More') : null;
-  return h('section', { class: 'bd wiki', lang: zh ? 'zh-Hans' : 'en' },
+  return h('section', { class: 'bd wiki src-wiki', lang: zh ? 'zh-Hans' : 'en' },
     h('div', { class: 'bd-head' }, zh ? '圣经wiki' : 'Bible Wiki', h('span', { class: 'bd-src' }, ` · ${zh ? '维基百科' : found.source} (${found.license})`)),
     h('div', { class: 'bd-entry' },
       h('div', { class: 'bd-term' + (zh ? '' : ' wiki-term-en') }, x.title), text,
@@ -1635,7 +1642,7 @@ function shortenOsis(full, limit) {
 }
 function encyclopediaSection(found, source, onXref) {
   const LIMIT = source === 'isbe' ? 420 : 360;
-  return h('section', { class: 'bd bd-english', lang: 'en' },
+  return h('section', { class: `bd bd-english src-${source}`, lang: 'en' },
     h('div', { class: 'bd-head' }, source === 'isbe' ? 'ISBE' : 'Easton', h('span', { class: 'bd-src' }, ` · ${found.source}`)),
     ...found.entries.map((entry) => {
       const full = entry.text, long = plainOsis(full).length > LIMIT;
@@ -1653,7 +1660,7 @@ function encyclopediaSection(found, source, onXref) {
 const shorten = (full, limit) => `${full.slice(0, limit).replace(/\s+\S*$/, '').replace(/\n[•·\s]*$/, '')}…`;
 function bibleSection(found, { english = false } = {}) {
   const LIMIT = english ? 360 : 260;
-  return h('section', { class: 'bd' + (english ? ' bd-english' : ''), lang: english ? 'en' : 'zh-Hans' },
+  return h('section', { class: 'bd src-bd' + (english ? ' bd-english' : ''), lang: english ? 'en' : 'zh-Hans' },
     h('div', { class: 'bd-head' }, english ? 'Bible Dictionary' : '圣经辞典', h('span', { class: 'bd-src' }, ` · ${found.source}`)),
     ...found.entries.map((entry) => {
       const full = entry.text;
@@ -1869,8 +1876,8 @@ function toggleDictionary(bar, btn) {
         if (!wikiSlot.isConnected) return;
         body.querySelector('.dict-head')?.append(...[
           // The wiki in the interface language; if Wikipedia has no article in it, the one it has.
-          found.zh && (LANG === 'zh' || !found.en) ? h('button', { class: 'bd-jump bd-wiki', type: 'button', lang: 'zh-Hans', 'aria-label': 'Show the Chinese Bible wiki article', onclick: wikiToggle('zh') }, '圣经wiki') : null,
-          found.en && (LANG !== 'zh' || !found.zh) ? h('button', { class: 'bd-jump bd-wiki', type: 'button', lang: 'en', 'aria-label': 'Show the English Bible wiki article', onclick: wikiToggle('en') }, 'Bible Wiki') : null,
+          found.zh && (LANG === 'zh' || !found.en) ? h('button', { class: 'bd-jump bd-wiki src-wiki', type: 'button', lang: 'zh-Hans', 'aria-label': 'Show the Chinese Bible wiki article', onclick: wikiToggle('zh') }, '圣经wiki') : null,
+          found.en && (LANG !== 'zh' || !found.zh) ? h('button', { class: 'bd-jump bd-wiki src-wiki', type: 'button', lang: 'en', 'aria-label': 'Show the English Bible wiki article', onclick: wikiToggle('en') }, 'Bible Wiki') : null,
         ].filter(Boolean));
         positionToolbar();
       }).catch(() => { /* no article, or Wikipedia unreachable: no buttons */ });
@@ -1906,7 +1913,7 @@ function toggleDictionary(bar, btn) {
       if (box) box.scrollBy({ top: section.getBoundingClientRect().top - box.getBoundingClientRect().top - 6, behavior: 'smooth' });
       section.classList.remove('flash'); void section.offsetWidth; section.classList.add('flash');
     };
-    const btn = (lang, label, aria) => h('button', { class: 'bd-jump bd-dict', type: 'button', lang: lang === 'zh' ? 'zh-Hans' : 'en', dataset: { src: lang }, 'aria-label': aria, onclick: toggle(lang) }, label);
+    const btn = (lang, label, aria) => h('button', { class: `bd-jump src-${lang === 'zh' || lang === 'en' ? 'bd' : lang}`, type: 'button', lang: lang === 'zh' ? 'zh-Hans' : 'en', dataset: { src: lang }, 'aria-label': aria, onclick: toggle(lang) }, label);
     const buttons = [
       // A source in both languages (圣经辞典 / Bible Dictionary) shows only the interface language's version;
       // one in a single language (Easton, ISBE: English) shows whatever it has.

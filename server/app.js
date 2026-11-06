@@ -446,9 +446,12 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
     ['POST', /^\/api\/bible-dictionary\/marks$/, ({ body }) => {
       if (!bibleDict) throw new HttpError(503, 'The Bible dictionary is not set up on this server');
       const words = Array.isArray(body?.words) ? body.words.slice(0, 2000).map(String) : [];
-      const found = new Set(bibleDict.marks(words));
-      if (encyclopedias && body?.lang !== 'zh') for (const w of encyclopedias.marks(words, MARK_SKIP)) found.add(w);
-      return { words: words.filter((w) => found.has(w)) };
+      // { word: ['bd', 'easton', 'isbe'] }: which Bible dictionaries have each word (each is coloured its own way).
+      const bd = new Set(bibleDict.marks(words));
+      const enc = encyclopedias ? encyclopedias.marks(words, MARK_SKIP, bd) : {};
+      const marks = {};
+      for (const w of words) { const list = [...(bd.has(w) ? ['bd'] : []), ...(enc[w] || [])]; if (list.length) marks[w] = list; }
+      return { marks };
     }, true],
     // …and which names have a Bible wiki article (one Wikipedia request per chapter at most, then kept).
     ['POST', /^\/api\/wiki\/names$/, async ({ body }) => {

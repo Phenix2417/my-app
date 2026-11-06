@@ -11,6 +11,17 @@ export const SOURCES = {
   easton: { name: "Easton's Bible Dictionary (1897)", file: 'easton.json.gz' },
   isbe: { name: 'International Standard Bible Encyclopedia (1915)', file: 'isbe.json.gz' },
 };
+// Everyday English words: coloured for the ISBE only when another dictionary has them too.
+const COMMON_WORDS = new Set(('after again against all also always among another any away back because become before began behind being below '
+  + 'best better between both bring came cannot come could day days did do does done down during each early end enough even ever every far few '
+  + 'find first found four from gave get give given go going good got great had half hand hands has have having he her here high him himself his '
+  + 'how into its itself just keep kind knew know large last later least left less let like little long look made make making many may me might '
+  + 'more most much must my never new next no none nor not nothing now of off often old on once one only open or other others our out over own part '
+  + 'place put rather right said same saw say see seen several shall she should show side since small so some something still such take taken than '
+  + 'that the their them then there these they thing things think this those though three through thus to together too took toward turn turned two '
+  + 'under until up upon us use used very want was way we well went were what when where whether which while who whole whom whose why will with '
+  + 'within without would yet you your able above across almost already although become came either else full however indeed instead less mean '
+  + 'means near nearly neither person quite ready real really say seem seemed seems set short sure taking tell told true upon usually whatever wish').split(' '));
 const MAX_TEXT = 60000; // the longest ISBE articles run to 340,000 characters
 const MAX_ENTRIES = 3;
 
@@ -50,7 +61,20 @@ export function createEncyclopedias({ dir = path.join(here, 'data'), data = null
     has(raw) { return Object.fromEntries(Object.keys(SOURCES).map((s) => [s, find(s, raw).length > 0])); },
     // Which of these words have an Easton entry (for colouring the Bible text; ISBE also covers ordinary words
     // like "after" and "again", so it isn't used for that).
-    marks(words, skip = new Set()) { return [...new Set(words)].filter((w) => { const n = normalize(w); return n && !skip.has(n) && find('easton', n).length > 0; }); },
+    // Which sources have each word (for colouring the Bible text): { word: ['easton', 'isbe'] }. The ISBE also has
+    // studies of everyday words ("after", "again"); those count only when another dictionary has the word too.
+    marks(words, skip = new Set(), others = new Set()) {
+      const out = {};
+      for (const w of new Set(words)) {
+        const n = normalize(w);
+        if (!n || skip.has(n)) continue;
+        const easton = find('easton', n).length > 0;
+        const isbe = find('isbe', n).length > 0 && (!COMMON_WORDS.has(n) || easton || others.has(w));
+        const list = [easton && 'easton', isbe && 'isbe'].filter(Boolean);
+        if (list.length) out[w] = list;
+      }
+      return out;
+    },
     entry(source, raw) {
       if (!SOURCES[source]) return null;
       const found = find(source, raw);

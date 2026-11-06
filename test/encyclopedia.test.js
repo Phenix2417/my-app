@@ -19,8 +19,9 @@ test('entries: exact word or base form, several numbered entries, which sources 
   assert.deepEqual(enc.has('zzz'), { easton: false, isbe: false });
   assert.deepEqual(enc.entry('isbe', 'abel').entries.map((e) => e.term), ['ABEL (1)', 'ABEL (2)']);
   assert.equal(enc.entry('easton', 'after'), null);
-  // Colouring uses Easton only (the ISBE also covers ordinary words like "after").
-  assert.deepEqual(enc.marks(['abel', 'after', 'kings']), ['abel', 'kings']);
+  // Colouring: each source per word; the ISBE's studies of everyday words ("after") count only alongside another dictionary.
+  assert.deepEqual(enc.marks(['abel', 'after', 'kings']), { abel: ['easton', 'isbe'], kings: ['easton'] });
+  assert.deepEqual(enc.marks(['after'], new Set(), new Set(['after'])), { after: ['isbe'] });
 });
 
 test('SWORD TEI markup becomes paragraphs and ⟦OSIS|label⟧ references', () => {

@@ -18,7 +18,7 @@
   --hl-purple: #5a4287;
   --scrim: rgba(0, 0, 0, 0.55);
   --verse-size: 22px;
-  --mark-dict: #8fdcc4; --mark-wiki: #c3b4ff;
+  --mark-bd: #8fdcc4; --mark-easton: #f2b45a; --mark-isbe: #9cc3ff; --mark-wiki: #c9b4ff;
   color-scheme: dark;
 }
 
@@ -29,7 +29,7 @@
     --error: #ba1a1a; --on-error: #fff; --divider: #d4dedb; --handle: #e08a10; --sel: rgba(242, 166, 59, 0.28);
     --hl-yellow: #f6e08e; --hl-green: #b9e4c6; --hl-blue: #bdd6f5; --hl-pink: #f3c3d9; --hl-purple: #dacbf5;
     --scrim: rgba(0, 0, 0, 0.35);
-    --mark-dict: #006b58; --mark-wiki: #5a45c8;
+    --mark-bd: #006b58; --mark-easton: #9a5600; --mark-isbe: #1d5fbf; --mark-wiki: #6a3fc1;
     color-scheme: light;
   }
 }
@@ -92,9 +92,19 @@ h1 { font-size: 28px; font-weight: 500; margin: 18px 0 24px; }
 [data-c="pink"] { background: var(--hl-pink); }
 [data-c="purple"] { background: var(--hl-purple); }
 /* Words with a Bible dictionary entry, and names with a Bible wiki article (Read ⋯ → Colour Bible words). */
-.w.wm-dict { color: var(--mark-dict); }
+.w.wm-bd { color: var(--mark-bd); }
+.w.wm-easton { color: var(--mark-easton); }
+.w.wm-isbe { color: var(--mark-isbe); }
 .w.wm-wiki { color: var(--mark-wiki); }
-body.no-word-marks .w.wm-dict, body.no-word-marks .w.wm-wiki { color: inherit; }
+/* In several dictionaries: a rainbow of their colours across the word. */
+.w.wm-multi { color: var(--wm-first); background-image: var(--wm-grad); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+/* Highlighted or selected: the highlight needs the background, so the word takes its first dictionary's colour. */
+.w.wm-multi[data-c], .w.wm-multi.sel { -webkit-text-fill-color: currentColor; -webkit-background-clip: border-box; background-clip: border-box; }
+.w.wm-multi.sel { background-image: none; background-color: var(--sel); }
+.w.wm-multi[data-c] { background-image: none; }
+body.no-word-marks .w.wm-bd, body.no-word-marks .w.wm-easton, body.no-word-marks .w.wm-isbe, body.no-word-marks .w.wm-wiki,
+body.no-word-marks .w.wm-multi { color: inherit; -webkit-text-fill-color: currentColor; }
+body.no-word-marks .w.wm-multi:not([data-c]):not(.sel) { background-image: none; }
 .w[data-f], .g[data-f] { text-decoration: underline 3px; text-underline-offset: 6px; text-decoration-skip-ink: none; }
 .w[data-f="yellow"], .g[data-f="yellow"] { text-decoration-color: #d9b44a; }
 .w[data-f="green"], .g[data-f="green"] { text-decoration-color: #5fbf80; }
@@ -686,6 +696,8 @@ body.bars-hidden .b-size-panel { display: none; }
 .wiki-link { font-size: 14px; color: var(--primary); text-decoration: none; padding: 2px 0; }
 .wiki-link::after { content: " ↗"; }
 /* The dictionary panel's buttons use the same colours as the words in the text. */
-.bd-jump.bd-dict, .bd-jump.bd-dict:active { color: var(--mark-dict); border-color: var(--mark-dict); }
-.bd-jump.bd-wiki, .bd-jump.bd-wiki:active { color: var(--mark-wiki); border-color: var(--mark-wiki); }
-.wiki .bd-head { color: var(--mark-wiki); }
+.bd-jump.src-bd, .bd-jump.src-bd:active, .src-bd > .bd-head { color: var(--mark-bd); border-color: var(--mark-bd); }
+.bd-jump.src-easton, .bd-jump.src-easton:active, .src-easton > .bd-head { color: var(--mark-easton); border-color: var(--mark-easton); }
+.bd-jump.src-isbe, .bd-jump.src-isbe:active, .src-isbe > .bd-head { color: var(--mark-isbe); border-color: var(--mark-isbe); }
+.bd-jump.src-wiki, .bd-jump.src-wiki:active, .src-wiki > .bd-head { color: var(--mark-wiki); border-color: var(--mark-wiki); }
+.dict-credit { -webkit-user-select: none; user-select: none; }
