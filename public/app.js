@@ -36,19 +36,17 @@ const ICONS = {
   bibleQuill: '<path d="M12 7.2C9.8 5.6 6.5 5.2 3 6v12.5c3.5-.8 6.8-.4 9 1.2 2.2-1.6 5.5-2 9-1.2V12"/><path d="M12 7.2v12.5"/><path d="M21.5 2.5c-3.6.7-5.9 3.3-6.8 7.6l-.5 2.4"/><path d="M21.5 2.5c-.2 3.6-1.9 6.4-5 7.5"/>',
   // Commentary side bar: a shelf of books with a pencil (edit your list of commentaries).
   editShelf: '<rect x="2.5" y="4" width="12" height="3.4" rx="1"/><rect x="4" y="9.3" width="10.5" height="3.4" rx="1"/><rect x="2.5" y="14.6" width="9" height="3.4" rx="1"/><path d="M14.6 21l.7-2.9 5-5a1.3 1.3 0 0 1 1.9 1.9l-5 5z"/>',
+  // Selection bubble: copy, translate (文/A) and dictionary (book with a magnifier).
+  copy: '<rect x="8.5" y="8.5" width="12" height="12" rx="2"/><path d="M15.5 8.5V5a1.5 1.5 0 0 0-1.5-1.5H5A1.5 1.5 0 0 0 3.5 5v9A1.5 1.5 0 0 0 5 15.5h3.5"/>',
+  translate: '<path d="M3 5.5h8M7 3.5v2M9.5 5.5c-.6 3.4-2.6 6.2-6 8M5 8.2c1 2.3 2.7 4 5 5.2"/><path d="M12.5 20.5l3.8-9 3.7 9M13.9 17.3h4.9"/>',
+  dictionary: '<path d="M5 4.5A1.5 1.5 0 0 1 6.5 3H18v14H6.5A1.5 1.5 0 0 0 5 18.5z"/><path d="M5 18.5A1.5 1.5 0 0 0 6.5 20H12"/><circle cx="16.5" cy="17.5" r="2.6"/><path d="M18.4 19.4l2.1 2.1"/>',
   serifAa: '<text x="1.5" y="19.5" font-family="Georgia,\'Noto Serif\',serif" font-size="17" font-weight="700" fill="currentColor" stroke="none">A</text><text x="13.5" y="19.5" font-family="Georgia,\'Noto Serif\',serif" font-size="12" font-weight="700" fill="currentColor" stroke="none">a</text>',
   read: 'M21 5c-1.1-.35-2.3-.5-3.5-.5-1.95 0-4.05.4-5.5 1.5-1.45-1.1-3.55-1.5-5.5-1.5S2.45 4.9 1 6v14.65c0 .25.25.5.5.5.1 0 .15-.05.25-.05C3.1 20.45 5.05 20 6.5 20c1.95 0 4.05.4 5.5 1.5 1.35-.85 3.8-1.5 5.5-1.5 1.65 0 3.35.3 4.75 1.05.1.05.15.05.25.05.25 0 .5-.25.5-.5V6c-.6-.45-1.25-.75-2-1zm0 13.5c-1.1-.35-2.3-.5-3.5-.5-1.7 0-4.15.65-5.5 1.5V8c1.35-.85 3.8-1.5 5.5-1.5 1.2 0 2.4.15 3.5.5v11.5zM17.5 10.5c.88 0 1.73.09 2.5.26V9.24c-.79-.15-1.64-.24-2.5-.24-1.7 0-3.24.29-4.5.83v1.66c1.13-.64 2.7-.99 4.5-.99zM13 12.49v1.66c1.13-.64 2.7-.99 4.5-.99.88 0 1.73.09 2.5.26V11.9c-.79-.15-1.64-.24-2.5-.24-1.7 0-3.24.3-4.5.83zM17.5 14.33c-1.7 0-3.24.29-4.5.83v1.66c1.13-.64 2.7-.99 4.5-.99.88 0 1.73.09 2.5.26v-1.52c-.79-.16-1.64-.24-2.5-.24z',
   notes: 'M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h10l6-6V5c0-1.1-.9-2-2-2zM5 19V5h14v9h-5v5H5zm2-12h10v2H7zm0 4h10v2H7zm0 4h5v2H7z',
-  commentary: 'M21.99 4c0-1.1-.89-2-1.99-2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h14l4 4-.01-18zM18 14H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z',
-  edit: 'M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z',
-  check: 'M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z',
-  back: 'M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z',
   refresh: 'M17.65 6.35A7.96 7.96 0 0 0 12 4a8 8 0 1 0 7.73 10h-2.08A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z',
   personAdd: 'M15 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm-9-2V7H4v3H1v2h3v3h2v-3h3v-2H6zm9 4c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z',
   account: 'M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z',
-  textSize: 'M9 4v3h5v12h3V7h5V4H9zm-6 8h3v7h3v-7h3V9H3v3z',
   speaker: 'M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 7.97v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z',
-  chevronRight: 'M10 6 8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z',
   chevronLeft: 'M15.41 7.41 14 6l-6 6 6 6 1.41-1.41L10.83 12z',
   friends: 'M9 13.75c-2.34 0-7 1.17-7 3.5V19h14v-1.75c0-2.33-4.66-3.5-7-3.5zM4.34 17c.84-.58 2.87-1.25 4.66-1.25s3.82.67 4.66 1.25H4.34zM9 12c1.93 0 3.5-1.57 3.5-3.5S10.93 5 9 5 5.5 6.57 5.5 8.5 7.07 12 9 12zm0-5c.83 0 1.5.67 1.5 1.5S9.83 10 9 10s-1.5-.67-1.5-1.5S8.17 7 9 7zm7.04 6.81c1.16.84 1.96 1.96 1.96 3.44V19h4v-1.75c0-2.02-3.5-3.17-5.96-3.44zM15 12c1.93 0 3.5-1.57 3.5-3.5S16.93 5 15 5c-.54 0-1.04.13-1.5.35.63.89 1 1.98 1 3.15s-.37 2.26-1 3.15c.46.22.96.35 1.5.35z',
 };
@@ -714,6 +712,11 @@ function attachReaderGestures(body) {
   body.addEventListener('touchmove', (e) => { if (press?.sliding) e.preventDefault(); }, { passive: false });
 }
 
+// Icon-only bubble button; its name shows on long press.
+const bubbleBtn = (label, icon, onclick, extra = '') => h('button', {
+  class: `bubble-btn ${extra}`.trim(), type: 'button', 'aria-label': label, title: label,
+  ...(extra.includes('dict-btn') ? { 'aria-expanded': 'false' } : {}), onclick }, svg(icon));
+
 function showToolbar() {
   reader.toolbar?.remove();
   if (!state.selection) return;
@@ -725,19 +728,20 @@ function showToolbar() {
   const bar = h('div', { class: 'sel-toolbar', role: 'toolbar', 'aria-label': 'Selection actions' },
     h('div', { class: 'row' }, ...COLORS.map((c) => h('button', { class: 'swatch', dataset: { c }, 'aria-label': `Highlight ${c}`, onclick: () => {
       saveNote(draft(c)); clearSelection(); toast('Highlighted');
-    } }))),
-    h('div', { class: 'row' },
-      h('button', { class: 'text-btn', onclick: () => noteEditor(draft('yellow'), { isNew: true }) }, 'Note'),
-      h('button', { class: 'text-btn', onclick: () => { const v = start.v; clearSelection(); openCommentaryPage(v); } }, 'Commentary'),
-      // One word: its dictionary entry. Several words: translate the selection, then look up each word.
-      h('button', { class: 'text-btn dict-btn', 'aria-expanded': 'false', onclick: (e) => toggleDictionary(bar, e.currentTarget) },
-        cmp(start, end) ? 'Translate' : 'Dictionary'),
-      h('button', { class: 'text-btn', onclick: async () => {
-        // A complete sentence gets its reference; a word or phrase is copied as is.
-        const text = selectionHasFullSentence() ? `${selectedQuote()} — ${ref(draft('yellow'))}` : selectedQuote();
-        try { await navigator.clipboard.writeText(text); toast('Copied'); } catch { toast("Couldn't copy"); }
-        clearSelection();
-      } }, 'Copy')));
+    } })),
+    h('span', { class: 'sel-divider', 'aria-hidden': 'true' }),
+    bubbleBtn('Note', ICONS.notes, () => noteEditor(draft('yellow'), { isNew: true })),
+    bubbleBtn('Copy', ICONS.copy, async () => {
+      // A complete sentence gets its reference; a word or phrase is copied as is.
+      const text = selectionHasFullSentence() ? `${selectedQuote()} — ${ref(draft('yellow'))}` : selectedQuote();
+      try { await navigator.clipboard.writeText(text); toast('Copied'); } catch { toast("Couldn't copy"); }
+      clearSelection();
+    }),
+    bubbleBtn('Commentary', ICONS.bibleQuill, () => { const v = start.v; clearSelection(); openCommentaryPage(v); }),
+    // One word: its dictionary entry. Several words: translate the selection, then look up each word.
+    cmp(start, end)
+      ? bubbleBtn('Translate', ICONS.translate, (e) => toggleDictionary(bar, e.currentTarget), 'dict-btn')
+      : bubbleBtn('Dictionary', ICONS.dictionary, (e) => toggleDictionary(bar, e.currentTarget), 'dict-btn')));
   reader.toolbar = bar;
   document.body.append(bar);
   positionToolbar();
@@ -1847,7 +1851,7 @@ async function renderNotes() {
     h('button', { 'aria-pressed': String(state.notesTab === 'friends'), onclick: () => { state.notesTab = 'friends'; renderNotes(); } }, "Friends'"));
   mount(h('main', { class: 'screen' }, h('h1', {}, state.notesTab === 'mine' ? 'My notes' : "Friends' notes"), seg, banner, list,
     sideDock([
-      { id: 'side-notes-friends', label: "Friends' notes", icon: ICONS.friends,
+      { id: 'side-notes-friends', label: "Friends' notes", icon: ICONS.friendsNotes,
         toggle: { get: () => state.notesTab === 'friends', set: (on) => { state.notesTab = on ? 'friends' : 'mine'; renderNotes(); }, announce: false } },
       { id: 'side-refresh', label: 'Refresh', icon: ICONS.refresh, action: () => renderNotes() },
     ])));
@@ -2109,7 +2113,7 @@ setInterval(async () => {
 window.addEventListener('resize', () => { positionHandles(); positionToolbar(); });
 
 // Long-press any icon-only button to see what it does (its accessible name), without pressing it.
-const ICON_BUTTONS = '.side-btn, .side-tab, .swatch, .icon-btn, .to-top, .size-btn';
+const ICON_BUTTONS = '.side-btn, .side-tab, .swatch, .icon-btn, .to-top, .size-btn, .bubble-btn';
 {
   let timer = null, target = null, fired = null;
   document.addEventListener('pointerdown', (e) => {
