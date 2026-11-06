@@ -3127,11 +3127,14 @@ function noteVerse(n) {
 }
 
 // text: words to send with it (a note's text).
+// A verse opens the chat with it attached, so a comment can be written before sending; a note (text given) is sent as is.
 async function shareVerse(verse, text = '') {
   const message = { ref: verse, ...(text ? { body: text } : {}) };
+  const attach = (chat) => { state.chatAttach = verse; openChatPage(chat); };
   const target = state.shareTarget;
   if (target) {
     state.shareTarget = null;
+    if (verse.kind !== 'note') return attach(target);
     await sendToChat(target, message);
     return openChatPage(target);
   }
@@ -3141,6 +3144,7 @@ async function shareVerse(verse, text = '') {
     h('h2', {}, `Share ${verseRef(verse)}`),
     chats.length ? h('div', { class: 'chat-rows' }, ...chats.map((x) => h('button', { class: 'chat-row', type: 'button', onclick: async () => {
       close();
+      if (verse.kind !== 'note') return attach(x);
       if (await sendToChat(x, message)) toast(`Sent to ${x.name}`);
     } }, x.kind === 'group' ? avatar(null, x.name) : avatar(x.user), h('div', { class: 'chat-main' }, h('div', { class: 'chat-name' }, x.name)))))
       : h('p', { class: 'empty-inline' }, 'No chats yet. Add a friend in Chat first.'),
@@ -3195,6 +3199,19 @@ async function renderChatPage() {
   const input = h('textarea', { class: 'chat-input', rows: 1, maxlength: 2000, placeholder: 'Say something…',
     oninput: () => { input.style.height = 'auto'; input.style.height = `${Math.min(input.scrollHeight, 140)}px`; } });
   input.value = state.chatDraft || ''; state.chatDraft = '';
+  // A verse waiting to be sent, with a comment if one is written.
+  let attached = state.chatAttach || null; state.chatAttach = null;
+  const attachBox = h('div', { class: 'chat-attach' });
+  const showAttach = () => {
+    attachBox.hidden = !attached;
+    input.placeholder = tr(attached ? 'Add a comment (optional)' : 'Say something…');
+    if (!attached) return attachBox.replaceChildren();
+    attachBox.replaceChildren(
+      h('div', { class: 'chat-attach-main' },
+        h('div', { class: 'chat-attach-head' }, `${tr('Shared verse')} · ${verseRef(attached)}${attached.label ? ` · ${[attached.label, attached.alt?.label].filter(Boolean).join(' + ')}` : ''}`),
+        h('div', { class: 'chat-attach-text' }, attached.text)),
+      h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Remove', title: 'Remove', onclick: () => { attached = null; showAttach(); } }, svg(ICONS.close)));
+  };
   let shown = [];
   const draw = (messages) => {
     const atBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 40;
@@ -3231,10 +3248,10 @@ async function renderChatPage() {
   };
   const send = async () => {
     const text = input.value.trim();
-    if (!text) return;
+    if (!text && !attached) return;
     sendBtn.disabled = true;
-    const m = await sendToChat(chat, { body: text });
-    if (m) { input.value = ''; input.style.height = ''; draw([...shown, m]); list.scrollTop = list.scrollHeight; }
+    const m = await sendToChat(chat, { ...(text ? { body: text } : {}), ...(attached ? { ref: attached } : {}) });
+    if (m) { input.value = ''; input.style.height = ''; attached = null; showAttach(); draw([...shown, m]); list.scrollTop = list.scrollHeight; }
     sendBtn.disabled = false;
   };
   const sendBtn = h('button', { class: 'chat-send', type: 'button', 'aria-label': 'Send', title: 'Send', onclick: send }, svg(ICONS.send));
@@ -3262,7 +3279,10 @@ async function renderChatPage() {
       h('div', { class: 'chat-title' }, h('div', { class: 'chat-name' }, chat.name), sub),
       menu),
     list,
+    attachBox,
     h('div', { class: 'chat-bar' }, verseBtn, input, sendBtn)));
+  showAttach();
+  if (attached) input.focus();
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && matchMedia('(pointer: fine)').matches) { e.preventDefault(); send(); } });
   if (input.value) input.focus();
   await load();
