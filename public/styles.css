@@ -649,3 +649,8 @@ body.bars-hidden .b-size-panel { display: none; }
 .add-bible-choices svg { width: 22px; height: 22px; }
 .tonal-btn { background: var(--pill); color: var(--on-bg); border: 0; border-radius: 22px; padding: 11px 22px; font-weight: 500; }
 .pick-grid { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); padding-bottom: 8px; }
+
+/* A bilingual Bible: each translation in its own box */
+.bible-part.boxed { border: 1px solid var(--divider); border-radius: 16px; padding: 12px 14px 4px; margin: 0 0 12px; }
+.bible-pick { display: flex; align-items: center; gap: 10px; font-weight: 600; margin-bottom: 8px; }
+.bible-pick input { width: 20px; height: 20px; accent-color: var(--primary); }

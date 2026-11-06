@@ -2336,8 +2336,12 @@ async function chooseBibleFromBooks() {
   } }, coverImg(b), h('span', { class: 'lib-title' }, b.title), b.author ? h('span', { class: 'lib-meta' }, b.author) : null)));
 }
 
-const KNOWN_VERSIONS = [[/english standard/i, 'ESV'], [/new international/i, 'NIV'], [/new american standard/i, 'NASB'], [/new king james/i, 'NKJV'],
-  [/christian standard/i, 'CSB'], [/new living/i, 'NLT'], [/new revised standard/i, 'NRSV'], [/revised standard/i, 'RSV'], [/king james/i, 'KJV'], [/amplified/i, 'AMP'], [/message/i, 'MSG']];
+const KNOWN_VERSIONS = [[/english standard|\bESV\b/i, 'ESV', 'English Standard Version'], [/new international|\bNIV\b/i, 'NIV', 'New International Version'],
+  [/new american standard|\bNASB\b/i, 'NASB', 'New American Standard Bible'], [/new king james|\bNKJV\b/i, 'NKJV', 'New King James Version'],
+  [/christian standard|\bCSB\b/i, 'CSB', 'Christian Standard Bible'], [/new living|\bNLT\b/i, 'NLT', 'New Living Translation'],
+  [/new revised standard|\bNRSV\b/i, 'NRSV', 'New Revised Standard Version'], [/revised standard|\bRSV\b/i, 'RSV', 'Revised Standard Version'],
+  [/king james|\bKJV\b/i, 'KJV', 'King James Version'], [/amplified/i, 'AMP', 'Amplified Bible'], [/the message/i, 'MSG', 'The Message']];
+const KNOWN_CHINESE = [[/和合|\bCUV\b/i, '和合本', '和合本'], [/新译本|\bCNV\b/i, '新译本', '新译本'], [/当代|\bCCB\b/i, '当代译本', '当代译本'], [/思高/, '思高本', '思高本']];
 // file: set when the EPUB came from the phone (not from Books); it's then also put in Books, unless it's already there.
 async function checkBibleEpub(bufPromise, fileName, file = null) {
   const status = h('p', { class: 'confirm-text' }, 'Reading your Bible…');
@@ -2347,68 +2351,90 @@ async function checkBibleEpub(bufPromise, fileName, file = null) {
   try { parsed = await parseBibleEpub(await bufPromise, await loadBooks()); } catch (e) {
     status.textContent = `This file couldn't be read as an EPUB (${e.message}).`; return;
   }
-  const { data, report, lang } = parsed;
-  // Compare with the usual verse numbering (the built-in WEB) to see how well the layout was understood.
   status.textContent = 'Checking chapters and verses…';
-  let chapters = 0, matched = 0;
-  const missing = [];
-  for (const b of state.books) {
-    const mine = data[b.id];
-    if (!mine?.some((c) => c?.length)) { missing.push(b.name); continue; }
-    const web = await loadBook(b.id).catch(() => null);
-    mine.forEach((vs, i) => {
-      if (!vs?.some((x) => x?.[0])) return;
-      chapters++;
-      const want = web?.[i]?.length || 0;
-      if (want && Math.abs(vs.length - want) <= 2) matched++;
-    });
-  }
-  const pct = chapters ? Math.round((matched / chapters) * 100) : 0;
   const title = (parsed.title || fileName || 'My Bible').replace(/\.epub$/i, '');
-  const short = (KNOWN_VERSIONS.find(([re]) => re.test(title))?.[1]) || title.replace(/[^A-Za-z ]/g, '').split(/\s+/).filter((w) => w.length > 2).map((w) => w[0]).join('').toUpperCase().slice(0, 6) || 'MINE';
-  const sample = (book, c, v) => { const t = data[book]?.[c - 1]?.[v - 1]?.[0]; return t ? h('p', { class: 'bible-sample' }, h('b', {}, `${bookName(book)} ${c}:${v} `), t) : null; };
-  const nameIn = h('input', { value: title.slice(0, 80), maxlength: 80 });
-  const shortIn = h('input', { value: short, maxlength: 12 });
-  const good = report.verses > 0;
+  // An ebook may hold two translations side by side (e.g. ESV with 和合本): each can be added as its own version.
+  const parts = [{ lang: parsed.lang, data: parsed.data, verses: parsed.report.verses }];
+  if (parsed.alt) parts.push({ lang: parsed.alt.lang, data: parsed.alt.data, verses: parsed.alt.report.verses });
+  const webBooks = {};
+  for (const b of state.books) webBooks[b.id] = await loadBook(b.id).catch(() => null);
+  for (const part of parts) {
+    let chapters = 0, matched = 0;
+    part.missing = [];
+    for (const b of state.books) {
+      const mine = part.data[b.id];
+      if (!mine?.some((c) => c?.some((x) => x?.[0]))) { part.missing.push(b.name); continue; }
+      mine.forEach((vs, i) => {
+        if (!vs?.some((x) => x?.[0])) return;
+        chapters++;
+        const want = webBooks[b.id]?.[i]?.length || 0;
+        if (want && Math.abs(vs.length - want) <= 2) matched++;
+      });
+    }
+    Object.assign(part, { chapters, pct: chapters ? Math.round((matched / chapters) * 100) : 0 });
+    const zh = /^zh/.test(part.lang);
+    const known = (zh ? KNOWN_CHINESE : KNOWN_VERSIONS).find(([re]) => re.test(title));
+    part.short = known?.[1] || (zh ? '中文圣经' : title.replace(/[^A-Za-z ]/g, '').split(/\s+/).filter((w) => w.length > 2).map((w) => w[0]).join('').toUpperCase().slice(0, 6) || 'MINE');
+    part.name = known?.[2] || title.slice(0, 80);
+  }
+  const sample = (part, book, c, v) => { const t = part.data[book]?.[c - 1]?.[v - 1]?.[0]; return t ? h('p', { class: 'bible-sample', lang: part.lang }, h('b', {}, `${bookName(book)} ${c}:${v} `), t) : null; };
+  const both = parts.length > 1;
+  const sections = parts.map((part) => {
+    const good = part.verses > 0;
+    part.nameIn = h('input', { value: part.name, maxlength: 80 });
+    part.shortIn = h('input', { value: part.short, maxlength: 12 });
+    part.pick = h('input', { type: 'checkbox', checked: good });
+    return h('section', { class: 'bible-part' + (both ? ' boxed' : '') }, ...[
+      both ? h('label', { class: 'bible-pick' }, part.pick, h('span', {}, /^zh/.test(part.lang) ? 'Add the Chinese translation' : 'Add the English translation')) : null,
+      h('p', { class: 'bible-found' }, good
+        ? `Found ${66 - part.missing.length} of 66 books, ${part.chapters.toLocaleString()} chapters and ${part.verses.toLocaleString()} verses. ${part.pct}% of chapters match the usual verse numbering.`
+        : 'No Bible verses were found in this EPUB.'),
+      part.missing.length > 0 && part.missing.length < 66 ? h('p', { class: 'handle-sub' }, `Missing: ${part.missing.slice(0, 12).join(', ')}${part.missing.length > 12 ? '…' : ''}`) : null,
+      good && part.pct < 90 ? h('p', { class: 'error' }, "This ebook's layout wasn't fully understood, so some verses may be in the wrong place. Check the samples below.") : null,
+      ...(good ? [sample(part, 'genesis', 1, 1), sample(part, 'psalms', 23, 1), sample(part, 'john', 3, 16)].filter(Boolean) : []),
+      good ? h('label', { class: 'field' }, h('span', {}, 'Name'), part.nameIn) : null,
+      good ? h('label', { class: 'field' }, h('span', {}, 'Short name'), part.shortIn) : null,
+    ].filter((x) => x != null && x !== false));
+  });
+  const anyGood = parts.some((x) => x.verses > 0);
   body.replaceChildren(...[
-    h('p', { class: 'bible-found' }, good
-      ? `Found ${66 - missing.length} of 66 books, ${chapters.toLocaleString()} chapters and ${report.verses.toLocaleString()} verses. ${pct}% of chapters match the usual verse numbering.`
-      : 'No Bible verses were found in this EPUB.'),
-    missing.length > 0 && missing.length < 66 ? h('p', { class: 'handle-sub' }, `Missing: ${missing.slice(0, 12).join(', ')}${missing.length > 12 ? '…' : ''}`) : null,
-    good && pct < 90 ? h('p', { class: 'error' }, "This ebook's layout wasn't fully understood, so some verses may be in the wrong place. Check the samples below.") : null,
-    ...(good ? [sample('genesis', 1, 1), sample('psalms', 23, 1), sample('john', 3, 16), sample('romans', 8, 28)].filter(Boolean) : []),
-    good ? h('label', { class: 'field' }, h('span', {}, 'Name'), nameIn) : null,
-    good ? h('label', { class: 'field' }, h('span', {}, 'Short name'), shortIn) : null,
+    both ? h('p', { class: 'confirm-text' }, 'This Bible has two translations side by side. Each can be added as its own version.') : null,
+    ...sections,
     h('div', { class: 'sheet-actions' },
       h('span', { class: 'spacer' }),
       h('button', { class: 'text-btn', type: 'button', onclick: close }, 'Cancel'),
-      good ? h('button', { class: 'filled-btn', type: 'button', onclick: async (e) => {
-        const btn = e.currentTarget; btn.disabled = true;
-        let version = null;
+      anyGood ? h('button', { class: 'filled-btn', type: 'button', onclick: async (e) => {
+        const btn = e.currentTarget;
+        const chosen = parts.filter((x) => x.verses > 0 && (!both || x.pick.checked));
+        if (!chosen.length) { toast('Choose at least one translation to add.'); return; }
+        btn.disabled = true;
+        const added = [];
         try {
-          ({ version } = await api('POST', '/api/my-versions', { short: shortIn.value, name: nameIn.value, lang }));
-          // Save the books six at a time.
-          const ids = Object.keys(data);
-          let next = 0, done = 0;
-          btn.textContent = `Saving 0 / ${ids.length}…`;
-          await Promise.all(Array.from({ length: 6 }, async () => {
-            while (next < ids.length) {
-              const id = ids[next++];
-              await authFetch(`/api/my-versions/${version.id}/${id}`, { method: 'PUT', body: JSON.stringify(data[id].map((c) => c || [])) });
-              btn.textContent = `Saving ${++done} / ${ids.length}…`;
-            }
-          }));
+          for (const part of chosen) {
+            const { version } = await api('POST', '/api/my-versions', { short: part.shortIn.value, name: part.nameIn.value, lang: part.lang });
+            added.push(version);
+            // Save the books six at a time.
+            const ids = Object.keys(part.data);
+            let next = 0, done = 0;
+            await Promise.all(Array.from({ length: 6 }, async () => {
+              while (next < ids.length) {
+                const id = ids[next++];
+                await authFetch(`/api/my-versions/${version.id}/${id}`, { method: 'PUT', body: JSON.stringify(part.data[id].map((c) => c || [])) });
+                btn.textContent = `Saving ${version.short} ${++done} / ${ids.length}…`;
+              }
+            }));
+          }
           close();
           await loadVersions();
-          setVersion(version.id);
-          if (file) addBooks([file]); // also keep the ebook in Books (the server spots it if it's already there)
+          setVersion(added[0].id);
+          if (file) addBooks([file]); // also keep the ebook in Books (unless it's already there)
         } catch (err) {
-          // Don't leave a half-saved version behind.
-          if (version) await api('DELETE', `/api/my-versions/${version.id}`).catch(() => {});
-          btn.disabled = false; btn.textContent = 'Add version'; toast(err.message);
+          // Don't leave half-saved versions behind.
+          for (const v of added) await api('DELETE', `/api/my-versions/${v.id}`).catch(() => {});
+          btn.disabled = false; btn.textContent = 'Add'; toast(err.message);
         }
-      } }, 'Add version') : null),
-  ].filter((x) => x != null && x !== false && x !== 0)); // leave out the parts that don't apply
+      } }, both ? 'Add' : 'Add version') : null),
+  ].filter((x) => x != null && x !== false));
 }
 
 async function openPicker({ chapters = false } = {}) {

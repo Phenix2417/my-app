@@ -270,6 +270,11 @@ export async function parseBibleEpub(buf, books) {
     return byKey.get(k) || books.find((b) => bookKey(b.name) === k.replace(/s$/, '')) || null;
   };
   const osis = new Map(OSIS.map((c, i) => [c.toLowerCase(), books[i]]));
+  // Some ebooks start every verse with its reference ("Gen 39:1 …"), one verse per paragraph, sometimes followed by the
+  // same verse in another language (e.g. ESV with 和合本). Those are read by reference.
+  const refParas = await countRefParagraphs(ep);
+  if (refParas >= 50) return parseRefParagraphs(ep, books, findBook);
+
   const tocBook = new Map(); // spine file -> book named in the table of contents
   for (const t of ep.toc) { const b = findBook(t.label); if (b && t.anchor === '' && !tocBook.has(ep.chapters[t.chapter]?.href)) tocBook.set(ep.chapters[t.chapter].href, b); }
 
@@ -355,4 +360,77 @@ export async function parseBibleEpub(buf, books) {
   }
   const lang = cjk > letters ? (/[們這說來為與們對]/.test(JSON.stringify(data).slice(0, 20000)) ? 'zh-Hant' : 'zh-Hans') : 'en';
   return { title: ep.title, lang, data, report: { verses, byIds, byMarkers, books: Object.keys(data).length } };
+}
+
+// "Gen 39:1 text", "1 Sam 3:4 text", "Song 2:1 text" at the start of a paragraph.
+const REF_PARA = /^\s*([1-3]?\s?[A-Za-z]{2,12})\.?\s+(\d{1,3})\s*:\s*(\d{1,3})\s+([\s\S]*)$/;
+const CJK_RE = /[\u3400-\u9fff]/;
+const paragraphs = (doc) => [...doc.getElementsByTagNameNS('*', 'p'), ...doc.getElementsByTagNameNS('*', 'div')]
+  .filter((el) => !el.querySelector?.('p, div'))
+  .sort((a, b) => (a.compareDocumentPosition(b) & 2 ? 1 : -1));
+const parseDoc = (text) => {
+  let doc = new DOMParser().parseFromString(text, 'application/xhtml+xml');
+  if (doc.getElementsByTagName('parsererror').length) doc = new DOMParser().parseFromString(text, 'text/html');
+  return doc;
+};
+async function countRefParagraphs(ep) {
+  let n = 0;
+  for (const { href } of ep.chapters.slice(0, 80)) {
+    const text = await ep.zip.text(href);
+    if (text) for (const p of paragraphs(parseDoc(text))) if (REF_PARA.test(p.textContent || '')) n++;
+    if (n >= 50) break;
+  }
+  return n;
+}
+async function parseRefParagraphs(ep, books, findBook) {
+  const data = {}, alt = {};
+  const byAbbr = new Map();
+  // "1Sa" / "1 Sam" -> 1 Samuel: the book whose name starts with these letters (same number).
+  const fromAbbr = (abbr, fileBook) => {
+    const key = abbr.toLowerCase().replace(/\s+/g, '');
+    if (byAbbr.has(key)) return byAbbr.get(key);
+    const num = /^[1-3]/.test(key) ? key[0] : '';
+    const letters = key.replace(/^[1-3]/, '');
+    const cands = books.filter((b) => { const n = b.name.toLowerCase(); const bn = /^[1-3] /.test(n) ? n[0] : ''; return bn === num && n.replace(/^[1-3] /, '').replace(/[^a-z]/g, '').startsWith(letters); });
+    const b = (fileBook && cands.includes(fileBook) ? fileBook : null) || (cands.length === 1 ? cands[0] : null)
+      || (fileBook && !cands.length ? fileBook : null) || cands[0] || null;
+    if (b) byAbbr.set(key, b);
+    return b;
+  };
+  const put = (set, b, c, v, t) => {
+    const verses = ((set[b.id] ||= [])[c - 1] ||= []);
+    if (verses[v - 1]) verses[v - 1][0] += ` ${t}`;
+    else verses[v - 1] = v === 1 ? [t, 1] : [t];
+  };
+  let verses = 0;
+  for (const { href } of ep.chapters) {
+    const text = await ep.zip.text(href);
+    if (!text) continue;
+    let fileBook = null, cur = null;
+    for (const p of paragraphs(parseDoc(text))) {
+      const t = (p.textContent || '').replace(/\s+/g, ' ').trim();
+      if (!t) continue;
+      const m = REF_PARA.exec(t);
+      if (m) {
+        const b = fromAbbr(m[1], fileBook);
+        if (!b) { cur = null; continue; }
+        cur = { b, c: +m[2], v: +m[3] };
+        put(data, b, cur.c, cur.v, m[4].trim());
+        verses++;
+        continue;
+      }
+      // A book's name, e.g. "创世记(Genesis)", fixes which book this file is.
+      const named = /\(([A-Za-z0-9 ]{3,30})\)\s*$/.exec(t);
+      if (named && !cur) { fileBook = findBook(named[1]) || fileBook; continue; }
+      // The same verse in another language follows its reference paragraph.
+      if (cur && CJK_RE.test(t) && !p.querySelector?.('a')) put(alt, cur.b, cur.c, cur.v, t);
+    }
+  }
+  const tidy = (set) => { for (const chs of Object.values(set)) for (let c = 0; c < chs.length; c++) { chs[c] ||= []; for (let i = 0; i < chs[c].length; i++) chs[c][i] ||= ['']; } };
+  tidy(data); tidy(alt);
+  const altVerses = Object.values(alt).reduce((n, chs) => n + chs.reduce((m, vs) => m + vs.filter((x) => x[0]).length, 0), 0);
+  const sampleZh = JSON.stringify(alt).slice(0, 30000);
+  const zhLang = /[們這說來為與對個裡麼]/.test(sampleZh) && !/[们这说来为与对个里么]/.test(sampleZh) ? 'zh-Hant' : 'zh-Hans';
+  return { title: ep.title, lang: 'en', data, report: { verses, byIds: 0, byMarkers: 0, byRefs: verses, books: Object.keys(data).length },
+    alt: altVerses ? { lang: zhLang, data: alt, report: { verses: altVerses, books: Object.keys(alt).length } } : null };
 }
