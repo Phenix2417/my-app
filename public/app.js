@@ -990,7 +990,7 @@ async function analyzeGrammar(text) {
   return [...sections, h('p', { class: 'g-note' }, 'Tap a part to see what it does. Automatic analysis (compromise) · may be wrong for unusual word order')];
 }
 
-// Easton's Bible Dictionary (on the server): the entry for a word, or null. Remembered for the visit.
+// Chinese Bible dictionary (FHL's Chinese Nave's/Torrey's topics, via the server): the entry for a word, or null.
 const bibleCache = new Map();
 function bibleEntryFor(word) {
   const w = String(word || '').toLowerCase();
@@ -1004,11 +1004,11 @@ function bibleEntryFor(word) {
   return bibleCache.get(w);
 }
 function bibleSection(found) {
-  const LIMIT = 420;
-  return h('section', { class: 'bd', lang: 'en' },
-    h('div', { class: 'bd-head' }, 'Bible dictionary', h('span', { class: 'bd-src' }, ` · ${found.source}`)),
+  const LIMIT = 260;
+  return h('section', { class: 'bd', lang: 'zh-Hans' },
+    h('div', { class: 'bd-head' }, '圣经辞典', h('span', { class: 'bd-src' }, ` · ${found.source}`)),
     ...found.entries.map((entry) => {
-      const full = entry.definitions.join('\n\n');
+      const full = entry.text;
       const long = full.length > LIMIT;
       const text = h('p', { class: 'bd-text' }, long ? `${full.slice(0, LIMIT).replace(/\s+\S*$/, '')}…` : full);
       const more = long ? h('button', { class: 'text-btn bd-more', type: 'button', onclick: () => {
@@ -1017,7 +1017,7 @@ function bibleSection(found) {
         more.textContent = open ? 'Less' : 'More';
         positionToolbar();
       } }, 'More') : null;
-      return h('div', { class: 'bd-entry' }, h('div', { class: 'bd-term' }, entry.term), text, more);
+      return h('div', { class: 'bd-entry' }, h('div', { class: 'bd-term' }, entry.term, h('span', { class: 'bd-en', lang: 'en' }, ` ${String(entry.english).toLowerCase()}`)), text, more);
     }));
 }
 
@@ -1088,7 +1088,7 @@ function toggleDictionary(bar, btn) {
     positionToolbar();
   };
   bar.append(h('div', { class: 'dict' }, trans, body,
-    h('p', { class: 'dict-credit' }, multi ? 'Translation, phonetics & audio: Youdao · Dictionary: ECDICT · Bible dictionary: Easton' : 'ECDICT English–Chinese dictionary · Phonetics & audio: Youdao · Bible dictionary: Easton')));
+    h('p', { class: 'dict-credit' }, multi ? 'Translation, phonetics & audio: Youdao · Dictionary: ECDICT · 圣经辞典: 信望爱' : 'ECDICT English–Chinese dictionary · Phonetics & audio: Youdao · 圣经辞典: 信望爱')));
   if (multi) body.replaceChildren(h('p', { class: 'dict-muted' }, 'Tap any word above for its definition, or Grammar to analyse the passage.'));
   else show(words[0]);
 }

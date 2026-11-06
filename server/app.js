@@ -6,6 +6,7 @@ import { BOOKS, BOOK_IDS } from './books.js';
 import { commentaryList, CommentaryError, COMMENTARY_IDS } from './commentary.js';
 import { PronounceError } from './pronounce.js';
 import { TranslateError } from './translate.js';
+import { BibleDictError } from './bibledict.js';
 
 const COLORS = new Set(['yellow', 'green', 'blue', 'pink', 'purple']);
 const USERNAME_RE = /^[a-z0-9_]{3,20}$/i;
@@ -194,8 +195,13 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
         throw e;
       }
     }, true],
-    ['GET', /^\/api\/bible-dictionary\/([a-z' -]{1,40})$/, ({ params: [word] }) => {
-      const found = bibleDict?.(decodeURIComponent(word));
+    ['GET', /^\/api\/bible-dictionary\/([a-z' %-]{1,60})$/, async ({ params: [word] }) => {
+      if (!bibleDict) throw new HttpError(503, 'The Bible dictionary is not set up on this server');
+      let found;
+      try { found = await bibleDict(decodeURIComponent(word)); } catch (e) {
+        if (e instanceof BibleDictError) throw new HttpError(e.status, e.message);
+        throw e;
+      }
       if (!found) throw new HttpError(404, 'Not in the Bible dictionary');
       return found;
     }, true],
