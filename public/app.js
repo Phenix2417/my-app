@@ -1983,8 +1983,7 @@ function showCommentaryToolbar() {
       noteEditor({ ...note, body: body.slice(0, 10000) }, { isNew });
     }),
     bubbleBtn('Copy', ICONS.copy, async () => {
-      const text = selectionHasFullSentence() ? `${selectedQuote()} — ${cm.meta?.name || 'Commentary'}` : selectedQuote();
-      try { await navigator.clipboard.writeText(text); toast('Copied'); } catch { toast("Couldn't copy"); }
+      try { await navigator.clipboard.writeText(selectedQuote()); toast('Copied'); } catch { toast("Couldn't copy"); }
       clearSelection();
     }),
     cmp(state.selection.start, state.selection.end)
