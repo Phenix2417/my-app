@@ -1446,13 +1446,13 @@ function sideDock(items) {
       } else btn.addEventListener('click', () => { closeSideDock(); action(); });
       return btn;
     }));
-  const tab = h('button', { class: 'side-tab', 'aria-controls': 'side-panel', 'aria-expanded': 'false', 'aria-label': 'Show reading options' },
+  const tab = h('button', { class: 'side-tab', 'aria-controls': 'side-panel', 'aria-expanded': 'false', 'aria-label': 'Show options' },
     svg(ICONS.chevronLeft));
   const dock = h('div', { class: 'side-dock' }, tab, panel);
   const setOpen = (open) => {
     dock.classList.toggle('open', open);
     tab.setAttribute('aria-expanded', String(open));
-    tab.setAttribute('aria-label', open ? 'Hide reading options' : 'Show reading options');
+    tab.setAttribute('aria-label', open ? 'Hide options' : 'Show options');
     panel.inert = !open;
     if (!open) { dock.querySelector('.side-popover')?.remove(); dock.querySelector('[aria-expanded="true"].side-btn')?.setAttribute('aria-expanded', 'false'); }
   };
@@ -2059,6 +2059,35 @@ setInterval(async () => {
   await refreshChapterFriendNotes(); paint();
 }, 60000);
 window.addEventListener('resize', () => { positionHandles(); positionToolbar(); });
+
+// Long-press any icon-only button to see what it does (its accessible name), without pressing it.
+const ICON_BUTTONS = '.side-btn, .side-tab, .swatch, .icon-btn, .to-top, .size-btn';
+{
+  let timer = null, target = null, fired = null;
+  document.addEventListener('pointerdown', (e) => {
+    const el = e.target.closest?.(ICON_BUTTONS);
+    clearTimeout(timer);
+    if (!el || (e.pointerType === 'mouse' && e.button !== 0)) { target = null; return; }
+    target = el;
+    timer = setTimeout(() => {
+      const name = el.getAttribute('aria-label') || el.title || el.dataset.c;
+      if (!name) return;
+      fired = el;
+      navigator.vibrate?.(8);
+      toast(name.charAt(0).toUpperCase() + name.slice(1));
+    }, 450);
+  }, true);
+  const cancel = () => clearTimeout(timer);
+  document.addEventListener('pointerup', cancel, true);
+  document.addEventListener('pointercancel', cancel, true);
+  document.addEventListener('pointermove', (e) => { if (target && Math.abs(e.movementX) + Math.abs(e.movementY) > 6) cancel(); }, true);
+  // The long press shouldn't also press the button.
+  document.addEventListener('click', (e) => {
+    if (fired && fired.contains(e.target)) { e.stopImmediatePropagation(); e.preventDefault(); }
+    fired = null;
+  }, true);
+  document.addEventListener('contextmenu', (e) => { if (e.target.closest?.(ICON_BUTTONS)) e.preventDefault(); }, true);
+}
 
 if ('serviceWorker' in navigator && window.isSecureContext) {
   // When a new version of the app is deployed, its service worker takes over; reload to show it,
