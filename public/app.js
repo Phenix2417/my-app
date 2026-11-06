@@ -2880,8 +2880,10 @@ async function checkBibleEpub(bufPromise, fileName, file = null, repair = null) 
       part.missing.length > 0 && part.missing.length < 66 ? h('p', { class: 'handle-sub' }, `Missing: ${part.missing.slice(0, 12).join(', ')}${part.missing.length > 12 ? '…' : ''}`) : null,
       good && part.pct < 90 ? h('p', { class: 'error' }, "This ebook's layout wasn't fully understood, so some verses may be in the wrong place. Check the samples below.") : null,
       ...(good ? [sample(part, 'genesis', 1, 1), sample(part, 'psalms', 23, 1), sample(part, 'john', 3, 16)].filter(Boolean) : []),
-      good && !repair ? h('label', { class: 'field' }, h('span', {}, 'Name'), part.nameIn) : null,
-      good && !repair ? h('label', { class: 'field' }, h('span', {}, 'Year published'), part.yearIn) : null,
+      // Name and year side by side.
+      good && !repair ? h('div', { class: 'field-row' },
+        h('label', { class: 'field' }, h('span', {}, 'Name'), part.nameIn),
+        h('label', { class: 'field field-year' }, h('span', {}, 'Year published'), part.yearIn)) : null,
       good && !repair ? h('label', { class: 'field' }, h('span', {}, 'Short name'), part.shortIn) : null,
     ].filter((x) => x != null && x !== false));
   });
