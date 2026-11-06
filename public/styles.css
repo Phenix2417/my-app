@@ -642,3 +642,10 @@ body.bars-hidden .b-size-panel { display: none; }
 .bible-found { font-size: 16px; line-height: 1.5; margin: 0 0 8px; }
 .bible-sample { font: 16px/1.55 "Noto Serif", Georgia, serif; margin: 6px 0; padding-left: 10px; border-left: 3px solid var(--divider); }
 .bible-sample b { font: 600 13px/1 Roboto, system-ui, sans-serif; color: var(--primary); }
+
+/* Add a Bible: from the phone or from Books */
+.add-bible-choices { display: grid; gap: 10px; margin: 6px 0 4px; }
+.add-bible-choices button { display: flex; align-items: center; justify-content: center; gap: 10px; }
+.add-bible-choices svg { width: 22px; height: 22px; }
+.tonal-btn { background: var(--pill); color: var(--on-bg); border: 0; border-radius: 22px; padding: 11px 22px; font-weight: 500; }
+.pick-grid { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); padding-bottom: 8px; }

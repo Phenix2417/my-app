@@ -126,8 +126,14 @@ test('the same book is kept once, recognised by its content rather than its name
   res = await up('My Bible', Buffer.concat([a, Buffer.from('x')]));
   assert.equal(res.status, 201);
   assert.equal(await count(), 2);
+  // The app can ask first, without uploading.
+  const sha = (await import('node:crypto')).createHash('sha256').update(a).digest('hex');
+  const find = async (q) => (await (await fetch(`${base2}/api/library/find?${q}`, { headers: { Authorization: `Bearer ${token}` } })).json()).book;
+  assert.equal((await find(`sha=${sha}&size=${a.length}`)).id, first.book.id);
+  assert.equal(await find(`sha=${'0'.repeat(64)}&size=${a.length}`), null);
   // A book uploaded before fingerprints existed is still recognised.
   db.prepare('UPDATE library_books SET sha256 = NULL').run();
+  assert.equal((await find(`sha=${sha}&size=${a.length}`)).id, first.book.id);
   assert.equal((await (await up('Old copy', a)).json()).duplicate, true);
   assert.equal(await count(), 2);
   srv.close(); fs.rmSync(dir2, { recursive: true, force: true });

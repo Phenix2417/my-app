@@ -161,6 +161,15 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
     if (!b) throw new HttpError(404, 'Book not found');
     return b;
   }
+  // The person's book with exactly this content, if any (books from before fingerprints get theirs worked out here).
+  async function findSameBook(userId, sha, size) {
+    for (const b of stmt.sameBookCandidates.all(userId, sha, size)) {
+      const bsha = b.sha256 || (library && await library.fingerprint(userId, b.id));
+      if (bsha && !b.sha256) stmt.setLibrarySha.run(bsha, b.id);
+      if (bsha === sha) return stmt.libraryBook.get(b.id, userId);
+    }
+    return null;
+  }
   function needLibrary() { if (!library) throw new HttpError(503, 'Books are not set up on this server'); }
   // Short-lived links so a PDF can open in the phone's own viewer, which can't send the sign-in header.
   const fileLinks = new Map(); // token -> { userId, id, exp }
@@ -241,6 +250,13 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
 
     /* ----- Library: the person's own books ----- */
     ['GET', /^\/api\/library$/, ({ me }) => ({ books: stmt.myLibrary.all(me.id).map(libraryOut) }), true],
+    // Before uploading, the app asks whether the person already has this exact file (by fingerprint), so it isn't sent again.
+    ['GET', /^\/api\/library\/find$/, async ({ me, query }) => {
+      const sha = String(query.get('sha') || ''), size = Number(query.get('size'));
+      if (!/^[0-9a-f]{64}$/.test(sha) || !Number.isInteger(size) || size < 1) throw new HttpError(400, 'Invalid fingerprint');
+      const same = await findSameBook(me.id, sha, size);
+      return { book: same ? libraryOut(same) : null };
+    }, true],
     ['POST', /^\/api\/library$/, async ({ me, query, req }) => {
       needLibrary();
       const declared = query.get('format');
@@ -251,11 +267,8 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
       const format = up.size ? sniffFormat(up.head, declared) : null;
       if (!format) { await library.discard(up.tmp); throw new HttpError(415, 'Only EPUB, PDF and text files can be added.'); }
       // The same book (byte for byte, whatever its name) is kept only once.
-      for (const b of stmt.sameBookCandidates.all(me.id, up.sha256, up.size)) {
-        const sha = b.sha256 || await library.fingerprint(me.id, b.id);
-        if (sha && !b.sha256) stmt.setLibrarySha.run(sha, b.id);
-        if (sha === up.sha256) { await library.discard(up.tmp); return { status: 200, body: { book: libraryOut(stmt.libraryBook.get(b.id, me.id)), duplicate: true } }; }
-      }
+      const same = await findSameBook(me.id, up.sha256, up.size);
+      if (same) { await library.discard(up.tmp); return { status: 200, body: { book: libraryOut(same), duplicate: true } }; }
       const id = crypto.randomBytes(12).toString('base64url');
       const title = cleanText(query.get('title'), 200) || 'Untitled', author = cleanText(query.get('author'), 120);
       await library.keep(up.tmp, me.id, id);

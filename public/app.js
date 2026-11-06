@@ -2310,19 +2310,30 @@ async function deleteMyVersion(v, closePicker) {
 
 // Add a Bible version from an EPUB the person owns: read it on the phone, show what was found, then keep it privately.
 async function addBibleFromEpub() {
-  const books = (await loadLibrary().catch(() => lib.books || [])).filter((b) => b.format === 'epub');
   const input = h('input', { type: 'file', accept: '.epub,application/epub+zip', hidden: true, onchange: () => { const f = input.files[0]; if (f) { close(); checkBibleEpub(f.arrayBuffer(), f.name, f); } } });
   const close = openSheet(() => [
     h('h2', {}, 'Add a Bible'),
-    h('p', { class: 'confirm-text' }, 'Choose the EPUB of a Bible you own, from your phone, Google Drive or Dropbox, or one in your Books. The app reads its books, chapters and verses and shows you what it found before adding it.'),
-    h('button', { class: 'filled-btn', type: 'button', onclick: () => input.click() }, 'Choose an EPUB file'),
+    h('p', { class: 'confirm-text' }, 'Choose the EPUB of a Bible you own. The app reads its books, chapters and verses and shows you what it found before adding it.'),
+    h('div', { class: 'add-bible-choices' },
+      h('button', { class: 'filled-btn', type: 'button', onclick: () => input.click() }, svg(ICONS.addBook), 'From your phone or cloud'),
+      h('button', { class: 'tonal-btn', type: 'button', onclick: () => { close(); chooseBibleFromBooks(); } }, svg(ICONS.books), 'From your Books')),
     input,
-    books.length ? h('div', { class: 'section-label' }, 'From your books') : null,
-    ...books.map((b) => h('button', { class: 'version-item', type: 'button', onclick: () => {
-      close();
-      checkBibleEpub(authFetch(`/api/library/${b.id}/file`).then((r) => r.arrayBuffer()), b.title);
-    } }, svg(ICONS.books), h('span', { class: 'version-name' }, b.title))),
   ], { label: 'Add a Bible' });
+}
+// Pick one of the EPUBs already in Books.
+async function chooseBibleFromBooks() {
+  const grid = h('div', { class: 'lib-grid pick-grid' }, h('p', { class: 'empty-inline' }, 'Loading your books…'));
+  const close = openSheet(() => [h('h2', {}, 'Choose from your Books'), grid], { label: 'Choose from Books' });
+  let books;
+  try { books = (await loadLibrary()).filter((b) => b.format === 'epub'); } catch { books = (lib.books || []).filter((b) => b.format === 'epub'); }
+  if (!books.length) {
+    grid.replaceChildren(h('p', { class: 'empty-inline' }, 'There are no EPUB books in your library yet. Add the Bible from your phone or cloud instead; it will also be added to your Books.'));
+    return;
+  }
+  grid.replaceChildren(...books.map((b) => h('button', { class: 'lib-open', type: 'button', 'aria-label': `Use ${b.title}`, onclick: () => {
+    close();
+    checkBibleEpub(authFetch(`/api/library/${b.id}/file`).then((r) => r.arrayBuffer()), b.title);
+  } }, coverImg(b), h('span', { class: 'lib-title' }, b.title), b.author ? h('span', { class: 'lib-meta' }, b.author) : null)));
 }
 
 const KNOWN_VERSIONS = [[/english standard/i, 'ESV'], [/new international/i, 'NIV'], [/new american standard/i, 'NASB'], [/new king james/i, 'NKJV'],
@@ -2376,11 +2387,17 @@ async function checkBibleEpub(bufPromise, fileName, file = null) {
         let version = null;
         try {
           ({ version } = await api('POST', '/api/my-versions', { short: shortIn.value, name: nameIn.value, lang }));
+          // Save the books six at a time.
           const ids = Object.keys(data);
-          for (let i = 0; i < ids.length; i++) {
-            btn.textContent = `Saving ${i + 1} / ${ids.length}…`;
-            await authFetch(`/api/my-versions/${version.id}/${ids[i]}`, { method: 'PUT', body: JSON.stringify(data[ids[i]].map((c) => c || [])) });
-          }
+          let next = 0, done = 0;
+          btn.textContent = `Saving 0 / ${ids.length}…`;
+          await Promise.all(Array.from({ length: 6 }, async () => {
+            while (next < ids.length) {
+              const id = ids[next++];
+              await authFetch(`/api/my-versions/${version.id}/${id}`, { method: 'PUT', body: JSON.stringify(data[id].map((c) => c || [])) });
+              btn.textContent = `Saving ${++done} / ${ids.length}…`;
+            }
+          }));
           close();
           await loadVersions();
           setVersion(version.id);
@@ -2716,6 +2733,10 @@ async function renderLibrary() {
   try { draw(await loadLibrary()); } catch { if (state.tab === 'books') draw(lib.books || store.get(`library.${uid()}`, null), true); }
 }
 
+// A file's fingerprint (SHA-256), to recognise a book already in the library whatever its name.
+async function fingerprint(buf) {
+  try { return [...new Uint8Array(await crypto.subtle.digest('SHA-256', buf))].map((b) => b.toString(16).padStart(2, '0')).join(''); } catch { return null; }
+}
 // The phone's file picker offers files on the phone and in Google Drive, Dropbox, etc.; each is copied into the account.
 async function addBooks(files) {
   for (const file of files) {
@@ -2730,10 +2751,18 @@ async function addBooks(files) {
         if (book.coverPath) cover = await makeCover(await book.zip.read(book.coverPath));
       } catch { toast(`${file.name} couldn't be opened as an EPUB book.`); continue; }
     }
+    // Already in Books (the same file, whatever its name)? Then don't upload it again.
+    let bytes;
+    try {
+      bytes = await file.arrayBuffer();
+      const sha = await fingerprint(bytes);
+      const { book: same } = sha ? await api('GET', `/api/library/find?sha=${sha}&size=${bytes.byteLength}`) : { book: null };
+      if (same) { toast(`“${same.title}” is already in your books`); continue; }
+    } catch { /* couldn't check: the server still spots a duplicate on upload */ }
     toast(`Adding “${title}”…`);
     try {
       const q = new URLSearchParams({ format, title, author });
-      const { book, duplicate } = await (await authFetch(`/api/library?${q}`, { method: 'POST', body: file })).json();
+      const { book, duplicate } = await (await authFetch(`/api/library?${q}`, { method: 'POST', body: bytes || file })).json();
       if (duplicate) { toast(`“${book.title}” is already in your books`); continue; } // same file, whatever its name
       if (cover) await authFetch(`/api/library/${book.id}/cover`, { method: 'PUT', body: cover }).catch(() => {});
       toast(`Added “${book.title}”`);
