@@ -456,7 +456,8 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
     // …and which names have a Bible wiki article (one Wikipedia request per chapter at most, then kept).
     ['POST', /^\/api\/wiki\/names$/, async ({ body }) => {
       if (!wiki?.names) throw new HttpError(503, 'The Bible wiki is not set up on this server');
-      return { names: await wiki.names(Array.isArray(body?.names) ? body.names.slice(0, 200).map(String) : [], body?.lang === 'zh' ? 'zh' : 'en') };
+      const names = await wiki.names(Array.isArray(body?.names) ? body.names.slice(0, 200).map(String) : [], body?.lang === 'zh' ? 'zh' : 'en');
+      return { names: [...names], unknown: names.unknown || [] };
     }, true],
     // An Easton's Bible Dictionary or ISBE entry (built in, public domain).
     ['GET', /^\/api\/encyclopedia\/(easton|isbe)\/([a-zA-Z0-9' %,-]{1,120})$/, ({ params: [source, word] }) => {

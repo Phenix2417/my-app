@@ -64,7 +64,7 @@ Read the Bible, highlight passages, write notes, and see the notes your friends 
   when Wikipedia has only the other language) has a translate button beside its title. The text is translated in pieces
   (Youdao, up to about 4,000 characters, a piece that can't be translated stays as it is); tapping again shows the original.
 - **Dictionary counts** — in the English text, names (people, God, places, peoples — capitalised words, and the temple,
-  tabernacle, sanctuary and synagogue) have a small raised number saying how many Bible dictionaries have them
+  tabernacle, sanctuary and synagogue) have a small raised number, on their first appearance in the chapter, saying how many Bible dictionaries have them
   (圣经辞典/Bible Dictionary counts once, then Easton, ISBE and the Bible wiki). Each dictionary's button and entry heading
   have their own colour. The ISBE's studies of everyday words ("after", "again") count only when another dictionary has the
   word too. Names are checked with Wikipedia (one request per chapter at most, then kept). Turn it off in Read ⋯ →

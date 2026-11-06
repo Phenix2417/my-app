@@ -42,3 +42,9 @@ test('links to other entries: kept when they lead somewhere, plain text otherwis
   const enc = createEncyclopedias({ data: { easton: [['BAPTISM, CHRISTIAN', 'y']], isbe: [] } });
   assert.equal(enc.entry('easton', 'baptism').entries[0].term, 'BAPTISM, CHRISTIAN');
 });
+
+test('Yahweh finds the JEHOVAH entries', () => {
+  const enc = createEncyclopedias({ data: { easton: [['JEHOVAH', 'x']], isbe: [['JEHOVAH', 'y']] } });
+  assert.deepEqual(enc.has('yahweh'), { easton: true, isbe: true });
+  assert.equal(enc.entry('easton', 'yahweh').entries[0].term, 'JEHOVAH');
+});

@@ -658,8 +658,10 @@ async function markBibleWords() {
   };
   // A small number after the word: how many dictionaries have it (a dictionary in two languages counts once).
   const apply = () => {
+    const seen = new Set(); // only a name's first appearance in the chapter gets its number
     for (const x of words) {
-      const n = !isName(x) ? 0 : (wordMarks.dict.get(keyOf.get(x)) || []).length + (wordMarks.wiki.get(capOf.get(x)) === true ? 1 : 0);
+      let n = !isName(x) ? 0 : (wordMarks.dict.get(keyOf.get(x)) || []).length + (wordMarks.wiki.get(capOf.get(x)) === true ? 1 : 0);
+      if (n) { if (seen.has(keyOf.get(x))) n = 0; else seen.add(keyOf.get(x)); }
       // An empty marker right after the letters ("vision₃," not "vision,₃"); the number is drawn by CSS, so the
       // word's text (copying, quotes, notes) doesn't change.
       const old = x.el.querySelector('.dn');
@@ -677,7 +679,7 @@ async function markBibleWords() {
     if (!todo.length) return;
     const r = await api('POST', url, { [field]: todo });
     if (kind === 'dict') for (const w of todo) wordMarks.dict.set(w, r.marks?.[w] || []);
-    else { const yes = new Set(r.names || []); for (const w of todo) wordMarks.wiki.set(w, yes.has(w)); }
+    else { const yes = new Set(r.names || []), unknown = new Set(r.unknown || []); for (const w of todo) if (!unknown.has(w)) wordMarks.wiki.set(w, yes.has(w)); }
   };
   const firstWord = words[0].el;
   apply();

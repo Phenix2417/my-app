@@ -74,7 +74,9 @@ test('names: one batched request, Bible-related only, remembered', async () => {
       ].concat(titles.filter((t) => !['Nathanael', 'Philip', 'Bethsaida', 'Smith'].includes(t)).map((t) => ({ title: t, missing: true }))) } });
   };
   const wiki = createWikiService({ fetchImpl });
-  assert.deepEqual(await wiki.names(['Nathanael', 'Philip', 'Bethsaida', 'Smith', 'Nathanael', 'not a name']), ['Nathanael', 'Bethsaida']);
+  const found = await wiki.names(['Nathanael', 'Philip', 'Bethsaida', 'Smith', 'Nathanael', 'not a name']);
+  assert.deepEqual([...found], ['Nathanael', 'Bethsaida']);
+  assert.deepEqual(found.unknown, []);
   assert.equal(calls, 1);
   await wiki.names(['Nathanael', 'Smith']);
   assert.equal(calls, 1);
@@ -84,4 +86,11 @@ test('Bible dictionary marks come from the built-in index, with simple base form
   const { createBibleDictionary } = await import('../server/bibledict.js');
   const d = createBibleDictionary({ index: [[0, 1, 'Grace of God'], [1, 2, 'King'], [1, 3, 'Love'], [1, 4, 'On the Sabbath']] });
   assert.deepEqual(d.marks(['grace', 'kings', 'loved', 'on', 'the', 'grace']), ['grace', 'kings', 'loved']);
+});
+
+test('names Wikipedia could not be asked about are reported as unknown, not as missing', async () => {
+  const wiki = createWikiService({ fetchImpl: async () => reply({}, 429) });
+  const found = await wiki.names(['Yahweh']);
+  assert.deepEqual([...found], []);
+  assert.deepEqual(found.unknown, ['Yahweh']);
 });

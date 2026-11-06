@@ -107,8 +107,11 @@ export function createWikiService({ cacheDir, fetchImpl = globalThis.fetch } = {
       }
     }
     if (knownFile && todo.length) { try { await fs.promises.mkdir(cacheDir, { recursive: true }); await fs.promises.writeFile(knownFile, JSON.stringify(Object.fromEntries(known))); } catch { /* best effort */ } }
-    // (true: remembered before Chinese was checked; counts for both.)
-    return wanted.filter((n) => { const k = known.get(n); return lang === 'zh' ? k === 'zh' || k === true : !!k; });
+    // (true: remembered before Chinese was checked; counts for both.) Names not checked yet (Wikipedia unreachable) are
+    // listed as unknown, so the app asks again later instead of taking them as "no article".
+    const unknown = wanted.filter((n) => !known.has(n));
+    const names = wanted.filter((n) => { const k = known.get(n); return lang === 'zh' ? k === 'zh' || k === true : !!k; });
+    return Object.assign(names, { unknown });
   }
 
   const wiki = async function wiki(raw) {
