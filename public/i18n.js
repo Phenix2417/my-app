@@ -40,7 +40,7 @@ const ZH = {
   'Tip: hold a word or tap a verse number to select. Swipe sideways to change chapter.': '提示：按住一个词或点经节号来选择文字，左右滑动换章。',
   "Couldn't load this chapter. Check your connection and try again.": '无法载入这一章，请检查网络连接后再试。',
   "Couldn't load this chapter.": '无法载入这一章。', 'Selection start': '选择起点', 'Selection end': '选择终点',
-  'Dictionary counts': '词典数量标记', Translate: '翻译', Original: '原文', 'Choose a book': '选择书卷', 'Choose book and chapter': '选择书卷和章',
+  'Dictionary counts': '词典数量标记', Translate: '翻译', Original: '原文', 'Try again': '重试', 'Choose a book': '选择书卷', 'Choose book and chapter': '选择书卷和章',
   'Read these verses': '阅读这几节经文', 'Back to where you started': '回到开始的位置', 'Back up to where you started': '向上回到开始的位置',
   'Back down to where you started': '向下回到开始的位置', 'Smaller text': '缩小字号', 'Larger text': '放大字号', 'Reading text size': '阅读字号',
   // Dictionary panel
@@ -133,7 +133,8 @@ const ZH_TEMPLATES = [
   ['Remove {0} as a friend?', '把{0}从朋友中移除？'], ['@{0} · You\'ll stop seeing each other\'s notes.', '@{0} · 你们将互相看不到笔记。'],
   ['{0} can read all your notes', '{0}可以看你所有的笔记'], ['Your notes are hidden from {0}', '你的笔记对{0}隐藏'], ['You can see {0}\'s notes', '你可以看{0}的笔记'],
   ['{0} hasn\'t shared notes with you yet', '{0}还没有和你分享笔记'], ['Your username is @{0}. Friends use it to add you; it can\'t be changed.', '你的用户名是 @{0}。朋友用它添加你，不能更改。'],
-  ['Request failed ({0})', '请求失败（{0}）'], ['Open {0}', '打开{0}'], ['Book options: {0}', '书的选项：{0}'],
+  ['Request failed ({0})', '请求失败（{0}）'], ['{0}: the server isn\'t answering right now ({1}). Try again in a moment.', '{0}：服务器暂时没有响应（{1}），请稍后重试。'],
+ ['Open {0}', '打开{0}'], ['Book options: {0}', '书的选项：{0}'],
   ['{0}: only EPUB, PDF and text files can be added.', '{0}：只能添加 EPUB、PDF 和文本文件。'], ['{0} is larger than 60 MB.', '{0}超过 60 MB。'],
   ['{0} couldn\'t be read. Try choosing it again.', '{0}无法读取，请重新选择。'], ['{0} couldn\'t be opened as an EPUB book ({1}).', '{0}无法作为 EPUB 书打开（{1}）。'],
   ['“{0}” is already on your shelf', '“{0}”已经在书架上'], ['Adding “{0}”…', '正在添加“{0}”…'], ['Added “{0}”', '已添加“{0}”'],

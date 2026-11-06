@@ -255,7 +255,7 @@ async function loadChapter(book, chapter, version = state.version) {
     const p = (async () => {
       let res;
       try { res = await fetch(`/api/bible/${encodeURIComponent(version)}/${book}/${chapter}`, { headers: state.auth ? { Authorization: `Bearer ${state.auth.token}` } : {} }); } catch { throw new OfflineError('You seem to be offline.'); }
-      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Couldn't load this chapter.");
+      if (!res.ok) { const e = new Error((await res.json().catch(() => ({}))).error || `Request failed (${res.status})`); e.status = res.status; throw e; }
       return (await res.json()).verses;
     })();
     chapterCache.set(key, p);
@@ -608,7 +608,12 @@ async function renderReader() {
   let data;
   const version = state.version;
   try { data = await loadChapter(meta.id, chapter, version); } catch (e) {
-    body.append(h('p', { class: 'error' }, e instanceof OfflineError ? `${versionInfo(version).name} needs a connection the first time you open a chapter.` : "Couldn't load this chapter. Check your connection and try again."));
+    // Say which version and why (a missing chapter, the server restarting…), with a button to try again.
+    const why = e instanceof OfflineError ? `${versionInfo(version).name} needs a connection the first time you open a chapter.`
+      : e.status >= 500 || e.status === 0 || !e.status ? `${versionInfo(version).short}: the server isn't answering right now (${e.status || e.message}). Try again in a moment.`
+      : `${versionInfo(version).short}: ${tr(e.message)}`;
+    body.append(h('p', { class: 'error' }, why),
+      h('button', { class: 'tonal-btn', type: 'button', onclick: () => renderReader() }, 'Try again'));
     return;
   }
   if (state.pos.book !== book || state.pos.chapter !== chapter || state.tab !== 'read' || state.version !== version) return;
