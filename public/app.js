@@ -752,6 +752,31 @@ function namePronRow(word) {
 const PH_SOURCES = {
   freedict: ['F', 'Free Dictionary API (Wiktionary)'], mw: ['M', 'Merriam-Webster'], youdao: ['Y', 'Youdao'], wiktionary: ['W', 'Wiktionary'], 'ipa-dict': ['i', 'ipa-dict'], ecdict: ['E', 'ECDICT (offline dictionary)'],
 };
+// Long-press a pronunciation button: show where its phonetic and recording come from (instead of playing it).
+function enableSourceLongPress(btn, accentName) {
+  let timer = null, fired = false;
+  btn.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    fired = false;
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      fired = true;
+      navigator.vibrate?.(8);
+      const ph = btn.querySelector('.ph-src:not(.au-src)'), au = btn.querySelector('.au-src');
+      const phName = PH_SOURCES[ph?.dataset.src]?.[1], auName = AU_SOURCES[au?.dataset.src]?.[1];
+      const parts = [`${accentName} phonetic: ${phName || 'none found'}`];
+      if (auName) parts.push(`Recording: ${auName}`);
+      else parts.push('Recording: tap to play and find out');
+      toast(parts.join(' · '));
+    }, 450);
+  });
+  for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) btn.addEventListener(ev, () => clearTimeout(timer));
+  btn.addEventListener('pointermove', (e) => { if (Math.abs(e.movementX) + Math.abs(e.movementY) > 6) clearTimeout(timer); });
+  // A long press shouldn't also play the sound or open the phone's own menu.
+  btn.addEventListener('click', (e) => { if (fired) { e.stopImmediatePropagation(); e.preventDefault(); fired = false; } }, true);
+  btn.addEventListener('contextmenu', (e) => e.preventDefault());
+}
+
 // Where a recording came from: a badge after the speaker (shown once known).
 const AU_SOURCES = { youdao: ['Y', 'Youdao'], freedict: ['F', 'Free Dictionary API'] };
 function setAudioSource(badge, src) {
@@ -785,6 +810,7 @@ function pronButton(word, accent, fallback) {
   const auBadge = h('span', { class: 'ph-src au-src', 'aria-hidden': 'true', hidden: true });
   const btn = h('button', { class: 'pron', 'aria-label': `Play ${name} pronunciation of ${word}`, onclick: () => playWord(word, accent, btn) },
     h('span', { class: 'accent' }, accent.toUpperCase()), badge, ipa, svg(ICONS.speaker), auBadge);
+  enableSourceLongPress(btn, name);
   phoneticsFor(word).then((p) => {
     const v = p?.[accent];
     setAudioSource(auBadge, p?.audio?.[accent]);

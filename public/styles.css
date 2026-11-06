@@ -440,3 +440,5 @@ body.bars-hidden .back-pill { bottom: calc(20px + env(safe-area-inset-bottom, 0p
 
 /* Recording-source badge after the speaker: a ring rather than a filled square, so it reads differently */
 .au-src { border-radius: 50%; margin-left: -2px; }
+
+.pron { -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; }
