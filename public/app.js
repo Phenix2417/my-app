@@ -757,18 +757,25 @@ const AU_SOURCES = { youdao: ['Y', 'Youdao'], freedict: ['F', 'Free Dictionary A
 function setAudioSource(badge, src) {
   const s = AU_SOURCES[src];
   if (!badge || !s) return;
-  badge.hidden = false;
   badge.textContent = s[0];
   badge.dataset.src = src;
   badge.title = `Recording from ${s[1]}`;
+  refreshAudioBadge(badge);
+}
+// The recording badge only shows when the recording came from a different source than the phonetic.
+function refreshAudioBadge(badge) {
+  if (!badge?.dataset.src) return;
+  const ph = badge.parentElement?.querySelector('.ph-src:not(.au-src)');
+  badge.hidden = !!(ph && !ph.hidden && ph.dataset.src === badge.dataset.src);
 }
 function setPhSource(badge, src) {
   const s = PH_SOURCES[src];
   badge.hidden = !s;
-  if (!s) return;
+  if (!s) { delete badge.dataset.src; refreshAudioBadge(badge.parentElement?.querySelector('.au-src')); return; }
   badge.textContent = s[0];
   badge.dataset.src = src;
   badge.title = `Phonetic from ${s[1]}`;
+  refreshAudioBadge(badge.parentElement?.querySelector('.au-src'));
 }
 function pronButton(word, accent, fallback) {
   const name = accent === 'uk' ? 'British' : 'American';
