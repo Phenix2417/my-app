@@ -223,6 +223,37 @@ function ref(n) {
 }
 
 /* ---------------- shared UI ---------------- */
+// A small info bubble attached to an element (for long presses). Returns { set(text) } to update it.
+let tipEl = null, tipTimer = null;
+function hideTip() { clearTimeout(tipTimer); tipEl?.remove(); tipEl = null; }
+document.addEventListener('pointerdown', (e) => { if (tipEl && !tipEl.contains(e.target)) hideTip(); }, true);
+function tipAt(anchor, text) {
+  hideTip();
+  const tip = h('div', { class: 'tip', role: 'status' }, text);
+  document.body.append(tip);
+  tipEl = tip;
+  const place = () => {
+    const r = anchor.getBoundingClientRect(), w = tip.offsetWidth, hgt = tip.offsetHeight, gap = 8;
+    const vw = document.documentElement.clientWidth, vh = window.innerHeight;
+    let left, top, side;
+    if (anchor.closest('.side-dock')) { left = r.left - w - gap; top = r.top + r.height / 2 - hgt / 2; side = 'left'; } // side bar: to its left
+    else {
+      left = r.left + r.width / 2 - w / 2; top = r.top - hgt - gap; side = 'above';
+      if (top < 8) { top = r.bottom + gap; side = 'below'; }
+    }
+    left = Math.max(8, Math.min(left, vw - w - 8)); top = Math.max(8, Math.min(top, vh - hgt - 8));
+    Object.assign(tip.style, { left: `${left}px`, top: `${top}px` });
+    tip.dataset.side = side;
+    // Point the little arrow at the element.
+    if (side === 'left') tip.style.setProperty('--arrow-y', `${Math.max(10, Math.min(r.top + r.height / 2 - top, hgt - 10))}px`);
+    else tip.style.setProperty('--arrow-x', `${Math.max(12, Math.min(r.left + r.width / 2 - left, w - 12))}px`);
+  };
+  place();
+  const restart = () => { clearTimeout(tipTimer); tipTimer = setTimeout(hideTip, 3000); };
+  restart();
+  return { set(t) { if (tipEl !== tip) return; tip.textContent = t; place(); restart(); } };
+}
+
 let toastTimer;
 function toast(msg) {
   document.querySelector('.toast')?.remove();
@@ -772,7 +803,8 @@ function enableSourceLongPress(btn, accentName) {
       navigator.vibrate?.(8);
       const ph = btn.querySelector('.ph-src:not(.au-src)'), au = btn.querySelector('.au-src');
       const phName = PH_SOURCES[ph?.dataset.src]?.[1];
-      const say = (rec) => toast(`${accentName} phonetic: ${phName || 'none found'} · Recording: ${rec}`);
+      let tip = null;
+      const say = (rec) => { const t = `${accentName} phonetic: ${phName || 'none found'} · Recording: ${rec}`; if (tip) tip.set(t); else tip = tipAt(btn, t); };
       const auName = AU_SOURCES[au?.dataset.src]?.[1];
       if (auName) { say(auName); return; }
       // Not known yet: ask the server (it finds and keeps the recording; nothing is played or stored here).
@@ -2074,7 +2106,7 @@ const ICON_BUTTONS = '.side-btn, .side-tab, .swatch, .icon-btn, .to-top, .size-b
       if (!name) return;
       fired = el;
       navigator.vibrate?.(8);
-      toast(name.charAt(0).toUpperCase() + name.slice(1));
+      tipAt(el, name.charAt(0).toUpperCase() + name.slice(1));
     }, 450);
   }, true);
   const cancel = () => clearTimeout(timer);

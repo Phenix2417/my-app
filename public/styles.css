@@ -448,3 +448,12 @@ svg.line-icon { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-line
 .side-btn svg.line-icon { width: 26px; height: 26px; }
 
 .side-btn, .side-tab, .swatch, .icon-btn, .to-top, .size-btn { -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; }
+
+/* Long-press info bubble, attached to the pressed item */
+.tip { position: fixed; z-index: 60; max-width: min(280px, calc(100vw - 16px)); padding: 8px 12px; border-radius: 10px;
+  background: var(--on-bg); color: var(--bg); font-size: 14px; line-height: 1.4; box-shadow: 0 4px 14px rgba(0,0,0,.3);
+  pointer-events: none; animation: fade .15s; }
+.tip::after { content: ""; position: absolute; width: 10px; height: 10px; background: var(--on-bg); transform: rotate(45deg); }
+.tip[data-side="above"]::after { bottom: -5px; left: var(--arrow-x, 50%); margin-left: -5px; }
+.tip[data-side="below"]::after { top: -5px; left: var(--arrow-x, 50%); margin-left: -5px; }
+.tip[data-side="left"]::after { right: -5px; top: var(--arrow-y, 50%); margin-top: -5px; }
