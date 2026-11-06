@@ -568,8 +568,7 @@ async function renderReader() {
       moreMenu([
       { id: 'show-friends', label: "Friends' notes", icon: ICONS.friendsNotes, toggle: { get: () => state.showFriends, set: setShowFriends } },
       { id: 'open-commentary', label: 'Commentary', icon: ICONS.commentaryBooks, action: () => openCommentaryPage(topVisibleVerse()) },
-      { id: 'bible-version', label: 'Bible version', icon: ICONS.versions, action: () => openVersionPicker() },
-      { id: 'parallel-version', label: 'Parallel version', icon: ICONS.parallel, action: () => openParallelPicker() },
+      { id: 'bible-version', label: 'Bible versions', icon: ICONS.versions, action: () => openVersionPicker() },
       { id: 'text-size', label: 'Text size', icon: ICONS.serifAa, popover: textSizeControl },
     ])),
     scroller);
@@ -630,7 +629,12 @@ function buildVerses(verses, alt = null, altVersion = null) {
       }
     });
     const altText = alt?.[vi]?.[0];
-    if (altText) verse.append(h('span', { class: 'verse-alt', lang: versionInfo(altVersion).lang }, altText));
+    if (alt) {
+      // Each text carries its version's name, small, at the right (like a printed parallel Bible).
+      verse.querySelector('.vnum').after(h('span', { class: 'v-label', 'aria-hidden': 'true' }, versionInfo().short));
+      if (altText) verse.append(h('span', { class: 'verse-alt', lang: versionInfo(altVersion).lang },
+        h('span', { class: 'v-label', 'aria-hidden': 'true' }, versionInfo(altVersion).short), altText));
+    }
     reader.verseEls[v] = verse;
     frag.append(verse);
   });
@@ -2288,39 +2292,58 @@ function setVersion(id, { quiet = false } = {}) {
   goTo(state.pos, verse > 1 ? verse : null);
   toast(versionInfo(id).name);
 }
+// Choose one version, or two to read side by side: 1 is shown first (highlights and notes go there), 2 under each verse.
 async function openVersionPicker() {
   const versions = await loadVersions();
-  const item = (v) => h('div', { class: 'version-row' },
-    h('button', { class: 'version-item', type: 'button', role: 'radio', 'aria-checked': String(v.id === state.version), lang: v.lang,
-      onclick: () => { closeSheet(); setVersion(v.id); } },
-    h('span', { class: 'version-short' }, v.short), h('span', { class: 'version-name' }, v.name), svg(ICONS.check)),
-    v.mine ? deleteNoteBtn(() => deleteMyVersion(v, closeSheet), `Delete ${v.short}`) : null);
+  let picks = [state.version, state.parallel].filter((id, i, a) => id && a.indexOf(id) === i && versions.some((v) => v.id === id));
+  if (!picks.length) picks = ['web'];
+  const rows = new Map();
+  const done = h('button', { class: 'filled-btn', type: 'button', onclick: () => {
+    closeSheet();
+    const [main, second = null] = picks;
+    const changed = main !== state.version || second !== state.parallel;
+    state.parallel = second; store.set('parallel', second);
+    if (main !== state.version) setVersion(main);
+    else if (changed) { const verse = topVisibleVerse(); clearSelection(); goTo(state.pos, verse > 1 ? verse : null); }
+  } }, 'Done');
+  const hint = h('p', { class: 'version-note' });
+  const show = () => {
+    for (const [id, el] of rows) {
+      const n = picks.indexOf(id) + 1;
+      el.setAttribute('aria-checked', String(n > 0));
+      el.querySelector('.pick-n').textContent = n || '';
+    }
+    done.disabled = !picks.length;
+    hint.textContent = picks.length === 2
+      ? `${versionInfo(picks[0]).short} with ${versionInfo(picks[1]).short} under each verse. Highlights and notes go on ${versionInfo(picks[0]).short}.`
+      : 'Tap a second version to read two side by side.';
+  };
+  const toggle = (id) => {
+    if (picks.includes(id)) picks = picks.filter((x) => x !== id);
+    else if (picks.length < 2) picks.push(id);
+    else picks = [picks[0], id];
+    show();
+  };
+  const item = (v) => {
+    const btn = h('button', { class: 'version-item', type: 'button', role: 'checkbox', 'aria-checked': 'false', lang: v.lang, onclick: () => toggle(v.id) },
+      h('span', { class: 'version-short' }, v.short), h('span', { class: 'version-name' }, v.name), h('span', { class: 'pick-n', 'aria-hidden': 'true' }));
+    rows.set(v.id, btn);
+    return h('div', { class: 'version-row' }, btn, v.mine ? deleteNoteBtn(() => deleteMyVersion(v, closeSheet), `Delete ${v.short}`) : null);
+  };
   const group = (title, list) => list.length ? [h('div', { class: 'section-label' }, title),
-    h('div', { class: 'version-list', role: 'radiogroup', 'aria-label': title }, ...list.map(item))] : [];
+    h('div', { class: 'version-list', role: 'group', 'aria-label': title }, ...list.map(item))] : [];
   const builtIn = versions.filter((v) => !v.mine);
   const closeSheet = openSheet(() => [
-    h('h2', {}, 'Bible version'),
+    h('h2', {}, 'Bible versions'),
+    hint,
     ...group('English', builtIn.filter((v) => !/^zh/.test(v.lang))),
     ...group('中文', builtIn.filter((v) => /^zh/.test(v.lang))),
     ...group('Your Bibles', versions.filter((v) => v.mine)),
     h('button', { class: 'text-btn add-version', type: 'button', onclick: () => { closeSheet(); addBibleFromEpub(); } }, svg(ICONS.addBook), 'Add a Bible from an EPUB you own'),
     h('p', { class: 'version-note' }, 'Highlights and notes stay with the version they were made in. A Bible you add is kept privately in your account; friends can\'t read it.'),
+    h('div', { class: 'sheet-actions sticky-actions' }, h('span', { class: 'spacer' }), done),
   ], { label: 'Bible version' });
-}
-
-// A second version shown under each verse of the one being read (e.g. ESV with 和合本 underneath).
-async function openParallelPicker() {
-  const versions = (await loadVersions()).filter((v) => v.id !== state.version);
-  const choose = (id) => { closeSheet(); state.parallel = id; store.set('parallel', id); const verse = topVisibleVerse(); goTo(state.pos, verse > 1 ? verse : null); };
-  const row = (id, short, name, lang) => h('button', { class: 'version-item', type: 'button', role: 'radio', 'aria-checked': String((state.parallel || null) === id), lang,
-    onclick: () => choose(id) }, h('span', { class: 'version-short' }, short), h('span', { class: 'version-name' }, name), svg(ICONS.check));
-  const closeSheet = openSheet(() => [
-    h('h2', {}, 'Parallel version'),
-    h('p', { class: 'confirm-text' }, `Show a second version under each verse of ${versionInfo().short}, like a parallel Bible. Highlights and notes stay on ${versionInfo().short}.`),
-    h('div', { class: 'version-list', role: 'radiogroup', 'aria-label': 'Parallel version' },
-      row(null, 'None', 'Only one version'),
-      ...versions.map((v) => row(v.id, v.short, v.name, v.lang))),
-  ], { label: 'Parallel version' });
+  show();
 }
 
 async function deleteMyVersion(v, closePicker) {

@@ -657,7 +657,15 @@ body.bars-hidden .b-size-panel { display: none; }
 
 /* Parallel version: each verse, then the same verse in the second version below it */
 .reader-body.parallel .verse { margin-bottom: .55em; }
-.verse-alt { display: block; margin-top: .15em; font-size: .9em; line-height: 1.75; color: var(--on-bg); opacity: .8;
-  -webkit-user-select: none; user-select: none; }
+.verse-alt { display: block; margin-top: .25em; line-height: 1.75; color: var(--on-bg); -webkit-user-select: none; user-select: none; }
 .verse-alt:lang(zh) { font-family: "Noto Serif SC", "Noto Serif TC", "Songti SC", serif; letter-spacing: .02em; }
 .r-title .r-version { white-space: nowrap; }
+
+/* Two versions: each text labelled with its version, small, at the right */
+.reader-body.parallel .verse { margin-bottom: .9em; }
+.reader-body.parallel .v-label { float: right; margin: .35em 0 0 .6em; font: 400 11px/1.2 Roboto, system-ui, sans-serif; color: var(--muted);
+  letter-spacing: .02em; -webkit-user-select: none; user-select: none; }
+.version-item .pick-n { min-width: 24px; height: 24px; border-radius: 12px; display: grid; place-items: center; font: 600 13px/1 Roboto, system-ui, sans-serif; }
+.version-item[aria-checked="true"] .pick-n { background: var(--primary); color: var(--on-primary); }
+.version-item svg { display: none; }
+.sticky-actions { position: sticky; bottom: -24px; background: var(--surface-2); padding: 10px 0 8px; margin-top: 4px; }
