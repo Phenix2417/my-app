@@ -41,7 +41,7 @@ const ZH = {
   "Couldn't load this chapter. Check your connection and try again.": '无法载入这一章，请检查网络连接后再试。',
   "Couldn't load this chapter.": '无法载入这一章。', 'Selection start': '选择起点', 'Selection end': '选择终点',
   'Dictionary counts': '词典数量标记', Translate: '翻译', Original: '原文', 'Try again': '重试', 'Open as ebook': '作为电子书打开', 'Open in Bible reader': '在圣经阅读器中打开', 'Import as a Bible': '作为圣经导入', 'Change cover': '更换封面', 'Cover changed': '封面已更换', "That picture couldn't be used.": '这张图片无法使用。', Messages: '消息', Chat: '聊天', 'Search friends or groups': '搜索好友或群组', All: '全部', Private: '私聊', Groups: '群聊', Group: '群',
-  'New chat': '新建聊天', 'New group chat': '新建群聊', Shared: '分享了', 'Shared verse': '分享经文', 'Open in Read →': '在读经中打开 →',
+  'New chat': '新建聊天', 'New group chat': '新建群聊', Shared: '分享了', 'Shared verse': '分享经文', 'Shared note': '分享笔记', 'Shared a note': '分享了笔记', 'Open in Read →': '在读经中打开 →',
   'Share to chat': '分享到聊天', 'Share a verse': '分享经文', 'Say something…': '说点什么…', 'Back to Chat': '返回聊天', members: '位成员',
   'Group name': '群名称', 'Add members': '添加成员', Create: '创建', Members: '成员', 'Rename group': '修改群名称', 'Leave group': '退出群聊', Leave: '退出',
   'Remove friend': '移除好友', 'Go to Read': '去读经', 'Select the verses to share': '请选中要分享的经文', 'Nothing found.': '没有找到。',

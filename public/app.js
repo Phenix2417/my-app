@@ -3099,7 +3099,7 @@ function verseCard(v) {
   const names = [name(v), v.alt ? name(v.alt) : ''].filter(Boolean).join(' + ');
   const zh = (x) => (/[\u3400-\u9fff]/.test(x.text) ? 'zh-Hans' : 'en');
   return h('div', { class: 'verse-card' },
-    h('div', { class: 'verse-card-head' }, `${tr('Shared verse')} · ${verseRef(v)}`, names ? h('span', { class: 'verse-card-version' }, ` · ${names}`) : null),
+    h('div', { class: 'verse-card-head' + (v.kind === 'note' ? ' note-head' : '') }, `${tr(v.kind === 'note' ? 'Shared note' : 'Shared verse')} · ${verseRef(v)}`, names ? h('span', { class: 'verse-card-version' }, ` · ${names}`) : null),
     h('p', { class: 'verse-card-text', lang: zh(v) }, v.text),
     v.alt ? h('p', { class: 'verse-card-text verse-card-alt', lang: zh(v.alt) }, v.alt.text) : null,
     h('button', { class: 'text-btn verse-card-open', type: 'button', onclick: () => {
@@ -3115,7 +3115,7 @@ function verseCard(v) {
 // mixed): its words are separated by script, the second version's named after the one read alongside.
 function noteVerse(n) {
   const version = n.version || 'web';
-  const v = { book: n.book, chapter: n.chapter, start: n.start.verse, end: n.end.verse, version, label: versionInfo(version).short, text: n.quote.slice(0, 2000) };
+  const v = { kind: 'note', book: n.book, chapter: n.chapter, start: n.start.verse, end: n.end.verse, version, label: versionInfo(version).short, text: n.quote.slice(0, 2000) };
   const CJK = /[\u3000-\u303f\u3400-\u9fff\uf900-\ufaff\uff00-\uffef「」『』]/;
   const runs = String(n.quote).match(/[\u3000-\u303f\u3400-\u9fff\uf900-\ufaff\uff00-\uffef「」『』]+|[^\u3000-\u303f\u3400-\u9fff\uf900-\ufaff\uff00-\uffef「」『』]+/g) || [];
   const zh = runs.filter((r) => CJK.test(r)).join(''), latin = runs.filter((r) => !CJK.test(r) && /[A-Za-z]/.test(r)).map((r) => r.trim()).join(' ');
@@ -3362,7 +3362,7 @@ async function renderFriends() {
     const q = search.value.trim().toLowerCase();
     const rows = c.chats.filter((x) => (filter === 'all' || x.kind === filter) && (!q || x.name.toLowerCase().includes(q) || x.user?.username.toLowerCase().includes(q)));
     for (const x of rows) {
-      const last = x.last ? `${x.kind === 'group' && x.last.from ? `${dn(x.last.from)}：` : x.last.mine ? (LANG === 'zh' ? '我：' : 'You: ') : ''}${x.last.body.trim() ? x.last.body : x.last.verse ? `${tr('Shared')} ${verseRef(x.last.verse)}` : ''}` : '';
+      const last = x.last ? `${x.kind === 'group' && x.last.from ? `${dn(x.last.from)}：` : x.last.mine ? (LANG === 'zh' ? '我：' : 'You: ') : ''}${x.last.verse ? `${tr(x.last.verse.kind === 'note' ? 'Shared a note' : 'Shared')} ${verseRef(x.last.verse)}${x.last.body.trim() ? `：${x.last.body}` : ''}` : x.last.body}` : '';
       kids.push(h('button', { class: 'chat-row', type: 'button', onclick: () => openChatPage(x) },
         x.kind === 'group' ? avatar(null, x.name) : avatar(x.user),
         h('div', { class: 'chat-main' },

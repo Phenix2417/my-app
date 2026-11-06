@@ -201,6 +201,8 @@ test('a shared verse can carry two versions, each with its name', async () => {
   const ref = { book: 'galatians', chapter: 4, start: 2, end: 3, version: 'uX1234567', label: 'ESV', text: 'but he is under guardians',
     alt: { version: 'uY1234567', label: '和合本', text: '乃在师傅和管家的手下' } };
   await api('POST', `/api/messages/${b.user.id}`, { token: a.token, body: { ref } });
-  const [m] = (await api('GET', `/api/messages/${a.user.id}`, { token: b.token })).data.messages;
-  assert.deepEqual([m.ref.label, m.ref.text, m.ref.alt.label, m.ref.alt.text], ['ESV', 'but he is under guardians', '和合本', '乃在师傅和管家的手下']);
+  await api('POST', `/api/messages/${b.user.id}`, { token: a.token, body: { ref: { ...ref, kind: 'note' }, body: 'My note' } });
+  const [m, n] = (await api('GET', `/api/messages/${a.user.id}`, { token: b.token })).data.messages;
+  assert.deepEqual([m.ref.label, m.ref.text, m.ref.alt.label, m.ref.alt.text, m.ref.kind], ['ESV', 'but he is under guardians', '和合本', '乃在师傅和管家的手下', undefined]);
+  assert.deepEqual([n.ref.kind, n.body], ['note', 'My note']);
 });

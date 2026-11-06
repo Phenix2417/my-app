@@ -274,7 +274,8 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
     const label = (x) => String(x?.label ?? '').trim().slice(0, 20);
     // The second version's words, when two were read side by side.
     const altText = String(ref.alt?.text ?? '').trim().slice(0, 2000);
-    return { book, chapter, start, end, version: version(ref), ...(label(ref) ? { label: label(ref) } : {}), text,
+    // kind: 'note' for a shared note (else a shared verse).
+    return { book, chapter, start, end, ...(ref.kind === 'note' ? { kind: 'note' } : {}), version: version(ref), ...(label(ref) ? { label: label(ref) } : {}), text,
       ...(altText ? { alt: { version: version(ref.alt), ...(label(ref.alt) ? { label: label(ref.alt) } : {}), text: altText } } : {}) };
   }
   const messageOut = (m, me) => ({ id: m.id, mine: m.from_id === me, body: m.body, createdAt: m.created_at,
