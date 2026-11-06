@@ -246,10 +246,19 @@ const VERSION_YEARS = { ESV: 2001, NIV: 1978, NASB: 1971, NKJV: 1982, CSB: 2017,
   和合本: 1919, 新译本: 1992, 当代译本: 1979, 思高本: 1968 };
 const versionYear = (v) => v?.year || (v?.mine ? VERSION_YEARS[v.short] : null) || null;
 async function loadVersions() {
-  try { state.versions = (await api('GET', '/api/versions')).versions; store.set('versions', state.versions); } catch { /* keep the saved list */ }
+  try {
+    state.versions = (await api('GET', '/api/versions')).versions; store.set('versions', state.versions);
+    // The version being read is remembered on the phone, not per account: one this account doesn't have (another
+    // account's own Bible, or one deleted) falls back to the World English Bible.
+    const has = (id) => state.versions.some((v) => v.id === id);
+    if (!has(state.version)) { state.version = 'web'; store.set('version', 'web'); if (state.tab === 'read') renderReader(); }
+    if (state.parallel && !has(state.parallel)) { state.parallel = null; store.set('parallel', null); if (state.tab === 'read') renderReader(); }
+  } catch { /* keep the saved list */ }
   return state.versions || FALLBACK_VERSIONS;
 }
-const versionInfo = (id = state.version) => (state.versions || FALLBACK_VERSIONS).find((v) => v.id === id) || { id, short: id, name: id, lang: 'en' };
+// A version not in the list (not loaded yet, or not this account's) never shows its internal id.
+const versionInfo = (id = state.version) => (state.versions || FALLBACK_VERSIONS).find((v) => v.id === id)
+  || (/^u/.test(id) ? { id, short: tr('Bible'), name: tr('Bible'), lang: 'en' } : { id, short: id.toUpperCase(), name: id, lang: 'en' });
 const isChineseVersion = (id = state.version) => /^zh/.test(versionInfo(id).lang || '');
 // A chapter's verses ([[text, para?], ...]) in a version: the built-in World English Bible, or fetched (and kept by the server).
 const chapterCache = new Map();
@@ -3061,7 +3070,8 @@ async function openChat(u, prefill = '') {
 
 // A friend's note made in a Bible this person doesn't have: read the verse in their own translation, or ask the friend
 // about that Bible (where to get the ebook).
-function friendNoteChoice(n) {
+async function friendNoteChoice(n) {
+  await loadVersions();
   const where = ref(n), label = n.versionLabel, current = versionInfo();
   openSheet((close) => [
     h('h2', {}, `${dn(n.author)}'s note is in ${label}`),
@@ -3242,6 +3252,10 @@ function signOut(expired) {
   state.auth = null;
   store.del('auth'); store.del('friends'); store.del('friendsFeed');
   state.friends = null; state.friendsFeed = [];
+  // The account's own Bibles go with it: the next account starts on a version everyone has.
+  if (/^u/.test(state.version || '')) { state.version = 'web'; store.set('version', 'web'); }
+  if (/^u/.test(state.parallel || '')) { state.parallel = null; store.set('parallel', null); }
+  state.versions = null; store.del('versions');
   clearSelection();
   renderAuth();
   if (expired) toast('Please sign in again');
