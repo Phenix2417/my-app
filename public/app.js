@@ -523,10 +523,18 @@ async function openQuotedCommentary(q) {
 }
 
 // An existing note opens to read (quotes are links); the pencil switches to the editor.
+// A note's actions in one ⋯ menu: share it to a chat (Bible notes), edit, delete.
+function noteMenu(note, { close, afterDelete } = {}) {
+  return moreMenu([
+    note.lib ? null : { id: `nm-share-${note.id}`, label: 'Share to chat', icon: ICONS.message, action: () => { close?.(); shareVerse(noteVerse(note), note.body); } },
+    { id: `nm-edit-${note.id}`, label: 'Edit note', icon: ICONS.pencil, action: () => { close?.(); noteEditor(note); } },
+    { id: `nm-delete-${note.id}`, label: 'Delete', icon: ICONS.close, action: () => confirmDeleteNote(note, afterDelete || close) },
+  ].filter(Boolean), { lang: false });
+}
+
 function noteViewer(note) {
   openSheet((close) => [
-    h('div', { class: 'title-row note-view-head' }, h('h2', {}, noteRef(note), noteTime(note)),
-      h('span', { class: 'note-actions' }, editNoteBtn(() => { close(); noteEditor(note); }), deleteNoteBtn(() => confirmDeleteNote(note, close)))),
+    h('div', { class: 'title-row note-view-head' }, h('h2', {}, noteRef(note), noteTime(note)), noteMenu(note, { close })),
     h('div', { class: 'quote', dataset: { c: note.color } }, note.quote),
     note.body ? h('p', { class: 'note-body' }, noteBodyNodes(note.body)) : null,
   ], { label: 'Note' });
@@ -2146,7 +2154,14 @@ function showNotesAt(p) {
   if (mine.length === 1 && !friends.length) return noteViewer(mine[0]);
   openSheet((close) => [
     h('h2', {}, 'Notes here'),
-    ...mine.map((n) => { const card = noteCard(n, { onEdit: () => { close(); noteEditor(n); }, onDelete: () => confirmDeleteNote(n, () => { card.remove(); if (!document.querySelector('.sheet .card')) close(); }) }); return card; }),
+    ...mine.map((n) => {
+      const card = noteCard(n, { menu: [
+        { id: `nh-share-${n.id}`, label: 'Share to chat', icon: ICONS.message, action: () => { close(); shareVerse(noteVerse(n), n.body); } },
+        { id: `nh-edit-${n.id}`, label: 'Edit note', icon: ICONS.pencil, action: () => { close(); noteEditor(n); } },
+        { id: `nh-delete-${n.id}`, label: 'Delete', icon: ICONS.close, action: () => confirmDeleteNote(n, () => { card.remove(); if (!document.querySelector('.sheet .card')) close(); }) },
+      ] });
+      return card;
+    }),
     ...friends.map((n) => noteCard(n, { friend: true })),
   ], { label: 'Notes on this passage' });
 }
@@ -2271,7 +2286,9 @@ function moreMenu(items, { lang: withLanguage = true } = {}) {
       }));
     document.body.append(menu);
     const r = btn.getBoundingClientRect();
-    menu.style.top = `${r.bottom + 6}px`;
+    // Below the button, or above it when there's no room underneath (e.g. in a sheet low on the screen).
+    const below = r.bottom + 6 + menu.offsetHeight <= innerHeight - 8;
+    menu.style.top = `${below ? r.bottom + 6 : Math.max(8, r.top - 6 - menu.offsetHeight)}px`;
     menu.style.right = `${Math.max(8, innerWidth - r.right)}px`;
     btn.setAttribute('aria-expanded', 'true');
     document.addEventListener('keydown', onKey);
