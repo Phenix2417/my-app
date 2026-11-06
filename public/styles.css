@@ -770,3 +770,6 @@ body.bars-hidden .b-size-panel { display: none; }
 .chat-verse .line-icon, .chat-send .line-icon { width: 20px; height: 20px; }
 body:has(.chat-screen) .bottom-nav { display: none; }
 .chat-line.mine .bubble-text { color: var(--on-primary); }
+/* ⋯ on a note card (Notes page): share to chat, edit, delete */
+.card-head .card-menu { margin: -10px -10px -10px auto; align-self: center; }
+.card-head .card-menu .more-btn { width: 40px; height: 40px; }

@@ -465,11 +465,13 @@ const deleteNoteBtn = (onclick, label = 'Delete') => h('button', { class: 'icon-
   onclick: (e) => { e.stopPropagation(); onclick(); } }, svg(ICONS.close));
 const editNoteBtn = (onclick) => h('button', { class: 'icon-btn edit-note', type: 'button', 'aria-label': 'Edit note', title: 'Edit note',
   onclick: (e) => { e.stopPropagation(); onclick(); } }, svg(ICONS.pencil));
-function noteCard(n, { onClick, friend, onEdit, onDelete, title } = {}) {
+// menu: a ⋯ button with these items (e.g. Share to chat, Edit, Delete).
+function noteCard(n, { onClick, friend, onEdit, onDelete, title, menu } = {}) {
   return h('div', { class: 'card' + (onClick ? ' clickable' : ''), onclick: onClick, tabindex: onClick ? 0 : null,
-    onkeydown: onClick ? (e) => { if (e.key === 'Enter') onClick(); } : null },
+    onkeydown: onClick ? (e) => { if (e.key === 'Enter' && e.target === e.currentTarget) onClick(); } : null },
   h('div', { class: 'card-head' }, h('span', { class: 'note-title' }, title || noteRef(n), noteTime(n)), friend ? h('span', { class: 'who', title: '@' + n.author.username }, dn(n.author)) : null,
-    onEdit || onDelete ? h('span', { class: 'note-actions' }, onEdit ? editNoteBtn(onEdit) : null, onDelete ? deleteNoteBtn(onDelete) : null) : null),
+    onEdit || onDelete ? h('span', { class: 'note-actions' }, onEdit ? editNoteBtn(onEdit) : null, onDelete ? deleteNoteBtn(onDelete) : null) : null,
+    menu ? h('span', { class: 'card-menu', onclick: (e) => e.stopPropagation(), onkeydown: (e) => e.stopPropagation() }, moreMenu(menu, { lang: false })) : null),
   h('div', { class: 'quote', dataset: { c: n.color } }, n.quote),
   n.body ? h('p', { class: 'note-body' }, noteBodyNodes(n.body)) : null);
 }
@@ -2223,7 +2225,7 @@ function switchLanguage(lang = LANG === 'zh' ? 'en' : 'zh') {
   if (state.auth) render(); else renderAuth(lastAuthMode);
 }
 
-function moreMenu(items) {
+function moreMenu(items, { lang: withLanguage = true } = {}) {
   const btn = h('button', { class: 'icon-btn more-btn', type: 'button', 'aria-label': 'More options', title: 'More options',
     'aria-haspopup': 'menu', 'aria-expanded': 'false' }, svg(ICONS.more));
   let menu = null;
@@ -2237,7 +2239,7 @@ function moreMenu(items) {
   const open = () => {
     closeMenu();
     // Every ⋯ menu ends with the interface language switch (shown in the other language, so it can be found).
-    const all = [...items, { id: 'ui-language', label: LANG === 'zh' ? 'English interface' : '中文界面', icon: ICONS.versions, action: () => switchLanguage(), lang: true }];
+    const all = withLanguage ? [...items, { id: 'ui-language', label: LANG === 'zh' ? 'English interface' : '中文界面', icon: ICONS.versions, action: () => switchLanguage(), lang: true }] : items;
     menu = h('div', { class: 'more-menu', role: 'menu', 'aria-label': 'More options' },
       ...all.map(({ id, label, icon, toggle, action, popover, lang }) => {
         const item = h('button', { id, class: 'menu-item', type: 'button', role: toggle ? 'menuitemcheckbox' : 'menuitem' },
@@ -3031,7 +3033,12 @@ async function renderNotes() {
     const open = (n) => () => { setVersion(n.version || 'web', { quiet: true }); goTo({ book: n.book, chapter: n.chapter }, n.start.verse); };
     if (state.notesTab === 'mine') {
       const notes = Object.values(state.mine.notes).sort((a, b) => b.updatedAt - a.updatedAt);
-      list.replaceChildren(...(notes.length ? notes.map((n) => noteCard(n, { onClick: open(n) }))
+      list.replaceChildren(...(notes.length ? notes.map((n) => noteCard(n, { onClick: open(n), menu: [
+        { id: `note-share-${n.id}`, label: 'Share to chat', icon: ICONS.message, action: () => shareVerse(
+          { book: n.book, chapter: n.chapter, start: n.start.verse, end: n.end.verse, version: n.version || 'web', text: n.quote.slice(0, 2000) }, n.body) },
+        { id: `note-edit-${n.id}`, label: 'Edit note', icon: ICONS.pencil, action: () => noteEditor(n) },
+        { id: `note-delete-${n.id}`, label: 'Delete', icon: ICONS.close, action: () => confirmDeleteNote(n, () => renderNotes()) },
+      ] }))
         : [h('p', { class: 'empty' }, 'No notes yet. In Read, hold a word to start a highlight.')]));
     } else {
       const notes = state.friendsFeed;
@@ -3088,11 +3095,13 @@ function verseCard(v) {
 }
 
 // Send a verse (from the reading bubble): to the chat it was picked for, or to one chosen now.
-async function shareVerse(verse) {
+// text: words to send with it (a note's text).
+async function shareVerse(verse, text = '') {
+  const message = { ref: verse, ...(text ? { body: text } : {}) };
   const target = state.shareTarget;
   if (target) {
     state.shareTarget = null;
-    await sendToChat(target, { ref: verse });
+    await sendToChat(target, message);
     return openChatPage(target);
   }
   await refreshChats();
@@ -3101,7 +3110,7 @@ async function shareVerse(verse) {
     h('h2', {}, `Share ${verseRef(verse)}`),
     chats.length ? h('div', { class: 'chat-rows' }, ...chats.map((x) => h('button', { class: 'chat-row', type: 'button', onclick: async () => {
       close();
-      if (await sendToChat(x, { ref: verse })) toast(`Sent to ${x.name}`);
+      if (await sendToChat(x, message)) toast(`Sent to ${x.name}`);
     } }, x.kind === 'group' ? avatar(null, x.name) : avatar(x.user), h('div', { class: 'chat-main' }, h('div', { class: 'chat-name' }, x.name)))))
       : h('p', { class: 'empty-inline' }, 'No chats yet. Add a friend in Chat first.'),
   ], { label: 'Share to chat' });
@@ -3167,7 +3176,8 @@ async function renderChatPage() {
         const today = t.toDateString() === new Date().toDateString();
         kids.push(h('div', { class: 'chat-day' }, `${today ? (LANG === 'zh' ? '今天' : 'Today') : chatTime(m.createdAt)} ${t.toLocaleTimeString(LANG === 'zh' ? 'zh-CN' : undefined, { hour: '2-digit', minute: '2-digit', hour12: false })}`));
       }
-      const content = [m.body.trim() ? h('div', { class: 'bubble-text note-body' }, m.body) : null, m.ref ? verseCard(m.ref) : null].filter(Boolean);
+      // A shared verse first, then any words with it (a shared note's text).
+      const content = [m.ref ? verseCard(m.ref) : null, m.body.trim() ? h('div', { class: 'bubble-text note-body' }, m.body) : null].filter(Boolean);
       if (m.mine) kids.push(h('div', { class: 'chat-line mine' }, h('div', { class: 'chat-bubble' }, ...content)));
       else {
         const from = m.from || chat.user;
@@ -3321,7 +3331,7 @@ async function renderFriends() {
     const q = search.value.trim().toLowerCase();
     const rows = c.chats.filter((x) => (filter === 'all' || x.kind === filter) && (!q || x.name.toLowerCase().includes(q) || x.user?.username.toLowerCase().includes(q)));
     for (const x of rows) {
-      const last = x.last ? `${x.kind === 'group' && x.last.from ? `${dn(x.last.from)}：` : x.last.mine ? (LANG === 'zh' ? '我：' : 'You: ') : ''}${x.last.verse ? `${tr('Shared')} ${verseRef(x.last.verse)}` : x.last.body}` : '';
+      const last = x.last ? `${x.kind === 'group' && x.last.from ? `${dn(x.last.from)}：` : x.last.mine ? (LANG === 'zh' ? '我：' : 'You: ') : ''}${x.last.body.trim() ? x.last.body : x.last.verse ? `${tr('Shared')} ${verseRef(x.last.verse)}` : ''}` : '';
       kids.push(h('button', { class: 'chat-row', type: 'button', onclick: () => openChatPage(x) },
         x.kind === 'group' ? avatar(null, x.name) : avatar(x.user),
         h('div', { class: 'chat-main' },

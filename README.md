@@ -69,7 +69,7 @@ Read the Bible, highlight passages, write notes, and see the notes your friends 
 - **Chat** (was Friends) — private chats with friends and group chats, newest first, with search, 全部 / 私聊 / 群聊 filters,
   avatars, the last message, time and unread count (also on the tab's badge). A conversation has date separators, the
   sender's name in groups, and a box to write; it checks for new messages every few seconds while open. Verses are
-  shared as cards (分享经文 · 诗篇 23:4, the text, 在读经中打开 →): select them in Read and tap **Share to chat**, or tap
+  shared as cards (分享经文 · 诗篇 23:4, the text, 在读经中打开 →): select them in Read and tap **Share to chat** (or share a note from its ⋯ on the Notes page: the verse with your note's text), or tap
   the book button in a chat to pick them in Read. A friend's ⋯ menu has "Can see my notes" and Remove; a group's has
   Members (and Add members), Rename and Leave. New groups are made from friends with + → New group chat. Tapping a
   friend's note made in a Bible you don't have asks whether to read that verse in your translation or to ask them
