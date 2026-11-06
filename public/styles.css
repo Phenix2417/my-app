@@ -665,3 +665,8 @@ body.bars-hidden .b-size-panel { display: none; }
 .version-item[aria-checked="true"] .pick-n { background: var(--primary); color: var(--on-primary); }
 .version-item svg { display: none; }
 .sticky-actions { position: sticky; bottom: -24px; background: var(--surface-2); padding: 10px 0 8px; margin-top: 4px; }
+
+/* Two versions: a small marker in the verse-number column before the second version's text */
+.verse-alt { position: relative; }
+.verse-alt::before { content: ""; position: absolute; left: -1.05em; top: calc((1.9em - .9em) / 2); width: 3px; height: .9em;
+  border-radius: 2px; background: var(--primary); opacity: .55; }
