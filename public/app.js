@@ -40,6 +40,7 @@ const ICONS = {
   copy: '<rect x="8.5" y="8.5" width="12" height="12" rx="2"/><path d="M15.5 8.5V5a1.5 1.5 0 0 0-1.5-1.5H5A1.5 1.5 0 0 0 3.5 5v9A1.5 1.5 0 0 0 5 15.5h3.5"/>',
   translate: '<path d="M3 5.5h8M7 3.5v2M9.5 5.5c-.6 3.4-2.6 6.2-6 8M5 8.2c1 2.3 2.7 4 5 5.2"/><path d="M12.5 20.5l3.8-9 3.7 9M13.9 17.3h4.9"/>',
   dictionary: '<path d="M5 4.5A1.5 1.5 0 0 1 6.5 3H18v14H6.5A1.5 1.5 0 0 0 5 18.5z"/><path d="M5 18.5A1.5 1.5 0 0 0 6.5 20H12"/><circle cx="16.5" cy="17.5" r="2.6"/><path d="M18.4 19.4l2.1 2.1"/>',
+  pencil: '<path d="M4.5 19.5l.9-4 10.8-10.8a1.9 1.9 0 0 1 2.7 0l.4.4a1.9 1.9 0 0 1 0 2.7L8.5 18.6z"/><path d="M14.6 6.3l3.1 3.1"/>',
   serifAa: '<text x="1.5" y="19.5" font-family="Georgia,\'Noto Serif\',serif" font-size="17" font-weight="700" fill="currentColor" stroke="none">A</text><text x="13.5" y="19.5" font-family="Georgia,\'Noto Serif\',serif" font-size="12" font-weight="700" fill="currentColor" stroke="none">a</text>',
   read: 'M21 5c-1.1-.35-2.3-.5-3.5-.5-1.95 0-4.05.4-5.5 1.5-1.45-1.1-3.55-1.5-5.5-1.5S2.45 4.9 1 6v14.65c0 .25.25.5.5.5.1 0 .15-.05.25-.05C3.1 20.45 5.05 20 6.5 20c1.95 0 4.05.4 5.5 1.5 1.35-.85 3.8-1.5 5.5-1.5 1.65 0 3.35.3 4.75 1.05.1.05.15.05.25.05.25 0 .5-.25.5-.5V6c-.6-.45-1.25-.75-2-1zm0 13.5c-1.1-.35-2.3-.5-3.5-.5-1.7 0-4.15.65-5.5 1.5V8c1.35-.85 3.8-1.5 5.5-1.5 1.2 0 2.4.15 3.5.5v11.5zM17.5 10.5c.88 0 1.73.09 2.5.26V9.24c-.79-.15-1.64-.24-2.5-.24-1.7 0-3.24.29-4.5.83v1.66c1.13-.64 2.7-.99 4.5-.99zM13 12.49v1.66c1.13-.64 2.7-.99 4.5-.99.88 0 1.73.09 2.5.26V11.9c-.79-.15-1.64-.24-2.5-.24-1.7 0-3.24.3-4.5.83zM17.5 14.33c-1.7 0-3.24.29-4.5.83v1.66c1.13-.64 2.7-.99 4.5-.99.88 0 1.73.09 2.5.26v-1.52c-.79-.16-1.64-.24-2.5-.24z',
   notes: 'M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h10l6-6V5c0-1.1-.9-2-2-2zM5 19V5h14v9h-5v5H5zm2-12h10v2H7zm0 4h10v2H7zm0 4h5v2H7z',
@@ -292,10 +293,13 @@ function swatchRow(selected, onPick) {
   return row;
 }
 
-function noteCard(n, { onClick, friend } = {}) {
+const editNoteBtn = (onclick) => h('button', { class: 'icon-btn edit-note', type: 'button', 'aria-label': 'Edit note', title: 'Edit note',
+  onclick: (e) => { e.stopPropagation(); onclick(); } }, svg(ICONS.pencil));
+function noteCard(n, { onClick, friend, onEdit } = {}) {
   return h('div', { class: 'card' + (onClick ? ' clickable' : ''), onclick: onClick, tabindex: onClick ? 0 : null,
     onkeydown: onClick ? (e) => { if (e.key === 'Enter') onClick(); } : null },
-  h('div', { class: 'card-head' }, h('span', {}, ref(n)), friend ? h('span', { class: 'who', title: '@' + n.author.username }, dn(n.author)) : null),
+  h('div', { class: 'card-head' }, h('span', {}, ref(n)), friend ? h('span', { class: 'who', title: '@' + n.author.username }, dn(n.author)) : null,
+    onEdit ? editNoteBtn(onEdit) : null),
   h('div', { class: 'quote', dataset: { c: n.color } }, n.quote),
   n.body ? h('p', { class: 'note-body' }, noteBodyNodes(n.body)) : null);
 }
@@ -343,6 +347,15 @@ async function openQuotedCommentary(q) {
   cm.quote = { id: c.id, from: q.from, text: q.text };
   cm.current = c.id;
   openCommentaryPage(q.from || null);
+}
+
+// An existing note opens to read (quotes are links); the pencil switches to the editor.
+function noteViewer(note) {
+  openSheet((close) => [
+    h('div', { class: 'title-row note-view-head' }, h('h2', {}, ref(note)), editNoteBtn(() => { close(); noteEditor(note); })),
+    h('div', { class: 'quote', dataset: { c: note.color } }, note.quote),
+    note.body ? h('p', { class: 'note-body' }, noteBodyNodes(note.body)) : null,
+  ], { label: 'Note' });
 }
 
 function noteEditor(note, { isNew } = {}) {
@@ -1446,10 +1459,10 @@ function positionToolbar() {
 function showNotesAt(p) {
   const { mine, friends } = notesAt(p);
   if (!mine.length && !friends.length) return;
-  if (mine.length === 1 && !friends.length) return noteEditor(mine[0]);
+  if (mine.length === 1 && !friends.length) return noteViewer(mine[0]);
   openSheet((close) => [
     h('h2', {}, 'Notes here'),
-    ...mine.map((n) => noteCard(n, { onClick: () => { close(); noteEditor(n); } })),
+    ...mine.map((n) => noteCard(n, { onEdit: () => { close(); noteEditor(n); } })),
     ...friends.map((n) => noteCard(n, { friend: true })),
   ], { label: 'Notes on this passage' });
 }

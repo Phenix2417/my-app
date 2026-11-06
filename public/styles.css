@@ -483,3 +483,9 @@ body.bars-hidden .to-top.page-top { bottom: calc(20px + env(safe-area-inset-bott
 .quote-links p { margin: 6px 0; font-size: 15px; color: var(--muted); }
 .c-list .w.quoted, .c-list .g.quoted { background: color-mix(in srgb, var(--primary) 20%, transparent); }
 .c-list .w.quoted.sel, .c-list .g.quoted.sel { background: var(--sel); }
+
+/* Reading a note: the pencil opens the editor */
+.edit-note { display: grid; place-items: center; flex: none; color: var(--primary); background: var(--surface-2); padding: 0; }
+.edit-note svg { width: 22px; height: 22px; }
+.card .edit-note { width: 34px; height: 34px; margin: -6px -6px -6px auto; }
+.note-view-head h2 { flex: 1; margin: 4px 0 12px; }
