@@ -1556,23 +1556,22 @@ function wikiFor(word) {
   return wikiCache.get(w);
 }
 // The Bible wiki entry: Chinese first (when Wikipedia has it), then English, each linking to the full article.
-function wikiSection(found) {
-  const part = (x, zh) => {
-    const LIMIT = zh ? 150 : 300;
-    const text = h('p', { class: 'bd-text' + (zh ? '' : ' wiki-en') }, x.text.length > LIMIT ? shorten(x.text, LIMIT) : x.text);
-    const more = x.text.length > LIMIT ? h('button', { class: 'text-btn bd-more', type: 'button', onclick: () => {
-      const open = more.textContent === 'More';
-      text.textContent = open ? x.text : shorten(x.text, LIMIT);
-      more.textContent = open ? 'Less' : 'More';
-      positionToolbar();
-    } }, 'More') : null;
-    return h('div', { class: 'bd-entry', lang: zh ? 'zh-Hans' : 'en' },
+// One language of the Bible wiki entry ('zh': 圣经wiki, 'en': Bible Wiki), linking to the full article.
+function wikiSection(found, lang) {
+  const zh = lang === 'zh', x = found[lang];
+  const LIMIT = zh ? 150 : 300;
+  const text = h('p', { class: 'bd-text' + (zh ? '' : ' wiki-en') }, x.text.length > LIMIT ? shorten(x.text, LIMIT) : x.text);
+  const more = x.text.length > LIMIT ? h('button', { class: 'text-btn bd-more', type: 'button', onclick: () => {
+    const open = more.textContent === 'More';
+    text.textContent = open ? x.text : shorten(x.text, LIMIT);
+    more.textContent = open ? 'Less' : 'More';
+    positionToolbar();
+  } }, 'More') : null;
+  return h('section', { class: 'bd wiki', lang: zh ? 'zh-Hans' : 'en' },
+    h('div', { class: 'bd-head' }, zh ? '圣经wiki' : 'Bible Wiki', h('span', { class: 'bd-src' }, ` · ${zh ? '维基百科' : found.source} (${found.license})`)),
+    h('div', { class: 'bd-entry' },
       h('div', { class: 'bd-term' + (zh ? '' : ' wiki-term-en') }, x.title), text,
-      h('div', { class: 'wiki-actions' }, more, h('a', { class: 'wiki-link', href: x.url, target: '_blank', rel: 'noopener noreferrer' }, zh ? '在维基百科阅读' : 'Read on Wikipedia')));
-  };
-  return h('section', { class: 'bd wiki' },
-    h('div', { class: 'bd-head' }, 'Bible Wiki', h('span', { class: 'bd-src' }, ` · ${found.source} (${found.license})`)),
-    found.zh ? part(found.zh, true) : null, part(found.en, false));
+      h('div', { class: 'wiki-actions' }, more, h('a', { class: 'wiki-link', href: x.url, target: '_blank', rel: 'noopener noreferrer' }, zh ? '在维基百科阅读' : 'Read on Wikipedia'))));
 }
 // Cut a long entry at a word boundary, without leaving an empty bullet line at the end.
 const shorten = (full, limit) => `${full.slice(0, limit).replace(/\s+\S*$/, '').replace(/\n[•·\s]*$/, '')}…`;
@@ -1756,26 +1755,34 @@ function toggleDictionary(bar, btn) {
     const token = all.find((t) => dictKey(t) === w) || w;
     const isName = /^[A-Z]/.test(token.replace(/^[^A-Za-z]+/, ''));
     if (topics.length || isName) {
-      let wikiBox = null;
-      const wikiBtn = h('button', { class: 'bd-jump bd-wiki', type: 'button', lang: 'en', 'aria-label': 'Show the Bible wiki article', onclick: async () => {
-        if (!wikiBox) {
-          if (wikiBtn.classList.contains('loading')) return;
-          wikiBtn.classList.add('loading');
-          try { wikiBox = wikiSection(await wikiFor(topics.length ? bdWord : w)); } catch (err) {
-            wikiBtn.classList.remove('loading');
-            toast(err instanceof OfflineError ? 'The Bible wiki needs a connection.' : err.message);
+      const wikiBoxes = {};
+      // 圣经wiki (Chinese) and Bible Wiki (English): one lookup, Chinese shown above English whichever was opened first.
+      const wikiToggle = (lang) => async (ev) => {
+        const btn = ev.currentTarget;
+        let section = wikiBoxes[lang];
+        if (!section) {
+          if (btn.classList.contains('loading')) return;
+          btn.classList.add('loading');
+          let found;
+          try { found = await wikiFor(topics.length ? bdWord : w); } catch (err) {
+            btn.classList.remove('loading');
+            toast(err instanceof OfflineError ? (lang === 'zh' ? '圣经wiki需要网络连接。' : 'The Bible wiki needs a connection.') : err.message);
             return;
           }
-          wikiBtn.classList.remove('loading');
+          btn.classList.remove('loading');
+          if (!found[lang]) { toast(lang === 'zh' ? '维基百科没有这个条目的中文版。' : 'No English wiki article for this word.'); return; }
           if (!wikiSlot.isConnected) return;
-          wikiSlot.append(wikiBox);
+          section = wikiBoxes[lang] = wikiSection(found, lang);
+          if (lang === 'zh') wikiSlot.prepend(section); else wikiSlot.append(section);
         }
         positionToolbar();
         const box = body.closest('.dict');
-        if (box) box.scrollBy({ top: wikiBox.getBoundingClientRect().top - box.getBoundingClientRect().top - 6, behavior: 'smooth' });
-        wikiBox.classList.remove('flash'); void wikiBox.offsetWidth; wikiBox.classList.add('flash');
-      } }, 'Bible Wiki');
-      body.querySelector('.dict-head')?.append(wikiBtn);
+        if (box) box.scrollBy({ top: section.getBoundingClientRect().top - box.getBoundingClientRect().top - 6, behavior: 'smooth' });
+        section.classList.remove('flash'); void section.offsetWidth; section.classList.add('flash');
+      };
+      body.querySelector('.dict-head')?.append(
+        h('button', { class: 'bd-jump bd-wiki', type: 'button', lang: 'zh-Hans', 'aria-label': 'Show the Chinese Bible wiki article', onclick: wikiToggle('zh') }, '圣经wiki'),
+        h('button', { class: 'bd-jump bd-wiki', type: 'button', lang: 'en', 'aria-label': 'Show the English Bible wiki article', onclick: wikiToggle('en') }, 'Bible Wiki'));
     }
     if (!topics.length) { positionToolbar(); return; }
     const sections = {};
@@ -1806,14 +1813,14 @@ function toggleDictionary(bar, btn) {
     };
     const zhBtn = h('button', { class: 'bd-jump bd-dict', type: 'button', 'aria-label': 'Show the Chinese Bible dictionary entry', onclick: toggle('zh') }, '圣经辞典');
     const enBtn = h('button', { class: 'bd-jump bd-dict', type: 'button', lang: 'en', 'aria-label': 'Show the English Bible dictionary entry', onclick: toggle('en') }, 'Bible Dictionary');
-    const head = body.querySelector('.dict-head'), wikiBtn = head?.querySelector('[aria-label="Show the Bible wiki article"]');
+    const head = body.querySelector('.dict-head'), wikiBtn = head?.querySelector('.bd-wiki');
     if (wikiBtn) wikiBtn.before(zhBtn, enBtn); else head?.append(zhBtn, enBtn);
     // No English dictionary entry: show the Chinese Bible dictionary entry straight away.
     if (noEnglish) toggle('zh')({ currentTarget: zhBtn });
     positionToolbar();
   };
   const dictBox = h('div', { class: 'dict' }, trans, body,
-    h('p', { class: 'dict-credit' }, multi ? 'Translation: Youdao · Chinese: ECDICT, Wiktionary (CC BY-SA) · English: ECDICT, Free Dictionary (Wiktionary), WordNet · Phonetics & audio: Youdao, Free Dictionary API · 圣经辞典: 信望爱 · Bible Wiki: Wikipedia (CC BY-SA)' : 'Chinese: ECDICT, Wiktionary (CC BY-SA) · English: ECDICT, Free Dictionary (Wiktionary), WordNet · Phonetics & audio: Youdao, Free Dictionary API · 圣经辞典: 信望爱 · Bible Wiki: Wikipedia (CC BY-SA)'));
+    h('p', { class: 'dict-credit' }, multi ? 'Translation: Youdao · Chinese: ECDICT, Wiktionary (CC BY-SA) · English: ECDICT, Free Dictionary (Wiktionary), WordNet · Phonetics & audio: Youdao, Free Dictionary API · 圣经辞典: 信望爱 · 圣经wiki / Bible Wiki: Wikipedia (CC BY-SA)' : 'Chinese: ECDICT, Wiktionary (CC BY-SA) · English: ECDICT, Free Dictionary (Wiktionary), WordNet · Phonetics & audio: Youdao, Free Dictionary API · 圣经辞典: 信望爱 · 圣经wiki / Bible Wiki: Wikipedia (CC BY-SA)'));
   // An ↑ button appears once the panel is scrolled down, and takes it back to the top.
   const toTop = h('button', { class: 'to-top', type: 'button', hidden: true, 'aria-label': 'Back to top', title: 'Back to top',
     onclick: () => dictBox.scrollTo({ top: 0, behavior: 'smooth' }) }, svg(ICONS.arrowUp));
