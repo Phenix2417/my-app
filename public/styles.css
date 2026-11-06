@@ -246,7 +246,6 @@ h1 { font-size: 28px; font-weight: 500; margin: 18px 0 24px; }
 @media (prefers-reduced-motion: reduce) { .side-dock, .side-tab svg { transition: none; } }
 
 .commentary-page h1 { margin-top: 4px; }
-.back-btn { padding-left: 0; margin-top: 8px; font-size: 16px; }
 .commentary-page .chips { margin-top: 18px; }
 .c-list { display: grid; gap: 14px; margin-top: 14px; }
 .c-entry { background: var(--surface); border-radius: 18px; padding: 14px 16px 16px; scroll-margin-top: 12px; }
@@ -268,7 +267,6 @@ button.c-label:focus-visible { outline: 2px solid var(--primary); outline-offset
 body.bars-hidden .c-head { transform: translateY(-100%); }
 .c-titlebar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .c-titlebar h1 { margin: 0; padding: 6px 0; font-size: 17px; font-weight: 500; color: var(--primary); }
-.commentary-page .back-btn { margin: 0; padding: 6px 0 6px 8px; font-size: 15px; }
 .commentary-page .chips { margin: 8px 0 4px; }
 .c-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y;
   padding: 60px 2px calc(110px + env(safe-area-inset-bottom, 0px)); }

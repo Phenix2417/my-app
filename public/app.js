@@ -1658,10 +1658,10 @@ function renderCommentaryPage() {
   enableCommentarySwipe(cm.scroller);
   // Same bars as the Read page: a slim title bar on top and the tabs below, both sliding away while reading.
   const head = h('header', { class: 'c-head' },
-    h('div', { class: 'c-titlebar' },
-      h('h1', {}, 'Commentary'),
-      h('button', { class: 'text-btn back-btn', onclick: () => goTo(state.pos, cm.returnVerse) }, `‹ Back to ${meta.name} ${chapter}`)),
+    h('div', { class: 'c-titlebar' }, h('h1', {}, 'Commentary')),
     cm.chips);
+  // Back to the Bible text: the same bottom-left pill as after following a reference.
+  const back = h('button', { class: 'back-pill', type: 'button', onclick: () => goTo(state.pos, cm.returnVerse) }, `‹ Back to ${meta.name} ${chapter}`);
   new ResizeObserver(() => { cm.scroller.style.paddingTop = `${head.offsetHeight + 10}px`; }).observe(head);
   // The dictionary panel's up arrow, once you've scrolled down: it returns to where the page opened.
   cm.homeTop = 0;
@@ -1683,6 +1683,7 @@ function renderCommentaryPage() {
   mount(h('main', { class: 'screen commentary-page' },
     head,
     cm.scroller,
+    back,
     toTop,
     sideDock([
       { id: 'side-edit-list', label: 'Edit commentary list', icon: ICONS.editShelf, toggle: { get: () => cm.manageOpen, set: setManageOpen, announce: false } },
