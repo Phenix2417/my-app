@@ -447,13 +447,14 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
       if (!bibleDict) throw new HttpError(503, 'The Bible dictionary is not set up on this server');
       const words = Array.isArray(body?.words) ? body.words.slice(0, 2000).map(String) : [];
       const found = new Set(bibleDict.marks(words));
-      if (encyclopedias) for (const w of encyclopedias.marks(words, MARK_SKIP)) found.add(w);
+      // In Chinese only 圣经辞典 is offered, so Easton's words aren't coloured then.
+      if (encyclopedias && body?.lang !== 'zh') for (const w of encyclopedias.marks(words, MARK_SKIP)) found.add(w);
       return { words: words.filter((w) => found.has(w)) };
     }, true],
     // …and which names have a Bible wiki article (one Wikipedia request per chapter at most, then kept).
     ['POST', /^\/api\/wiki\/names$/, async ({ body }) => {
       if (!wiki?.names) throw new HttpError(503, 'The Bible wiki is not set up on this server');
-      return { names: await wiki.names(Array.isArray(body?.names) ? body.names.slice(0, 200).map(String) : []) };
+      return { names: await wiki.names(Array.isArray(body?.names) ? body.names.slice(0, 200).map(String) : [], body?.lang === 'zh' ? 'zh' : 'en') };
     }, true],
     // An Easton's Bible Dictionary or ISBE entry (built in, public domain).
     ['GET', /^\/api\/encyclopedia\/(easton|isbe)\/([a-zA-Z0-9' %,-]{1,120})$/, ({ params: [source, word] }) => {

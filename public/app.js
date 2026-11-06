@@ -1,5 +1,6 @@
 // Bible Study — single-page app. No build step, no dependencies.
 import { openEpub, openText, parseBibleEpub, ANCHOR_PREFIX } from './epub.js';
+import { t as tr, LANG, setLang, CONTENT_CLASS, ZH_BOOKS } from './i18n.js';
 
 const COLORS = ['yellow', 'green', 'blue', 'pink', 'purple'];
 const LONG_PRESS_MS = 400;
@@ -14,9 +15,11 @@ function h(tag, props = {}, ...kids) {
     else if (k === 'class') el.className = v;
     else if (k === 'dataset') Object.assign(el.dataset, v);
     else if (k in el && typeof v !== 'string') el[k] = v;
-    else el.setAttribute(k, v === true ? '' : v);
+    else el.setAttribute(k, v === true ? '' : (k === 'aria-label' || k === 'title' || k === 'placeholder') ? tr(v) : v);
   }
-  for (const kid of kids.flat()) if (kid != null && kid !== false) el.append(kid instanceof Node ? kid : String(kid));
+  // Interface text is shown in the chosen language; content (Bible words, notes, entries, names) never is.
+  const content = typeof props?.class === 'string' && CONTENT_CLASS.test(props.class);
+  for (const kid of kids.flat()) if (kid != null && kid !== false) el.append(kid instanceof Node ? kid : content ? String(kid) : tr(String(kid)));
   return el;
 }
 const svg = (d) => {
@@ -220,7 +223,12 @@ async function loadBooks() {
     state.books = (await res.json()).books;
     store.set('books', state.books);
   }
+  localizeBooks();
   return state.books;
+}
+// Book names in the interface language (b.name); b.enName keeps the English name, which notes' quote links use.
+function localizeBooks() {
+  state.books?.forEach((b, i) => { b.enName ??= b.name; b.name = LANG === 'zh' && ZH_BOOKS[i] ? ZH_BOOKS[i] : b.enName; });
 }
 async function loadBook(id) {
   if (!bookCache.has(id)) {
@@ -267,6 +275,7 @@ function verseTokens(text, version = state.version) {
 const verseWords = (text, version) => verseTokens(text, version).map((x) => x.t);
 
 const bookName = (id) => state.books?.find((b) => b.id === id)?.name || id;
+const enBookName = (id) => { const b = state.books?.find((x) => x.id === id); return b?.enName || b?.name || id; };
 const splitWords = (t) => t.split(/\s+/).filter(Boolean);
 
 function ref(n) {
@@ -406,7 +415,8 @@ function noteTime(n) {
   const opts = today ? { hour: 'numeric', minute: '2-digit' }
     : t.getFullYear() === now.getFullYear() ? { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }
     : { year: 'numeric', month: 'short', day: 'numeric' };
-  return h('span', { class: 'note-time', title: t.toLocaleString() }, `${edited ? 'Edited ' : ''}${today ? (edited ? 'today, ' : 'Today, ') : ''}${t.toLocaleString(undefined, opts)}`);
+  const locale = LANG === 'zh' ? 'zh-CN' : undefined;
+  return h('span', { class: 'note-time', title: t.toLocaleString(locale) }, `${edited ? 'Edited ' : ''}${today ? (edited ? 'today, ' : 'Today, ') : ''}${t.toLocaleString(locale, opts)}`);
 }
 // A yes/no question in the app's own sheet (never the browser's grey dialog). Resolves true if confirmed.
 function confirmSheet({ title, message = '', action = 'Delete' }) {
@@ -480,7 +490,7 @@ function quoteLinks(ta) {
 async function openQuotedCommentary(q) {
   let list;
   try { list = await loadCommentaryList(); await loadBooks(); } catch { toast("Couldn't load commentaries. Check your connection."); return; }
-  const c = list.find((x) => x.name === q.name), book = state.books?.find((b) => b.name === q.bookName);
+  const c = list.find((x) => x.name === q.name), book = state.books?.find((b) => (b.enName || b.name) === q.bookName || b.name === q.bookName);
   if (!c || !book) { toast("Couldn't find where this was quoted."); return; }
   for (const close of [...openSheets.values()]) close();
   clearSelection();
@@ -616,10 +626,11 @@ async function renderReader() {
 
 // Colour the words that have a Bible dictionary entry, and the names that have a Bible wiki article (each its own
 // colour, matching the buttons in the Dictionary panel). English text only; the Read ⋯ menu turns it off.
-const wordMarks = { dict: new Map(), wiki: new Map() }; // word -> true/false, as answered by the server
+const wordMarks = { dict: new Map(), wiki: new Map(), lang: LANG }; // word -> true/false, as answered by the server (for this language)
 async function markBibleWords() {
   document.body.classList.toggle('no-word-marks', !state.markWords);
   if (!state.markWords || reader.mode !== 'bible') return;
+  if (wordMarks.lang !== LANG) { wordMarks.dict.clear(); wordMarks.wiki.clear(); wordMarks.lang = LANG; } // the answers depend on the language
   const words = reader.words.filter((x) => !isChineseVersion(Number.isInteger(x.v) ? state.version : reader.altVersion));
   if (!words.length) return;
   const keyOf = new Map(words.map((x) => [x, dictKey(x.el.textContent)]));
@@ -644,7 +655,7 @@ async function markBibleWords() {
   const ask = async (kind, list, url, field) => {
     const todo = [...new Set(list)].filter((w) => w && !wordMarks[kind].has(w));
     if (!todo.length) return;
-    const r = await api('POST', url, { [field]: todo });
+    const r = await api('POST', url, { [field]: todo, lang: LANG });
     const yes = new Set(r[field] || []);
     for (const w of todo) wordMarks[kind].set(w, yes.has(w));
   };
@@ -1046,7 +1057,7 @@ function showToolbar() {
   if (reader.mode === 'commentary') return showCommentaryToolbar();
   if (reader.mode === 'book') return showBookToolbar();
   const bar = h('div', { class: 'sel-toolbar', role: 'toolbar', 'aria-label': 'Selection actions' },
-    h('div', { class: 'row' }, ...COLORS.map((c) => h('button', { class: 'swatch', dataset: { c }, 'aria-label': `Highlight ${c}`, onclick: () => {
+    h('div', { class: 'row' }, ...COLORS.map((c) => h('button', { class: 'swatch', dataset: { c }, 'aria-label': `Highlight ${tr(c)}`, onclick: () => {
       saveNote(draft(c)); clearSelection(); toast('Highlighted');
     } })),
     h('span', { class: 'sel-divider', 'aria-hidden': 'true' }),
@@ -1163,7 +1174,7 @@ async function playWord(word, accent, btn) {
   wordAudio?.pause();
   document.querySelectorAll('.pron.playing').forEach((b) => b.classList.remove('playing'));
   btn?.classList.add('playing');
-  const fail = () => { btn?.classList.remove('playing'); toast(navigator.onLine === false ? 'Pronunciation needs a connection.' : `No ${accent === 'uk' ? 'British' : 'American'} recording for “${word}”.`); };
+  const fail = () => { btn?.classList.remove('playing'); toast(navigator.onLine === false ? 'Pronunciation needs a connection.' : `No ${tr(accent === 'uk' ? 'British' : 'American')} recording for “${word}”.`); };
   let blob, src;
   try {
     const res = await fetch(`/api/pronounce/${accent}/${encodeURIComponent(word)}`, { cache: 'no-store' });
@@ -1238,7 +1249,7 @@ function setAudioSource(badge, src) {
   if (!badge || !s) return;
   badge.textContent = s[0];
   badge.dataset.src = src;
-  badge.title = `Recording from ${s[1]}`;
+  badge.title = tr(`Recording from ${s[1]}`);
   refreshAudioBadge(badge);
 }
 // The recording badge only shows when the recording came from a different source than the phonetic.
@@ -1254,7 +1265,7 @@ function setPhSource(badge, src) {
   if (!s) { delete badge.dataset.src; refreshAudioBadge(badge.parentElement?.querySelector('.au-src')); return; }
   badge.textContent = s[0];
   badge.dataset.src = src;
-  badge.title = `Phonetic from ${s[1]}`;
+  badge.title = tr(`Phonetic from ${s[1]}`);
   badge.hidden = src === 'youdao'; // Youdao is the default source for phonetics: no badge
   refreshAudioBadge(badge.parentElement?.querySelector('.au-src'));
 }
@@ -1264,7 +1275,7 @@ function pronButton(word, accent, fallback) {
   const badge = h('span', { class: 'ph-src', 'aria-hidden': 'true', hidden: true });
   if (fallback) setPhSource(badge, 'ecdict');
   const auBadge = h('span', { class: 'ph-src au-src', 'aria-hidden': 'true', hidden: true });
-  const btn = h('button', { class: 'pron', dataset: { word, accent }, 'aria-label': `Play ${name} pronunciation of ${word}`, onclick: () => playWord(word, accent, btn) },
+  const btn = h('button', { class: 'pron', dataset: { word, accent }, 'aria-label': `Play ${tr(name)} pronunciation of ${word}`, onclick: () => playWord(word, accent, btn) },
     h('span', { class: 'accent' }, accent.toUpperCase()), badge, ipa, svg(ICONS.speaker), auBadge);
   enableSourceLongPress(btn, name);
   phoneticsFor(word).then((p) => {
@@ -1272,7 +1283,7 @@ function pronButton(word, accent, fallback) {
     setAudioSource(auBadge, p?.audio?.[accent]);
     if (v) { ipa.textContent = `/${v}/`; setPhSource(badge, p.src?.[accent] || 'youdao'); } else if (!fallback) { ipa.textContent = ''; setPhSource(badge, null); }
     ipa.classList.remove('pending');
-    btn.setAttribute('aria-label', `Play ${name} pronunciation of ${word}${v ? `, /${v}/` : ''}`);
+    btn.setAttribute('aria-label', tr(`Play ${tr(name)} pronunciation of ${word}`) + (v ? `, /${v}/` : ''));
     positionToolbar();
   }).catch(() => { ipa.classList.remove('pending'); if (!fallback) ipa.textContent = ''; });
   return btn;
@@ -1564,9 +1575,9 @@ function wikiSection(found, lang) {
   const LIMIT = zh ? 150 : 300;
   const text = h('p', { class: 'bd-text' + (zh ? '' : ' wiki-en') }, x.text.length > LIMIT ? shorten(x.text, LIMIT) : x.text);
   const more = x.text.length > LIMIT ? h('button', { class: 'text-btn bd-more', type: 'button', onclick: () => {
-    const open = more.textContent === 'More';
+    const open = more.textContent === tr('More');
     text.textContent = open ? x.text : shorten(x.text, LIMIT);
-    more.textContent = open ? 'Less' : 'More';
+    more.textContent = tr(open ? 'Less' : 'More');
     positionToolbar();
   } }, 'More') : null;
   return h('section', { class: 'bd wiki', lang: zh ? 'zh-Hans' : 'en' },
@@ -1630,9 +1641,9 @@ function encyclopediaSection(found, source, onXref) {
       const full = entry.text, long = plainOsis(full).length > LIMIT;
       const text = h('p', { class: 'bd-text' }, ...osisLinks(long ? shortenOsis(full, LIMIT) : full, onXref));
       const more = long ? h('button', { class: 'text-btn bd-more', type: 'button', onclick: () => {
-        const open = more.textContent === 'More';
+        const open = more.textContent === tr('More');
         text.replaceChildren(...osisLinks(open ? full : shortenOsis(full, LIMIT), onXref));
-        more.textContent = open ? 'Less' : 'More';
+        more.textContent = tr(open ? 'Less' : 'More');
         positionToolbar();
       } }, 'More') : null;
       return h('div', { class: 'bd-entry' }, h('div', { class: 'bd-term bd-term-en' }, entry.term.toLowerCase()), text, more);
@@ -1649,9 +1660,9 @@ function bibleSection(found, { english = false } = {}) {
       const long = full.length > LIMIT;
       const text = h('p', { class: 'bd-text' }, ...withVerseLinks(long ? shorten(full, LIMIT) : full));
       const more = long ? h('button', { class: 'text-btn bd-more', type: 'button', onclick: () => {
-        const open = more.textContent === 'More';
+        const open = more.textContent === tr('More');
         text.replaceChildren(...withVerseLinks(open ? full : shorten(full, LIMIT)));
-        more.textContent = open ? 'Less' : 'More';
+        more.textContent = tr(open ? 'Less' : 'More');
         positionToolbar();
       } }, 'More') : null;
       return h('div', { class: 'bd-entry' }, english
@@ -1782,7 +1793,7 @@ function toggleDictionary(bar, btn) {
     trans = h('div', { class: 'trans', 'aria-live': 'polite' }, en, zh);
     api('POST', '/api/translate', { text: all.join(' ') }).then((r) => { zh.textContent = r.text; positionToolbar(); }).catch((err) => {
       zh.classList.add('dict-muted');
-      zh.textContent = err instanceof OfflineError ? 'Translation needs a connection.' : err.message;
+      zh.textContent = tr(err instanceof OfflineError ? 'Translation needs a connection.' : err.message);
       positionToolbar();
     });
   }
@@ -1857,8 +1868,8 @@ function toggleDictionary(bar, btn) {
         found = r;
         if (!wikiSlot.isConnected) return;
         body.querySelector('.dict-head')?.append(...[
-          found.zh ? h('button', { class: 'bd-jump bd-wiki', type: 'button', lang: 'zh-Hans', 'aria-label': 'Show the Chinese Bible wiki article', onclick: wikiToggle('zh') }, '圣经wiki') : null,
-          found.en ? h('button', { class: 'bd-jump bd-wiki', type: 'button', lang: 'en', 'aria-label': 'Show the English Bible wiki article', onclick: wikiToggle('en') }, 'Bible Wiki') : null,
+          found.zh && LANG === 'zh' ? h('button', { class: 'bd-jump bd-wiki', type: 'button', lang: 'zh-Hans', 'aria-label': 'Show the Chinese Bible wiki article', onclick: wikiToggle('zh') }, '圣经wiki') : null,
+          found.en && LANG !== 'zh' ? h('button', { class: 'bd-jump bd-wiki', type: 'button', lang: 'en', 'aria-label': 'Show the English Bible wiki article', onclick: wikiToggle('en') }, 'Bible Wiki') : null,
         ].filter(Boolean));
         positionToolbar();
       }).catch(() => { /* no article, or Wikipedia unreachable: no buttons */ });
@@ -1896,10 +1907,11 @@ function toggleDictionary(bar, btn) {
     };
     const btn = (lang, label, aria) => h('button', { class: 'bd-jump bd-dict', type: 'button', lang: lang === 'zh' ? 'zh-Hans' : 'en', dataset: { src: lang }, 'aria-label': aria, onclick: toggle(lang) }, label);
     const buttons = [
-      topics.length ? btn('zh', '圣经辞典', 'Show the Chinese Bible dictionary entry') : null,
-      topics.length ? btn('en', 'Bible Dictionary', 'Show the English Bible dictionary entry') : null,
-      info.easton ? btn('easton', 'Easton', "Show the Easton's Bible Dictionary entry") : null,
-      info.isbe ? btn('isbe', 'ISBE', 'Show the International Standard Bible Encyclopedia entry') : null,
+      // Only the sources in the interface language: Chinese 圣经辞典; English Bible Dictionary, Easton and ISBE.
+      topics.length && LANG === 'zh' ? btn('zh', '圣经辞典', 'Show the Chinese Bible dictionary entry') : null,
+      topics.length && LANG !== 'zh' ? btn('en', 'Bible Dictionary', 'Show the English Bible dictionary entry') : null,
+      info.easton && LANG !== 'zh' ? btn('easton', 'Easton', "Show the Easton's Bible Dictionary entry") : null,
+      info.isbe && LANG !== 'zh' ? btn('isbe', 'ISBE', 'Show the International Standard Bible Encyclopedia entry') : null,
     ].filter(Boolean);
     const head = body.querySelector('.dict-head'), wikiBtn = head?.querySelector('.bd-wiki');
     if (wikiBtn) wikiBtn.before(...buttons); else head?.append(...buttons);
@@ -2027,6 +2039,15 @@ function textSizeControl() {
 // Items: { id, label, icon } plus one of: action (run it), toggle { get, set } (ticked when on), popover (a control shown in the menu).
 let closeMenu = () => {};
 document.addEventListener('pointerdown', (e) => { if (!e.target.closest?.('.more-menu, .more-btn')) closeMenu(); }, true);
+// Switch the interface between English and Chinese, and draw the current page again.
+function switchLanguage(lang = LANG === 'zh' ? 'en' : 'zh') {
+  setLang(lang);
+  localizeBooks();
+  closeMenu();
+  document.querySelectorAll('.scrim, .sheet').forEach((x) => x.remove());
+  if (state.auth) render(); else renderAuth(lastAuthMode);
+}
+
 function moreMenu(items) {
   const btn = h('button', { class: 'icon-btn more-btn', type: 'button', 'aria-label': 'More options', title: 'More options',
     'aria-haspopup': 'menu', 'aria-expanded': 'false' }, svg(ICONS.more));
@@ -2040,16 +2061,18 @@ function moreMenu(items) {
   const onKey = (e) => { if (e.key === 'Escape') { close(); btn.focus(); } };
   const open = () => {
     closeMenu();
+    // Every ⋯ menu ends with the interface language switch (shown in the other language, so it can be found).
+    const all = [...items, { id: 'ui-language', label: LANG === 'zh' ? 'English interface' : '中文界面', icon: ICONS.versions, action: () => switchLanguage(), lang: true }];
     menu = h('div', { class: 'more-menu', role: 'menu', 'aria-label': 'More options' },
-      ...items.map(({ id, label, icon, toggle, action, popover }) => {
+      ...all.map(({ id, label, icon, toggle, action, popover, lang }) => {
         const item = h('button', { id, class: 'menu-item', type: 'button', role: toggle ? 'menuitemcheckbox' : 'menuitem' },
-          svg(icon), h('span', { class: 'menu-label' }, label), toggle ? h('span', { class: 'menu-check' }, svg(ICONS.check)) : null);
+          svg(icon), h('span', { class: lang ? 'menu-label lang-switch' : 'menu-label' }, label), toggle ? h('span', { class: 'menu-check' }, svg(ICONS.check)) : null);
         const showState = () => item.setAttribute('aria-checked', String(!!toggle.get()));
         if (toggle) {
           showState();
           item.addEventListener('click', () => {
             const on = !toggle.get(); toggle.set(on); showState(); close();
-            if (toggle.announce !== false) toast(`${label} ${on ? 'on' : 'off'}`);
+            if (toggle.announce !== false) toast(LANG === 'zh' ? `${tr(label)}：${on ? '开' : '关'}` : `${label} ${on ? 'on' : 'off'}`);
           });
         } else if (popover) { // the control opens inside the menu, which stays open while it's used
           item.setAttribute('aria-expanded', 'false');
@@ -2481,7 +2504,8 @@ function commentaryTarget() {
   else { start = { v: 1, w: 0 }; end = { v: 1, w: Math.max(0, words(1).length - 1) }; }
   const quote = [];
   for (let v = start.v; v <= end.v; v++) words(v).forEach((t, w) => { if (inRange({ v, w }, start, end)) quote.push(t); });
-  const passage = from ? `${bookName(book)} ${chapter}:${from}${to > from ? `–${to}` : ''}` : `${bookName(book)} ${chapter}`;
+  // English book names in the stored reference, so the quote link works whichever language the app is in.
+  const passage = from ? `${enBookName(book)} ${chapter}:${from}${to > from ? `–${to}` : ''}` : `${enBookName(book)} ${chapter}`;
   const existing = Object.values(state.mine.notes).find((n) => n.book === book && n.chapter === chapter && (n.version || 'web') === state.version
     && n.start.verse === start.v && n.start.word === start.w && n.end.verse === end.v && n.end.word === end.w);
   const note = existing ? { ...existing } : { id: newId(), book, chapter, version: state.version, start: { verse: start.v, word: start.w }, end: { verse: end.v, word: end.w },
@@ -2500,7 +2524,7 @@ function showCommentaryToolbar() {
     toast(`Added to your note on ${ref(note)}`);
   };
   const bar = h('div', { class: 'sel-toolbar', role: 'toolbar', 'aria-label': 'Selection actions' },
-    h('div', { class: 'row' }, ...COLORS.map((c) => h('button', { class: 'swatch', dataset: { c }, 'aria-label': `Highlight ${c} in the Bible text, with this quote`, onclick: () => toBible(c) })),
+    h('div', { class: 'row' }, ...COLORS.map((c) => h('button', { class: 'swatch', dataset: { c }, 'aria-label': `Highlight ${tr(c)} in the Bible text, with this quote`, onclick: () => toBible(c) })),
     h('span', { class: 'sel-divider', 'aria-hidden': 'true' }),
     bubbleBtn('Note on the Bible text, linking to this quote', ICONS.noteLink, () => {
       const { note, isNew, body } = commentaryTarget();
@@ -2640,9 +2664,9 @@ async function checkBibleEpub(bufPromise, fileName, file = null) {
   const close = openSheet(() => [h('h2', {}, 'Add a Bible'), body], { label: 'Check Bible' });
   let parsed;
   try { parsed = await parseBibleEpub(await bufPromise, await loadBooks()); } catch (e) {
-    status.textContent = `This file couldn't be read as an EPUB (${e.message}).`; return;
+    status.textContent = tr(`This file couldn't be read as an EPUB (${e.message}).`); return;
   }
-  status.textContent = 'Checking chapters and verses…';
+  status.textContent = tr('Checking chapters and verses…');
   const title = (parsed.title || fileName || 'My Bible').replace(/\.epub$/i, '');
   // An ebook may hold two translations side by side (e.g. ESV with 和合本): each can be added as its own version.
   const parts = [{ lang: parsed.lang, data: parsed.data, verses: parsed.report.verses }];
@@ -2711,7 +2735,7 @@ async function checkBibleEpub(bufPromise, fileName, file = null) {
               while (next < ids.length) {
                 const id = ids[next++];
                 await authFetch(`/api/my-versions/${version.id}/${id}`, { method: 'PUT', body: JSON.stringify(part.data[id].map((c) => c || [])) });
-                btn.textContent = `Saving ${version.short} ${++done} / ${ids.length}…`;
+                btn.textContent = tr(`Saving ${version.short} ${++done} / ${ids.length}…`);
               }
             }));
           }
@@ -2722,7 +2746,7 @@ async function checkBibleEpub(bufPromise, fileName, file = null) {
         } catch (err) {
           // Don't leave half-saved versions behind.
           for (const v of added) await api('DELETE', `/api/my-versions/${v.id}`).catch(() => {});
-          btn.disabled = false; btn.textContent = 'Add'; toast(err.message);
+          btn.disabled = false; btn.textContent = tr('Add'); toast(err.message);
         }
       } }, both ? 'Add' : 'Add version') : null),
   ].filter((x) => x != null && x !== false));
@@ -2890,7 +2914,7 @@ async function renderFriends() {
           const name = input.value.trim().replace(/^@/, '').toLowerCase();
           close(); draw();
           toast(state.friends.friends.some((u) => u.username.toLowerCase() === name) ? 'You are now friends' : 'Request sent');
-        } catch (ex) { err.textContent = ex instanceof OfflineError ? "You're offline." : ex.message; }
+        } catch (ex) { err.textContent = tr(ex instanceof OfflineError ? "You're offline." : ex.message); }
       } },
       h('h2', {}, 'Add a friend'),
       h('label', { class: 'field' }, h('span', {}, 'Their username'), input),
@@ -2920,7 +2944,7 @@ function openAccount() {
         state.auth = { ...state.auth, user: { ...state.auth.user, ...user } };
         store.set('auth', state.auth);
         toast('Display name saved');
-      } catch (e) { nameErr.textContent = e instanceof OfflineError ? "You're offline. Try again when connected." : e.message; }
+      } catch (e) { nameErr.textContent = tr(e instanceof OfflineError ? "You're offline. Try again when connected." : e.message); }
       saveName.disabled = false;
     } }, 'Save');
     return [
@@ -2944,7 +2968,9 @@ function openAccount() {
 }
 
 /* ---------------- Auth ---------------- */
+let lastAuthMode = 'login';
 function renderAuth(mode = 'login') {
+  lastAuthMode = mode;
   const user = h('input', { autocomplete: 'username', autocapitalize: 'none', spellcheck: false, required: true, minlength: 3, maxlength: 20, pattern: '[A-Za-z0-9_]+' });
   const pass = h('input', { type: 'password', autocomplete: mode === 'login' ? 'current-password' : 'new-password', required: true, minlength: mode === 'login' ? 1 : 8 });
   const display = h('input', { autocomplete: 'nickname', maxlength: 40, placeholder: 'e.g. 小明, José, Anna' });
@@ -2962,14 +2988,15 @@ function renderAuth(mode = 'login') {
           { username: user.value.trim(), password: pass.value, ...(mode === 'register' ? { displayName: display.value } : {}) });
         store.set('auth', state.auth);
         start();
-      } catch (ex) { err.textContent = ex instanceof OfflineError ? "Can't reach the server. Check your connection." : ex.message; submit.disabled = false; }
+      } catch (ex) { err.textContent = tr(ex instanceof OfflineError ? "Can't reach the server. Check your connection." : ex.message); submit.disabled = false; }
     } },
     mode === 'register' ? h('label', { class: 'field' }, h('span', {}, 'Display name (any language, optional)'), display) : null,
     h('label', { class: 'field' }, h('span', {}, mode === 'register' ? 'Username (letters, numbers, _ — friends add you with this)' : 'Username'), user),
     h('label', { class: 'field' }, h('span', {}, mode === 'login' ? 'Password' : 'Password (8+ characters)'), pass),
     err, submit,
     h('button', { class: 'text-btn switch-mode', type: 'button', onclick: () => renderAuth(mode === 'login' ? 'register' : 'login') },
-      mode === 'login' ? 'New here? Create an account' : 'Have an account? Sign in'))));
+      mode === 'login' ? 'New here? Create an account' : 'Have an account? Sign in'),
+    h('button', { class: 'text-btn switch-mode lang-switch', type: 'button', onclick: () => switchLanguage() }, LANG === 'zh' ? 'English' : '中文'))));
   user.focus();
 }
 
@@ -3223,7 +3250,7 @@ async function renderBookReader() {
     paint();
     const ct = book.chapterTitle(chapter);
     runEl.textContent = ct && ct !== b.title ? `${b.title} · ${ct}` : b.title;
-    whereEl.textContent = `Chapter ${chapter + 1} of ${book.chapters.length}`;
+    whereEl.textContent = tr(`Chapter ${chapter + 1} of ${book.chapters.length}`);
     if (slide) { body.classList.remove('slide-from-right', 'slide-from-left'); void body.offsetWidth; body.classList.add(slide > 0 ? 'slide-from-right' : 'slide-from-left'); }
     requestAnimationFrame(() => {
       const target = (anchor && body.querySelector(`#${CSS.escape(ANCHOR_PREFIX + anchor)}`)) || (block && lib.blocks[block - 1]);
@@ -3254,7 +3281,7 @@ async function renderBookReader() {
     const page = h('div', { class: 'toc-page', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Notes' },
       h('header', { class: 'toc-head' },
         h('button', { class: 'icon-btn toc-close', type: 'button', 'aria-label': 'Back to the book', title: 'Back to the book', onclick: close }, svg(ICONS.back)),
-        h('h2', {}, 'Notes'), h('span', { class: 'toc-title' }, notes.length ? `${notes.length} in ${b.title}` : b.title)),
+        h('h2', {}, 'Notes'), h('span', { class: 'toc-title' }, notes.length ? (LANG === 'zh' ? `${b.title} · ${notes.length} 条` : `${notes.length} in ${b.title}`) : b.title)),
       list);
     document.body.append(page);
     document.addEventListener('keydown', onKey);
@@ -3356,7 +3383,7 @@ function showBookToolbar() {
   const draft = (color) => ({ id: newId(), lib: lib.current.id, chapter: lib.chapter, start: { verse: start.v, word: start.w }, end: { verse: end.v, word: end.w },
     color, quote: selectedQuote().slice(0, 4000), body: '' });
   const bar = h('div', { class: 'sel-toolbar', role: 'toolbar', 'aria-label': 'Selection actions' },
-    h('div', { class: 'row' }, ...COLORS.map((c) => h('button', { class: 'swatch', dataset: { c }, 'aria-label': `Highlight ${c}`, onclick: () => {
+    h('div', { class: 'row' }, ...COLORS.map((c) => h('button', { class: 'swatch', dataset: { c }, 'aria-label': `Highlight ${tr(c)}`, onclick: () => {
       saveBookNote(draft(c)); clearSelection(); toast('Highlighted');
     } })),
     h('span', { class: 'sel-divider', 'aria-hidden': 'true' }),

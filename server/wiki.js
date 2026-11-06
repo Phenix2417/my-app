@@ -83,28 +83,32 @@ export function createWikiService({ cacheDir, fetchImpl = globalThis.fetch } = {
   // answers are kept (in memory and on disk) so each name is asked about once.
   let known = null;
   const knownFile = cacheDir && path.join(cacheDir, '_names.json');
-  async function names(list) {
+  // `lang` 'zh': only names whose article also has a Chinese version (for 圣经wiki). Remembered as 'en' / 'zh' / false.
+  async function names(list, lang = 'en') {
     if (!known) { known = new Map(); if (knownFile) { try { known = new Map(Object.entries(JSON.parse(await fs.promises.readFile(knownFile, 'utf8')))); } catch { /* none yet */ } } }
     const wanted = [...new Set(list.map((n) => String(n).trim()).filter((n) => /^[A-Z][a-z'-]{1,30}$/.test(n)))].slice(0, 80);
     const todo = wanted.filter((n) => !known.has(n));
     for (let i = 0; i < todo.length; i += 16) {
       const batch = todo.slice(i, i + 16);
       const titles = batch.flatMap((n) => [n, `${n} (biblical figure)`, `${n} (Bible)`]);
-      const q = new URLSearchParams({ action: 'query', format: 'json', formatversion: '2', redirects: '1', prop: 'description|pageprops', ppprop: 'disambiguation', titles: titles.join('|') });
+      const q = new URLSearchParams({ action: 'query', format: 'json', formatversion: '2', redirects: '1', prop: 'description|pageprops|langlinks', ppprop: 'disambiguation', lllang: 'zh', lllimit: 'max', titles: titles.join('|') });
       const r = await get(`https://en.wikipedia.org/w/api.php?${q}`);
       if (!r.json?.query) break; // unreachable: try again another time
       const query = r.json.query;
       for (const n of batch) {
         // A qualified title ("Name (biblical figure)") counts if it exists; the bare name if its description is about the Bible.
-        const ok = [n, `${n} (biblical figure)`, `${n} (Bible)`].some((t, j) => {
+        let page = null;
+        [n, `${n} (biblical figure)`, `${n} (Bible)`].some((t, j) => {
           const p = findPage(query, t);
-          return p && p.pageprops?.disambiguation === undefined && (j > 0 || BIBLE_WORDS.test(p.description || ''));
+          if (p && p.pageprops?.disambiguation === undefined && (j > 0 || BIBLE_WORDS.test(p.description || ''))) page = p;
+          return page;
         });
-        known.set(n, ok);
+        known.set(n, page ? (page.langlinks?.length ? 'zh' : 'en') : false);
       }
     }
     if (knownFile && todo.length) { try { await fs.promises.mkdir(cacheDir, { recursive: true }); await fs.promises.writeFile(knownFile, JSON.stringify(Object.fromEntries(known))); } catch { /* best effort */ } }
-    return wanted.filter((n) => known.get(n));
+    // (true: remembered before Chinese was checked; counts for both.)
+    return wanted.filter((n) => { const k = known.get(n); return lang === 'zh' ? k === 'zh' || k === true : !!k; });
   }
 
   const wiki = async function wiki(raw) {
