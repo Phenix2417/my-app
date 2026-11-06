@@ -292,7 +292,7 @@ body.bars-hidden .c-head { transform: translateY(-100%); }
 .r-head { position: absolute; z-index: 12; top: 0; left: 0; right: 0; background: var(--bg); transition: transform .22s ease;
   padding: 14px max(16px, env(safe-area-inset-right, 0px)) 8px max(16px, env(safe-area-inset-left, 0px)); }
 .r-head h1 { margin: 0; font-size: 17px; font-weight: 500; }
-.r-title { display: flex; gap: .3em; }
+.r-title { display: flex; gap: 1.1em; }
 .r-title button { background: none; border: 0; padding: 6px .4em; margin: 0 -.4em; color: var(--primary); font: inherit; }
 .r-title button + button { margin-left: 0; min-width: 2.4em; text-align: left; }
 .r-title button:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 4px; }
