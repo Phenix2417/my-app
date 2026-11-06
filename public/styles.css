@@ -619,3 +619,17 @@ body.bars-hidden .b-size-panel { display: none; }
 .dict-en-group + .dict-en-group { margin-top: 4px; }
 .dict-ex { font-style: italic; opacity: .85; }
 .dict-via { font-size: 12px; margin: 0 0 2px; }
+
+/* Bible versions */
+.r-title .r-version { font-size: 13px; font-weight: 500; color: var(--muted); border: 1px solid var(--divider); border-radius: 12px;
+  padding: 2px 8px; margin: 0 0 0 4px; align-self: center; min-width: 0; }
+.version-list { display: grid; gap: 2px; margin-bottom: 8px; }
+.version-item { display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 10px; border: 0; border-radius: 12px; background: none; color: var(--on-bg); text-align: left; }
+.version-item[aria-checked="true"] { background: var(--pill); }
+.version-short { font-weight: 600; min-width: 4.5em; }
+.version-name { flex: 1; color: var(--muted); font-size: 15px; }
+.version-item svg { width: 20px; height: 20px; visibility: hidden; color: var(--primary); }
+.version-item[aria-checked="true"] svg { visibility: visible; }
+.version-note { color: var(--muted); font-size: 13px; margin: 8px 0 4px; }
+.version-credit { color: var(--muted); font: 12px/1.4 Roboto, system-ui, sans-serif; margin: 20px 0 0; }
+.reader-body:lang(zh) { letter-spacing: .02em; }

@@ -15,6 +15,11 @@ Read the Bible, highlight passages, write notes, and see the notes your friends 
   references. Tap **Edit list** to add or remove commentaries, and press and hold one to drag it into a new place;
   each person's list is saved to their account. Texts come from the Free Use Bible API (bible.helloao.org) and the
   信望愛 (FHL) site; the server fetches each chapter once and keeps a copy (in the Railway volume when one is attached).
+- **Bible versions** — ⋯ → **Bible version** (or tap the version label next to the chapter number) switches between the
+  built-in World English Bible and openly licensed versions from the Free Use Bible API (bible.helloao.org): BSB, KJV,
+  NET, ASV, 新标点和合本 (简/繁) and 当代译本. The server fetches each chapter once and keeps it (`server/versions.js`).
+  Highlights and notes remember the version they were made in. ESV and NIV aren't included: their publishers don't
+  offer an open licence.
 - **Dictionary** — select one word and tap **Dictionary** (or double-tap the word) for its pronunciation,
   Chinese meanings and English definitions. With several words selected, the selection is translated into Chinese
   (Youdao), with a button per word for its dictionary entry; inflected words also show their base form.

@@ -7,6 +7,7 @@ import { commentaryList, CommentaryError, COMMENTARY_IDS } from './commentary.js
 import { PronounceError } from './pronounce.js';
 import { TranslateError } from './translate.js';
 import { BibleDictError } from './bibledict.js';
+import { VERSIONS, VERSION_IDS, VersionError } from './versions.js';
 import { LibraryError, BOOK_TYPES, MAX_BOOK_BYTES, MAX_LIBRARY_BYTES, MAX_COVER_BYTES, sniffFormat, sniffImage } from './library.js';
 
 const COLORS = new Set(['yellow', 'green', 'blue', 'pink', 'purple']);
@@ -74,7 +75,7 @@ export function seedTestUsers(db, users) {
   return created;
 }
 
-export function createApp(db, { publicDir, trustProxy = false, commentary = null, pronounce = null, phonetics = null, translate = null, bibleDict = null, library = null, freeDict = null } = {}) {
+export function createApp(db, { publicDir, trustProxy = false, commentary = null, pronounce = null, phonetics = null, translate = null, bibleDict = null, library = null, freeDict = null, versions = null } = {}) {
   const q = (sql) => db.prepare(sql);
   const stmt = {
     userByName: q('SELECT * FROM users WHERE username = ?'),
@@ -109,9 +110,9 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
     myNotes: q('SELECT * FROM notes WHERE user_id = ? ORDER BY updated_at DESC'),
     myChapterNotes: q('SELECT * FROM notes WHERE user_id = ? AND book = ? AND chapter = ? ORDER BY created_at'),
     note: q('SELECT * FROM notes WHERE id = ?'),
-    upsertNote: q(`INSERT INTO notes (id, user_id, book, chapter, verse_start, word_start, verse_end, word_end, color, quote, body, created_at, updated_at)
-      VALUES (:id, :user_id, :book, :chapter, :verse_start, :word_start, :verse_end, :word_end, :color, :quote, :body, :now, :now)
-      ON CONFLICT (id) DO UPDATE SET book = :book, chapter = :chapter, verse_start = :verse_start, word_start = :word_start,
+    upsertNote: q(`INSERT INTO notes (id, user_id, book, chapter, version, verse_start, word_start, verse_end, word_end, color, quote, body, created_at, updated_at)
+      VALUES (:id, :user_id, :book, :chapter, :version, :verse_start, :word_start, :verse_end, :word_end, :color, :quote, :body, :now, :now)
+      ON CONFLICT (id) DO UPDATE SET book = :book, chapter = :chapter, version = :version, verse_start = :verse_start, word_start = :word_start,
         verse_end = :verse_end, word_end = :word_end, color = :color, quote = :quote, body = :body, updated_at = :now`),
     deleteNote: q('DELETE FROM notes WHERE id = ? AND user_id = ?'),
     // Notes from friends who have allowed `viewer` to see them.
@@ -177,7 +178,7 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
   }
 
   const noteOut = (n) => ({
-    id: n.id, book: n.book, chapter: n.chapter,
+    id: n.id, book: n.book, chapter: n.chapter, version: n.version || 'web', // words are counted in this version's text
     start: { verse: n.verse_start, word: n.word_start }, end: { verse: n.verse_end, word: n.word_end },
     color: n.color, quote: n.quote, body: n.body, createdAt: n.created_at, updatedAt: n.updated_at,
     ...(n.username ? { author: userOut(n.user_id, n.username, n.display_name) } : {}),
@@ -199,7 +200,8 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
     const body = b.body ?? '';
     if (typeof body !== 'string' || body.length > 10000) throw new HttpError(400, 'Note is too long');
     return { book: book.id, chapter: b.chapter, verse_start: b.start.verse, word_start: b.start.word,
-      verse_end: b.end.verse, word_end: b.end.word, color: b.color, quote: b.quote.trim(), body };
+      verse_end: b.end.verse, word_end: b.end.word, color: b.color, quote: b.quote.trim(), body,
+      version: b.version == null ? 'web' : VERSION_IDS.has(b.version) ? b.version : (() => { throw new HttpError(400, 'Unknown Bible version'); })() };
   }
 
   function friendsPayload(me) {
@@ -333,6 +335,14 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
     }, true],
 
     ['GET', /^\/api\/books$/, () => ({ books: BOOKS })],
+    // Bible versions; the World English Bible is built in, the others are fetched once per chapter and kept.
+    ['GET', /^\/api\/versions$/, () => ({ versions: VERSIONS.map(({ id, short, name, lang, credit }) => ({ id, short, name, lang, credit })) })],
+    ['GET', /^\/api\/bible\/([\w-]{2,20})\/([a-z0-9]{1,20})\/(\d{1,3})$/, async ({ params: [version, book, chapter] }) => {
+      if (!versions) throw new HttpError(503, 'Bible versions are not set up on this server');
+      try {
+        return { status: 200, body: await versions(version, book, Number(chapter)), headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'public, max-age=86400' } };
+      } catch (e) { if (e instanceof VersionError) throw new HttpError(e.status, e.message); throw e; }
+    }],
     ['GET', /^\/api\/commentaries$/, () => ({ commentaries: commentaryList() })],
     ['GET', /^\/api\/phonetics\/([a-z-]{1,40})$/, async ({ params: [word] }) => {
       if (!phonetics) throw new HttpError(503, 'Phonetics are not set up on this server');

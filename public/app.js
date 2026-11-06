@@ -47,6 +47,7 @@ const ICONS = {
   commentaryBooks: '<path d="M3.5 8v11a3 3 0 0 0 3 3H16"/><path d="M11.5 3H9a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2v-4.5"/><path d="M10.5 12h1.5M10.5 15.5h6"/><path d="M13.5 4.5A1.5 1.5 0 0 1 15 3h5.5A1.5 1.5 0 0 1 22 4.5v4a1.5 1.5 0 0 1-1.5 1.5H18l-2.5 2.5V10H15a1.5 1.5 0 0 1-1.5-1.5z"/><path d="M16.5 6.5h3"/>', // pages of text with a speech bubble
   editShelf: '<path d="M3.5 8v11a3 3 0 0 0 3 3H16"/><path d="M12 3H9a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2v-5"/><path d="M10.5 15.5h6"/><path d="M21.4 6.6a1 1 0 0 0-3-3l-4.5 4.5a2 2 0 0 0-.5.9l-.8 2.9a.5.5 0 0 0 .6.6l2.9-.8a2 2 0 0 0 .8-.5z"/>', // the same pages with a pen
   noteLink: '<path d="M20.1 8.4 15.6 3.9H5.7a1.8 1.8 0 0 0-1.8 1.8v12.6a1.8 1.8 0 0 0 1.8 1.8h5.8"/><path d="M20.1 8.4v3.1"/><path d="M14.7 3.9v3.6a1.8 1.8 0 0 0 1.8 1.8h3.6"/><g transform="translate(12.6 12.6) scale(.5)" stroke-width="3.5"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></g>', // the note with Lucide's link in its corner: a note that links to the quoted commentary
+  versions: '<path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/>', // Lucide languages: Bible versions
   copy: '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
   dictionary: '<path d="M12 21V7"/><circle cx="17" cy="10" r="3"/><path d="m19.2 12.2 2.8 2.8"/><path d="M22 6V4a1 1 0 0 0-1-1h-5a4 4 0 0 0-4 4 4 4 0 0 0-4-4H3a1 1 0 0 0-1 1v13a1 1 0 0 0 1 1h6a3 3 0 0 1 3 3 3 3 0 0 1 3-3h6a1 1 0 0 0 1-1v-1.3"/>',
   pencil: '<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/>',
@@ -82,6 +83,8 @@ const state = {
   tab: 'read',
   books: null,
   pos: store.get('pos', { book: 'john', chapter: 1 }),
+  version: store.get('version', 'web'), // Bible version being read; notes remember the version they were made in
+  versions: store.get('versions', null),
   showFriends: store.get('showFriends', true),
   fontSize: store.get('fontSize', 22),
   notesTab: 'mine',
@@ -224,6 +227,42 @@ async function loadBook(id) {
   }
   return bookCache.get(id);
 }
+// The Bible versions on offer (the server's list, remembered for offline use).
+const FALLBACK_VERSIONS = [{ id: 'web', short: 'WEB', name: 'World English Bible', lang: 'en', credit: 'World English Bible (public domain)' }];
+async function loadVersions() {
+  try { state.versions = (await api('GET', '/api/versions')).versions; store.set('versions', state.versions); } catch { /* keep the saved list */ }
+  return state.versions || FALLBACK_VERSIONS;
+}
+const versionInfo = (id = state.version) => (state.versions || FALLBACK_VERSIONS).find((v) => v.id === id) || { id, short: id, name: id, lang: 'en' };
+const isChineseVersion = (id = state.version) => /^zh/.test(versionInfo(id).lang || '');
+// A chapter's verses ([[text, para?], ...]) in a version: the built-in World English Bible, or fetched (and kept by the server).
+const chapterCache = new Map();
+async function loadChapter(book, chapter, version = state.version) {
+  if (version === 'web') return (await loadBook(book))[chapter - 1] || [];
+  const key = `${version}/${book}/${chapter}`;
+  if (!chapterCache.has(key)) {
+    const p = (async () => {
+      let res;
+      try { res = await fetch(`/api/bible/${encodeURIComponent(version)}/${book}/${chapter}`); } catch { throw new OfflineError('You seem to be offline.'); }
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Couldn't load this chapter.");
+      return (await res.json()).verses;
+    })();
+    chapterCache.set(key, p);
+    p.catch(() => chapterCache.delete(key));
+  }
+  return chapterCache.get(key);
+}
+// The words of a verse as the reader counts them: by spaces, or one Chinese character at a time.
+function verseTokens(text, version = state.version) {
+  if (!isChineseVersion(version)) return splitWords(text).map((t, i, a) => ({ t, gap: i < a.length - 1 ? ' ' : '' }));
+  const out = [];
+  for (const [tok] of String(text).matchAll(/\s+|[\u3000-\u303f\u3400-\u9fff\uf900-\ufaff\uff00-\uffef]|[^\s\u3000-\u303f\u3400-\u9fff\uf900-\ufaff\uff00-\uffef]+/g)) {
+    if (/^\s/.test(tok)) { if (out.length) out[out.length - 1].gap = ' '; } else out.push({ t: tok, gap: '' });
+  }
+  return out;
+}
+const verseWords = (text, version) => verseTokens(text, version).map((x) => x.t);
+
 const bookName = (id) => state.books?.find((b) => b.id === id)?.name || id;
 const splitWords = (t) => t.split(/\s+/).filter(Boolean);
 
@@ -237,6 +276,9 @@ function ref(n) {
   if (n.start.verse === n.end.verse) return `${b} ${n.chapter}:${n.start.verse}`;
   return `${b} ${n.chapter}:${n.start.verse}–${n.end.verse}`;
 }
+
+// A note's title: its reference, plus the Bible version when it isn't the World English Bible.
+const noteRef = (n) => (n.lib || !n.version || n.version === 'web' ? ref(n) : `${ref(n)} · ${versionInfo(n.version).short}`);
 
 /* ---------------- shared UI ---------------- */
 // A small info bubble attached to an element (for long presses). Returns { set(text) } to update it.
@@ -353,7 +395,7 @@ const editNoteBtn = (onclick) => h('button', { class: 'icon-btn edit-note', type
 function noteCard(n, { onClick, friend, onEdit, onDelete, title } = {}) {
   return h('div', { class: 'card' + (onClick ? ' clickable' : ''), onclick: onClick, tabindex: onClick ? 0 : null,
     onkeydown: onClick ? (e) => { if (e.key === 'Enter') onClick(); } : null },
-  h('div', { class: 'card-head' }, h('span', { class: 'note-title' }, title || ref(n), noteTime(n)), friend ? h('span', { class: 'who', title: '@' + n.author.username }, dn(n.author)) : null,
+  h('div', { class: 'card-head' }, h('span', { class: 'note-title' }, title || noteRef(n), noteTime(n)), friend ? h('span', { class: 'who', title: '@' + n.author.username }, dn(n.author)) : null,
     onEdit || onDelete ? h('span', { class: 'note-actions' }, onEdit ? editNoteBtn(onEdit) : null, onDelete ? deleteNoteBtn(onDelete) : null) : null),
   h('div', { class: 'quote', dataset: { c: n.color } }, n.quote),
   n.body ? h('p', { class: 'note-body' }, noteBodyNodes(n.body)) : null);
@@ -407,7 +449,7 @@ async function openQuotedCommentary(q) {
 // An existing note opens to read (quotes are links); the pencil switches to the editor.
 function noteViewer(note) {
   openSheet((close) => [
-    h('div', { class: 'title-row note-view-head' }, h('h2', {}, ref(note), noteTime(note)),
+    h('div', { class: 'title-row note-view-head' }, h('h2', {}, noteRef(note), noteTime(note)),
       h('span', { class: 'note-actions' }, editNoteBtn(() => { close(); noteEditor(note); }), deleteNoteBtn(() => confirmDeleteNote(note, close)))),
     h('div', { class: 'quote', dataset: { c: note.color } }, note.quote),
     note.body ? h('p', { class: 'note-body' }, noteBodyNodes(note.body)) : null,
@@ -421,7 +463,7 @@ function noteEditor(note, { isNew } = {}) {
     ta.value = note.body || '';
     requestAnimationFrame(() => { ta.setSelectionRange(ta.value.length, ta.value.length); ta.scrollTop = ta.scrollHeight; });
     return [
-      h('h2', {}, ref(note)),
+      h('h2', {}, noteRef(note)),
       h('div', { class: 'quote', dataset: { c: color } }, note.quote),
       h('div', { style: 'height:14px' }),
       swatchRow(color, (c) => { color = c; ta.closest('.sheet').querySelector('.quote').dataset.c = c; }),
@@ -477,10 +519,12 @@ async function renderReader() {
       // The book name opens the list of books; the chapter number opens this book's chapters.
       h('h1', { class: 'r-title' },
         h('button', { type: 'button', onclick: () => openPicker(), 'aria-label': `${meta.name}. Choose a book` }, meta.name),
-        h('button', { type: 'button', onclick: () => openPicker({ chapters: true }), 'aria-label': `Chapter ${chapter}. Choose a chapter` }, String(chapter))),
+        h('button', { type: 'button', onclick: () => openPicker({ chapters: true }), 'aria-label': `Chapter ${chapter}. Choose a chapter` }, String(chapter)),
+        h('button', { type: 'button', class: 'r-version', onclick: () => openVersionPicker(), 'aria-label': `${versionInfo().name}. Choose a Bible version` }, versionInfo().short)),
       moreMenu([
       { id: 'show-friends', label: "Friends' notes", icon: ICONS.friendsNotes, toggle: { get: () => state.showFriends, set: setShowFriends } },
       { id: 'open-commentary', label: 'Commentary', icon: ICONS.commentaryBooks, action: () => openCommentaryPage(topVisibleVerse()) },
+      { id: 'bible-version', label: 'Bible version', icon: ICONS.versions, action: () => openVersionPicker() },
       { id: 'text-size', label: 'Text size', icon: ICONS.serifAa, popover: textSizeControl },
     ])),
     scroller);
@@ -506,12 +550,13 @@ async function renderReader() {
   }, { passive: true });
 
   let data;
-  try { data = await loadBook(meta.id); } catch {
-    body.append(h('p', { class: 'error' }, "Couldn't load this chapter. Check your connection and try again."));
+  const version = state.version;
+  try { data = await loadChapter(meta.id, chapter, version); } catch (e) {
+    body.append(h('p', { class: 'error' }, e instanceof OfflineError ? `${versionInfo(version).name} needs a connection the first time you open a chapter.` : "Couldn't load this chapter. Check your connection and try again."));
     return;
   }
-  if (state.pos.book !== book || state.pos.chapter !== chapter || state.tab !== 'read') return;
-  buildVerses(data[chapter - 1] || []);
+  if (state.pos.book !== book || state.pos.chapter !== chapter || state.tab !== 'read' || state.version !== version) return;
+  buildVerses(data || []);
   paint();
   if (reader.slideFrom) { body.classList.add(reader.slideFrom > 0 ? 'slide-from-right' : 'slide-from-left'); reader.slideFrom = 0; }
   refreshChapterFriendNotes().then(() => { if (reader.body === body) paint(); });
@@ -524,12 +569,12 @@ function buildVerses(verses) {
     const v = vi + 1;
     const verse = h('span', { class: 'verse' + (para && vi ? ' para' : ''), id: `v${v}` },
       h('span', { class: 'vnum', dataset: { v } }, v));
-    splitWords(text).forEach((word, w, arr) => {
+    verseTokens(text).forEach(({ t: word, gap }, w) => {
       const el = h('span', { class: 'w', dataset: { v, w } }, word);
       reader.words.push({ v, w, el });
       verse.append(el);
-      if (w < arr.length - 1) {
-        const g = h('span', { class: 'g' }, ' ');
+      if (gap) {
+        const g = h('span', { class: 'g' }, gap);
         reader.gaps.push({ v, w, el: g }); // gap after word w
         verse.append(g);
       }
@@ -538,15 +583,18 @@ function buildVerses(verses) {
     frag.append(verse);
   });
   reader.chapterData = verses;
+  if (state.version !== 'web') frag.append(h('p', { class: 'version-credit' }, versionInfo().credit || versionInfo().name));
+  reader.body.lang = isChineseVersion() ? versionInfo().lang : 'en';
   reader.body.append(frag);
   attachReaderGestures(reader.body);
 }
 
 function chapterNotes() {
   const { book, chapter } = state.pos;
-  const mine = Object.values(state.mine.notes).filter((n) => n.book === book && n.chapter === chapter)
-    .sort((a, b) => a.createdAt - b.createdAt);
-  const friends = state.showFriends ? state.friendNotes.filter((n) => n.book === book && n.chapter === chapter) : [];
+  // Only notes made in the version being read: their word positions are counted in that version's text.
+  const here = (n) => n.book === book && n.chapter === chapter && (n.version || 'web') === state.version;
+  const mine = Object.values(state.mine.notes).filter(here).sort((a, b) => a.createdAt - b.createdAt);
+  const friends = state.showFriends ? state.friendNotes.filter(here) : [];
   return { mine, friends };
 }
 
@@ -656,7 +704,7 @@ function selectionHasFullSentence() {
 function selectedQuote() {
   const { start, end } = state.selection;
   const ws = reader.words.filter((x) => inRange(x, start, end));
-  if (reader.mode !== 'bible') return ws.map((x, i) => (i && x.el.previousSibling?.classList?.contains('g') ? ' ' : '') + x.el.textContent).join('');
+  if (reader.mode !== 'bible' || isChineseVersion()) return ws.map((x, i) => (i && x.el.previousSibling?.classList?.contains('g') ? ' ' : '') + x.el.textContent).join('');
   return ws.map((x) => x.el.textContent).join(' ');
 }
 
@@ -854,7 +902,7 @@ function showToolbar() {
   if (!state.selection) return;
   const { start, end } = state.selection;
   const draft = (color) => ({
-    id: newId(), book: state.pos.book, chapter: state.pos.chapter,
+    id: newId(), book: state.pos.book, chapter: state.pos.chapter, version: state.version,
     start: { verse: start.v, word: start.w }, end: { verse: end.v, word: end.w }, color, quote: selectedQuote(), body: '',
   });
   if (reader.mode === 'commentary') return showCommentaryToolbar();
@@ -873,7 +921,8 @@ function showToolbar() {
     }),
     bubbleBtn('Commentary', ICONS.commentaryBooks, () => { const sel = { start, end }; clearSelection(); openCommentaryPage(start.v, sel); }),
     // One word: its dictionary entry. Several words: the selection translated, then each word to look up.
-    bubbleBtn('Dictionary', ICONS.dictionary, (e) => toggleDictionary(bar, e.currentTarget), 'dict-btn')));
+    // (The dictionary is English–Chinese, so it isn't offered on a Chinese version's text.)
+    isChineseVersion() ? null : bubbleBtn('Dictionary', ICONS.dictionary, (e) => toggleDictionary(bar, e.currentTarget), 'dict-btn')));
   reader.toolbar = bar;
   document.body.append(bar);
   positionToolbar();
@@ -1963,7 +2012,7 @@ async function loadCommentaryPage() {
     if (stale()) return;
   }
   let verses = [];
-  try { verses = (await loadBook(book))[chapter - 1] || []; } catch { /* show commentary without the verse text */ }
+  try { verses = await loadChapter(book, chapter); } catch { /* show commentary without the verse text */ }
   if (stale()) return;
   cm.verses = verses; cm.meta = meta;
   const verseCount = verses.length || Math.max(0, ...data.entries.map((e) => e.verse));
@@ -2133,7 +2182,7 @@ function commentaryTarget() {
   const { book, chapter } = state.pos;
   const sec = reader.words.find((x) => !cmp(x, state.selection.start))?.el.closest('.c-entry');
   const from = +(sec?.dataset.from || 0), to = Math.max(from, +(sec?.dataset.to || 0));
-  const words = (v) => splitWords(cm.verses?.[v - 1]?.[0] || '');
+  const words = (v) => verseWords(cm.verses?.[v - 1]?.[0] || '');
   const o = cm.origin?.book === book && cm.origin.chapter === chapter ? cm.origin : null;
   let start, end;
   if (o && (!from || (o.start.v <= to && o.end.v >= from))) ({ start, end } = o);
@@ -2142,10 +2191,10 @@ function commentaryTarget() {
   const quote = [];
   for (let v = start.v; v <= end.v; v++) words(v).forEach((t, w) => { if (inRange({ v, w }, start, end)) quote.push(t); });
   const passage = from ? `${bookName(book)} ${chapter}:${from}${to > from ? `–${to}` : ''}` : `${bookName(book)} ${chapter}`;
-  const existing = Object.values(state.mine.notes).find((n) => n.book === book && n.chapter === chapter
+  const existing = Object.values(state.mine.notes).find((n) => n.book === book && n.chapter === chapter && (n.version || 'web') === state.version
     && n.start.verse === start.v && n.start.word === start.w && n.end.verse === end.v && n.end.word === end.w);
-  const note = existing ? { ...existing } : { id: newId(), book, chapter, start: { verse: start.v, word: start.w }, end: { verse: end.v, word: end.w },
-    color: 'yellow', quote: (quote.join(' ') || `${bookName(book)} ${chapter}:${start.v}`).slice(0, 4000), body: '' };
+  const note = existing ? { ...existing } : { id: newId(), book, chapter, version: state.version, start: { verse: start.v, word: start.w }, end: { verse: end.v, word: end.w },
+    color: 'yellow', quote: (quote.join(isChineseVersion() ? '' : ' ') || `${bookName(book)} ${chapter}:${start.v}`).slice(0, 4000), body: '' };
   let cited = selectedQuote();
   if (cited.length > 1500) cited = cited.slice(0, 1500) + '…';
   const reference = `“${cited}” — ${cm.meta?.name || 'Commentary'}${from ? ` on ${passage}` : `, introduction to ${passage}`}`;
@@ -2174,6 +2223,30 @@ function showCommentaryToolbar() {
   reader.toolbar = bar;
   document.body.append(bar);
   positionToolbar();
+}
+
+// Switch Bible version, staying at the same chapter (and the verse at the top of the screen).
+function setVersion(id, { quiet = false } = {}) {
+  if (id === state.version) return;
+  state.version = id; store.set('version', id);
+  if (quiet) return;
+  const verse = state.tab === 'read' ? topVisibleVerse() : null;
+  clearSelection();
+  goTo(state.pos, verse > 1 ? verse : null);
+  toast(versionInfo(id).name);
+}
+async function openVersionPicker() {
+  const versions = await loadVersions();
+  const group = (title, list) => list.length ? [h('div', { class: 'section-label' }, title), h('div', { class: 'version-list', role: 'radiogroup', 'aria-label': title },
+    ...list.map((v) => h('button', { class: 'version-item', type: 'button', role: 'radio', 'aria-checked': String(v.id === state.version), lang: v.lang,
+      onclick: () => { closeSheet(); setVersion(v.id); } },
+      h('span', { class: 'version-short' }, v.short), h('span', { class: 'version-name' }, v.name), svg(ICONS.check))))] : [];
+  const closeSheet = openSheet(() => [
+    h('h2', {}, 'Bible version'),
+    ...group('English', versions.filter((v) => !/^zh/.test(v.lang))),
+    ...group('中文', versions.filter((v) => /^zh/.test(v.lang))),
+    h('p', { class: 'version-note' }, 'Highlights and notes stay with the version they were made in.'),
+  ], { label: 'Bible version' });
 }
 
 async function openPicker({ chapters = false } = {}) {
@@ -2248,7 +2321,7 @@ async function renderNotes() {
 
   const draw = (failed) => {
     banner.replaceChildren(failed ? h('p', { class: 'error' }, "Couldn't refresh. Showing saved notes.") : '');
-    const open = (n) => () => goTo({ book: n.book, chapter: n.chapter }, n.start.verse);
+    const open = (n) => () => { setVersion(n.version || 'web', { quiet: true }); goTo({ book: n.book, chapter: n.chapter }, n.start.verse); };
     if (state.notesTab === 'mine') {
       const notes = Object.values(state.mine.notes).sort((a, b) => b.updatedAt - a.updatedAt);
       list.replaceChildren(...(notes.length ? notes.map((n) => noteCard(n, { onClick: open(n) }))
@@ -2844,6 +2917,7 @@ async function render() {
 
 function start() {
   loadMine();
+  loadVersions();
   render();
   refreshMine().then(() => { if (state.tab === 'read') paint(); });
   refreshFriends().then(updateBadge);
