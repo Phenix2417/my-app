@@ -412,5 +412,6 @@ body.bars-hidden .bottom-nav { transform: translateY(100%); }
   background: var(--primary); color: var(--on-primary); font-size: 20px; line-height: 1; box-shadow: 0 3px 10px rgba(0,0,0,.3); cursor: pointer; }
 .to-top:focus-visible { outline: 2px solid var(--on-bg); outline-offset: 2px; }
 
-/* Bible dictionary buttons: always solid */
-.bd-jump { background: var(--primary); color: var(--on-primary); border-color: var(--primary); }
+
+/* Bible dictionary buttons: always outlined, never filled */
+.bd-jump, .bd-jump:active { background: none; color: var(--primary); border-color: var(--primary); }
