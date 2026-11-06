@@ -2872,7 +2872,7 @@ async function addBooks(files) {
       try {
         const book = await openEpub(bytes);
         title = book.title || title; author = book.author || '';
-        if (book.coverPath) cover = await makeCover(await book.zip.read(book.coverPath)).catch(() => null);
+        if (book.coverPath) cover = await coverOf(book);
       } catch (e) { toast(`${file.name} couldn't be opened as an EPUB book (${e.message}).`); continue; }
     }
     // Already on the shelf (the same file, whatever its name)? Then don't upload it again.
@@ -2886,11 +2886,32 @@ async function addBooks(files) {
       const q = new URLSearchParams({ format, title, author });
       const { book, duplicate } = await (await authFetch(`/api/library?${q}`, { method: 'POST', body: bytes })).json();
       if (duplicate) { toast(`“${book.title}” is already on your shelf`); continue; } // same file, whatever its name
-      if (cover) await authFetch(`/api/library/${book.id}/cover`, { method: 'PUT', body: cover }).catch(() => {});
+      if (cover) await authFetch(`/api/library/${book.id}/cover`, { method: 'PUT', body: cover }).catch((e) => console.warn('cover not saved', e));
       toast(`Added “${book.title}”`);
     } catch (e) { toast(e instanceof OfflineError ? "You're offline. Try again when you're connected." : `${title}: ${e.message}`); }
   }
   if (state.tab === 'books') renderLibrary();
+}
+// The cover for the shelf: a small JPEG, or the book's own picture when the phone can't shrink it.
+async function coverOf(book) {
+  try {
+    const img = await book.zip.read(book.coverPath);
+    if (!img) return null;
+    const small = await makeCover(img);
+    if (small) return small;
+    const jpegOrPng = (img[0] === 0xff && img[1] === 0xd8) || (img[0] === 0x89 && img[1] === 0x50);
+    return jpegOrPng && img.length <= 600 * 1024 ? new Blob([img]) : null;
+  } catch { return null; }
+}
+async function saveCover(b, book) {
+  const cover = await coverOf(book);
+  if (!cover) return;
+  try {
+    await authFetch(`/api/library/${b.id}/cover`, { method: 'PUT', body: cover });
+    b.hasCover = true;
+    const old = lib.covers.get(b.id); if (old) URL.revokeObjectURL(old);
+    lib.covers.delete(b.id);
+  } catch (e) { console.warn('cover not saved', e); }
 }
 // A small JPEG of the book's cover for the library grid.
 async function makeCover(bytes) {
@@ -2977,6 +2998,7 @@ async function renderBookReader() {
     body.replaceChildren(h('p', { class: 'error' }, e instanceof OfflineError ? "You're offline. Books on your shelf need a connection to open." : `This book couldn't be opened (${e.message}).`));
     return;
   }
+  if (!b.hasCover && book.coverPath) saveCover(b, book); // a book added without its cover gets it now
   if (state.tab !== 'book' || lib.current !== b) return;
 
   let chapter = Math.min(b.position?.chapter ?? 0, book.chapters.length - 1);
