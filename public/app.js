@@ -39,6 +39,7 @@ const svg = (d) => {
 // text with a speech bubble, and Edit commentary list the same pages with a pen.
 // The same purpose always uses the same icon.
 const ICONS = {
+  image: '<rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>',
   plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
   search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
   send: '<path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"/><path d="m21.854 2.147-10.94 10.939"/>',
@@ -3619,14 +3620,37 @@ async function makeCover(bytes) {
 }
 
 function bookOptions(b, { onSaved = renderLibrary, onDeleted = renderLibrary } = {}) {
+  // Open in the Bible reader: only for an ebook imported as Bible versions (shown once that's known).
+  const bibleRow = h('button', { class: 'option-row', type: 'button', hidden: true }, svg(ICONS.read), h('span', {}, 'Open in Bible reader'));
+  if (b.format === 'epub') bibleVersionsOf(b).then((found) => { if (found.length) { bibleRow.hidden = false; bibleRow.onclick = () => { closeSheet(); openLibraryBook(b); }; } });
+  // A new cover: any picture, shrunk to a small JPEG.
+  const coverInput = h('input', { type: 'file', accept: 'image/*', hidden: true, onchange: async () => {
+    const f = coverInput.files[0];
+    if (!f) return;
+    const cover = await makeCover(await f.arrayBuffer());
+    if (!cover) { toast("That picture couldn't be used."); return; }
+    try {
+      await authFetch(`/api/library/${b.id}/cover`, { method: 'PUT', body: cover });
+      b.hasCover = true;
+      const old = lib.covers.get(b.id); if (old) URL.revokeObjectURL(old);
+      lib.covers.delete(b.id);
+      closeSheet(); toast('Cover changed'); onSaved();
+    } catch (e) { toast(e instanceof OfflineError ? "You're offline. Try again when you're connected." : e.message); }
+  } });
+  let closeSheet = () => {};
   openSheet((close) => {
+    closeSheet = close;
     const input = h('input', { value: b.title, maxlength: 200, required: true });
     return [
       h('h2', {}, 'Book options'),
       h('label', { class: 'field' }, h('span', {}, 'Title'), input),
       h('p', { class: 'handle-sub' }, `${b.format.toUpperCase()} · ${(b.size / 1048576).toFixed(b.size < 10485760 ? 1 : 0)} MB`),
-      // An imported Bible opens in the Bible reader; this opens the ebook itself.
-      b.format === 'epub' ? h('button', { class: 'text-btn', type: 'button', onclick: () => { close(); openLibraryBook(b, { asEbook: true }); } }, svg(ICONS.books), 'Open as ebook') : null,
+      // Other ways to open it, and its cover.
+      h('div', { class: 'option-rows' },
+        b.format === 'epub' ? bibleRow : null,
+        b.format === 'epub' ? h('button', { class: 'option-row', type: 'button', onclick: () => { close(); openLibraryBook(b, { asEbook: true }); } }, svg(ICONS.books), h('span', {}, 'Open as ebook')) : null,
+        h('button', { class: 'option-row', type: 'button', onclick: () => coverInput.click() }, svg(ICONS.image), h('span', {}, 'Change cover')),
+        coverInput),
       h('div', { class: 'sheet-actions' },
         h('button', { class: 'text-btn danger', type: 'button', onclick: async () => {
           if (!await confirmSheet({ title: 'Delete this book?', message: `“${b.title}” and its highlights and notes will be removed from your shelf.` })) return;

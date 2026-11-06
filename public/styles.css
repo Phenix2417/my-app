@@ -773,3 +773,9 @@ body:has(.chat-screen) .bottom-nav { display: none; }
 /* ⋯ on a note card (Notes page): share to chat, edit, delete */
 .card-head .card-menu { margin: -10px -10px -10px auto; align-self: center; }
 .card-head .card-menu .more-btn { width: 40px; height: 40px; }
+/* Book options: other ways to open the book, and its cover */
+.option-rows { display: flex; flex-direction: column; margin: 8px 0 4px; }
+.option-row { display: flex; align-items: center; gap: 14px; width: 100%; padding: 12px 4px; border: 0; background: none; color: var(--on-bg);
+  font: inherit; font-size: 16px; text-align: left; cursor: pointer; border-radius: 10px; }
+.option-row:active { background: var(--surface); }
+.option-row .line-icon { width: 22px; height: 22px; color: var(--primary); flex: none; }
