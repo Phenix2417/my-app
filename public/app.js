@@ -1302,7 +1302,9 @@ const backStack = [];
 function openReference(book, chapter, v1, v2) {
   const panel = reader.toolbar?.querySelector('.dict-btn[aria-expanded="true"]') ? 'dict' : null;
   backStack.push({ pos: { ...state.pos }, scrollTop: reader.scroller?.scrollTop || 0, selection: state.selection ? { ...state.selection } : null, panel,
-    target: { book, chapter } });
+    target: { book, chapter },
+    // From the commentary page: come back to it, and keep the Bible words it was opened from.
+    commentary: state.tab === 'commentary' ? { current: cm.current, origin: cm.origin, returnVerse: cm.returnVerse, homeTop: cm.homeTop } : null });
   if (backStack.length > 20) backStack.shift();
   goTo({ book, chapter }, v1 || null, v1 ? [v1, Math.max(v1, v2 || v1)] : null);
 }
@@ -1310,6 +1312,14 @@ function goBack() {
   const from = backStack.pop();
   if (!from) return;
   clearSelection();
+  if (from.commentary) {
+    state.pos = from.pos; store.set('pos', state.pos);
+    Object.assign(cm, { origin: from.commentary.origin, returnVerse: from.commentary.returnVerse, focusVerse: null, quote: null,
+      current: from.commentary.current, restore: { ...from.commentary, scrollTop: from.scrollTop, selection: from.selection, panel: from.panel } });
+    state.tab = 'commentary';
+    render();
+    return;
+  }
   state.pos = from.pos; store.set('pos', state.pos); state.tab = 'read';
   render().then(() => {
     if (reader.scroller) reader.scroller.scrollTop = from.scrollTop;
@@ -1325,7 +1335,7 @@ function backButton() {
   const from = backStack[backStack.length - 1];
   if (!from) return null;
   if (from.target.book !== state.pos.book || from.target.chapter !== state.pos.chapter) { backStack.length = 0; return null; } // moved on
-  return h('button', { class: 'back-pill', type: 'button', onclick: goBack }, `‹ Back to ${bookName(from.pos.book)} ${from.pos.chapter}`);
+  return h('button', { class: 'back-pill', type: 'button', onclick: goBack }, from.commentary ? '‹ Back to commentary' : `‹ Back to ${bookName(from.pos.book)} ${from.pos.chapter}`);
 }
 
 // Double tap: select the word and open its dictionary entry in the bubble.
@@ -1745,7 +1755,11 @@ function renderCommentaryPage() {
     h('div', { class: 'c-titlebar' }, h('h1', {}, 'Commentary')),
     cm.chips);
   // Back to the Bible text: the same bottom-left pill as after following a reference.
-  const back = h('button', { class: 'back-pill', type: 'button', onclick: () => goTo(state.pos, cm.returnVerse) }, `‹ Back to ${meta.name} ${chapter}`);
+  // Back to the Bible text, with the words selected when the commentary was opened still selected.
+  const back = h('button', { class: 'back-pill', type: 'button', onclick: () => {
+    const o = cm.origin?.book === state.pos.book && cm.origin.chapter === state.pos.chapter ? cm.origin : null;
+    goTo(state.pos, cm.returnVerse, o && { start: o.start, end: o.end });
+  } }, `‹ Back to ${meta.name} ${chapter}`);
   new ResizeObserver(() => { cm.scroller.style.paddingTop = `${head.offsetHeight + 10}px`; }).observe(head);
   // The dictionary panel's arrow, once you've scrolled away from where the page opened: it returns there.
   cm.homeTop = 0;
@@ -1795,7 +1809,8 @@ async function loadCommentaryPage() {
   }
   if (stale()) return;
   const ids = myCommentaryIds(cm.list);
-  cm.current = cm.quote && cm.list.some((c) => c.id === cm.quote.id) ? cm.quote.id
+  const pinned = cm.quote?.id || cm.restore?.current;
+  cm.current = pinned && cm.list.some((c) => c.id === pinned) ? pinned
     : ids.includes(cm.current) ? cm.current : ids.includes(store.get('commentary', null)) ? store.get('commentary', null) : ids[0] || null;
   drawCommentaryChips(); drawManage();
   cm.listEl.replaceChildren();
@@ -1839,6 +1854,8 @@ async function loadCommentaryPage() {
     cm.slideFrom = 0;
   }
 
+  const restore = cm.restore; cm.restore = null;
+  if (restore && restore.current === meta.id) { restoreCommentaryView(sections, restore); return; }
   const quote = cm.quote; cm.quote = null;
   if (quote && quote.id === meta.id && showQuoted(sections, quote)) return;
   if (cm.focusVerse) {
@@ -1943,6 +1960,18 @@ function showQuoted(sections, quote) {
     cm.homeTop = cm.scroller.scrollTop;
   });
   return true;
+}
+
+// Coming back from a verse link: same scroll position, same selected words, dictionary reopened.
+function restoreCommentaryView(sections, r) {
+  requestAnimationFrame(() => {
+    cm.scroller.scrollTop = r.scrollTop; cm.homeTop = r.homeTop ?? r.scrollTop;
+    const sel = r.selection, textEl = sel && sections[sel.start.v - 1]?.querySelector('.commentary-text');
+    if (!textEl) return;
+    for (let v = sel.start.v; v <= sel.end.v; v++) { const t = sections[v - 1]?.querySelector('.commentary-text'); if (t) wrapCommentaryWords(t); }
+    setSelection(sel.start, sel.end);
+    if (r.panel) reader.toolbar?.querySelector('.dict-btn')?.click();
+  });
 }
 
 /* ----- Selecting commentary text ----- */
@@ -2054,6 +2083,11 @@ function goTo(pos, verse, select) {
       reader.verseEls[verse].scrollIntoView({ block: 'center' });
       if (!select) reader.verseEls[verse].classList.add('flash');
     } else if (reader.scroller) reader.scroller.scrollTop = 0;
+    // Or reselect exact words {start, end}, e.g. the selection a commentary was opened from.
+    if (select?.start) {
+      if (reader.words.some((x) => !cmp(x, select.start)) && reader.words.some((x) => !cmp(x, select.end))) requestAnimationFrame(() => setSelection(select.start, select.end));
+      return;
+    }
     // Select verses [from, to] (clamped to the chapter), which also shows the selection bubble.
     if (select && reader.words.length) {
       const last = reader.verseEls.length - 1;
