@@ -63,6 +63,10 @@ Read the Bible, highlight passages, write notes, and see the notes your friends 
 - **翻译 / Translate** — an entry that isn't in the interface language (Easton and the ISBE in Chinese; Bible Wiki or 圣经wiki
   when Wikipedia has only the other language) has a translate button beside its title. The text is translated in pieces
   (Youdao, up to about 4,000 characters, a piece that can't be translated stays as it is); tapping again shows the original.
+- **Imported Bibles on the shelf** — opening an EPUB on the shelf that was imported as a Bible version opens the Bible
+  reader instead, with all its translations side by side (the interface language's first). Versions remember the ebook's
+  fingerprint when imported; older ones are recognised from the title ("HOLY BIBLE (ESV-CUV)" → ESV and 和合本) and linked
+  then. The book's ⋯ options still offer **Open as ebook**.
 - **Word origins** — a word English took over from a language of the Bible's world shows where it comes from under the
   pronunciations: 源自希伯来语 · אַבְרָם (ʾaḇrām) / From Hebrew · אַבְרָם (ʾaḇrām). About 640 Bible words: names from
   Hebrew, Aramaic, Greek, Akkadian, Egyptian, Persian…, and terms such as amen, cherub, ephod, shekel, hosanna (Near Eastern

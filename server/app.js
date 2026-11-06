@@ -147,14 +147,15 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
     deleteLibraryNote: q('DELETE FROM library_notes WHERE id = ? AND user_id = ?'),
     myVersions: q('SELECT * FROM user_versions WHERE user_id = ? ORDER BY created_at'),
     userVersion: q('SELECT * FROM user_versions WHERE id = ? AND user_id = ?'),
-    addUserVersion: q('INSERT INTO user_versions (id, user_id, short, name, lang, created_at) VALUES (?, ?, ?, ?, ?, ?)'),
+    addUserVersion: q('INSERT INTO user_versions (id, user_id, short, name, lang, created_at, source_sha) VALUES (?, ?, ?, ?, ?, ?, ?)'),
+    setVersionSource: q('UPDATE user_versions SET source_sha = ? WHERE id = ? AND user_id = ?'),
     deleteUserVersion: q('DELETE FROM user_versions WHERE id = ? AND user_id = ?'),
     deleteVersionNotes: q('DELETE FROM notes WHERE version = ? AND user_id = ?'),
     deleteLibraryBookNotes: q('DELETE FROM library_notes WHERE book_id = ? AND user_id = ?'),
   });
   const libraryNoteOut = (n) => ({ id: n.id, lib: n.book_id, chapter: n.chapter, start: { verse: n.block_start, word: n.word_start },
     end: { verse: n.block_end, word: n.word_end }, color: n.color, quote: n.quote, body: n.body, createdAt: n.created_at, updatedAt: n.updated_at });
-  const libraryOut = (b) => ({ id: b.id, title: b.title, author: b.author, format: b.format, size: b.size, hasCover: !!b.has_cover,
+  const libraryOut = (b) => ({ id: b.id, title: b.title, author: b.author, format: b.format, size: b.size, hasCover: !!b.has_cover, sha256: b.sha256 || null,
     position: b.position ? JSON.parse(b.position) : null, createdAt: b.created_at, openedAt: b.opened_at });
   const cleanText = (v, max) => String(v ?? '').replace(/[\u0000-\u001f\u007f\u200b-\u200f\u2028-\u202e\u2066-\u2069]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
   function myBook(me, id) {
@@ -371,7 +372,7 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
       // that stopped partway), so the app can offer to complete it.
       ...(me ? await Promise.all(stmt.myVersions.all(me.id).map(async (v) => {
         const have = new Set(library ? await library.versionBooks(me.id, v.id) : []);
-        return { id: v.id, short: v.short, name: v.name, lang: v.lang, mine: true, credit: `${v.name} (from your own copy)`,
+        return { id: v.id, short: v.short, name: v.name, lang: v.lang, mine: true, credit: `${v.name} (from your own copy)`, source: v.source_sha || null,
           missing: BOOKS.filter((b) => !have.has(b.id)).map((b) => b.id) };
       })) : []),
     ] })],
@@ -382,8 +383,16 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
       if (!short || !name) throw new HttpError(400, 'Please give the version a name and a short name.');
       const lang = /^zh(-Hans|-Hant)?$/.test(body.lang) ? body.lang : 'en';
       const id = 'u' + crypto.randomBytes(9).toString('base64url');
-      stmt.addUserVersion.run(id, me.id, short, name, lang, now());
-      return { status: 201, body: { version: { id, short, name, lang, mine: true } } };
+      const source = /^[0-9a-f]{64}$/.test(body.source || '') ? body.source : null; // the ebook's fingerprint
+      stmt.addUserVersion.run(id, me.id, short, name, lang, now(), source);
+      return { status: 201, body: { version: { id, short, name, lang, mine: true, source } } };
+    }, true],
+    // Link a version to the ebook it came from (for versions imported before that was recorded).
+    ['PUT', /^\/api\/my-versions\/(u[\w-]{6,20})$/, ({ me, params: [id], body }) => {
+      if (!stmt.userVersion.get(id, me.id)) throw new HttpError(404, 'Version not found');
+      if (!/^[0-9a-f]{64}$/.test(body.source || '')) throw new HttpError(400, 'Invalid fingerprint');
+      stmt.setVersionSource.run(body.source, id, me.id);
+      return { ok: true };
     }, true],
     ['PUT', /^\/api\/my-versions\/(u[\w-]{6,20})\/([a-z0-9]{1,20})$/, async ({ me, params: [id, book], req }) => {
       needLibrary();

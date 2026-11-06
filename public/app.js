@@ -2814,7 +2814,12 @@ async function checkBibleEpub(bufPromise, fileName, file = null, repair = null) 
   const close = openSheet(() => [h('h2', {}, 'Add a Bible'), body], { label: 'Check Bible' });
   let parsed;
   // The ebook's book names are matched against the English names, whatever language the app is in.
-  try { parsed = await parseBibleEpub(await bufPromise, (await loadBooks()).map((b) => ({ ...b, name: b.enName || b.name }))); } catch (e) {
+  let source = null; // the ebook's fingerprint, so opening it on the shelf later opens the Bible reader
+  try {
+    const buf = await bufPromise;
+    source = await fingerprint(buf);
+    parsed = await parseBibleEpub(buf, (await loadBooks()).map((b) => ({ ...b, name: b.enName || b.name })));
+  } catch (e) {
     status.textContent = tr(`This file couldn't be read as an EPUB (${e.message}).`); return;
   }
   status.textContent = tr('Checking chapters and verses…');
@@ -2882,7 +2887,8 @@ async function checkBibleEpub(bufPromise, fileName, file = null, repair = null) 
         btn.closest('.sheet-actions')?.before(keepOpen);
         try {
           for (const part of chosen) {
-            const version = repair || (await api('POST', '/api/my-versions', { short: part.shortIn.value, name: part.nameIn.value, lang: part.lang })).version;
+            const version = repair || (await api('POST', '/api/my-versions', { short: part.shortIn.value, name: part.nameIn.value, lang: part.lang, source })).version;
+            if (repair && !repair.source && source) api('PUT', `/api/my-versions/${repair.id}`, { source }).catch(() => {});
             if (!repair) added.push(version);
             // Save the books six at a time. A repair saves only the books the version is missing, never over the others.
             const ids = Object.keys(part.data).filter((id) => !repair?.missing || repair.missing.includes(id));
@@ -3317,6 +3323,8 @@ function bookOptions(b, { onSaved = renderLibrary, onDeleted = renderLibrary } =
       h('h2', {}, 'Book options'),
       h('label', { class: 'field' }, h('span', {}, 'Title'), input),
       h('p', { class: 'handle-sub' }, `${b.format.toUpperCase()} · ${(b.size / 1048576).toFixed(b.size < 10485760 ? 1 : 0)} MB`),
+      // An imported Bible opens in the Bible reader; this opens the ebook itself.
+      b.format === 'epub' ? h('button', { class: 'text-btn', type: 'button', onclick: () => { close(); openLibraryBook(b, { asEbook: true }); } }, svg(ICONS.books), 'Open as ebook') : null,
       h('div', { class: 'sheet-actions' },
         h('button', { class: 'text-btn danger', type: 'button', onclick: async () => {
           if (!await confirmSheet({ title: 'Delete this book?', message: `“${b.title}” and its highlights and notes will be removed from your shelf.` })) return;
@@ -3331,7 +3339,35 @@ function bookOptions(b, { onSaved = renderLibrary, onDeleted = renderLibrary } =
   }, { label: 'Book options' });
 }
 
-async function openLibraryBook(b) {
+// The person's own Bible versions imported from this ebook: linked by its fingerprint, or — for versions imported before
+// that was recorded — recognised from the title ("HOLY BIBLE (ESV-CUV)" -> ESV and 和合本), then linked for next time.
+// The interface language's translation comes first.
+async function bibleVersionsOf(b) {
+  if (b.format !== 'epub') return [];
+  const own = (await loadVersions().catch(() => state.versions || [])).filter((v) => v.mine);
+  let found = b.sha256 ? own.filter((v) => v.source === b.sha256) : [];
+  if (!found.length && /bible|圣经|聖經|和合|新约|新約/i.test(b.title)) {
+    const shorts = [...KNOWN_VERSIONS, ...KNOWN_CHINESE].filter(([re]) => re.test(b.title)).map(([, short]) => short);
+    found = own.filter((v) => !v.source && shorts.includes(v.short));
+    if (b.sha256) for (const v of found) { v.source = b.sha256; api('PUT', `/api/my-versions/${v.id}`, { source: b.sha256 }).catch(() => {}); }
+  }
+  const mineFirst = (v) => (/^zh/.test(v.lang) === (LANG === 'zh') ? 0 : 1);
+  return found.sort((a, c) => mineFirst(a) - mineFirst(c)).slice(0, 2);
+}
+
+// asEbook: open an imported Bible as the ebook anyway (from the book's options).
+async function openLibraryBook(b, { asEbook = false } = {}) {
+  // A Bible already imported into the Bible reader opens there, with all its translations side by side.
+  const bible = asEbook ? [] : await bibleVersionsOf(b);
+  if (bible.length) {
+    state.version = bible[0].id; store.set('version', state.version);
+    state.parallel = bible[1]?.id || null; store.set('parallel', state.parallel);
+    clearSelection();
+    state.tab = 'read';
+    render();
+    toast(bible.map((v) => v.short).join(' + '));
+    return;
+  }
   if (b.format === 'pdf') { // the phone's own PDF viewer, through a short-lived link
     const win = window.open('', '_blank');
     try {
