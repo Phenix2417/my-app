@@ -763,11 +763,16 @@ function enableSourceLongPress(btn, accentName) {
       fired = true;
       navigator.vibrate?.(8);
       const ph = btn.querySelector('.ph-src:not(.au-src)'), au = btn.querySelector('.au-src');
-      const phName = PH_SOURCES[ph?.dataset.src]?.[1], auName = AU_SOURCES[au?.dataset.src]?.[1];
-      const parts = [`${accentName} phonetic: ${phName || 'none found'}`];
-      if (auName) parts.push(`Recording: ${auName}`);
-      else parts.push('Recording: tap to play and find out');
-      toast(parts.join(' · '));
+      const phName = PH_SOURCES[ph?.dataset.src]?.[1];
+      const say = (rec) => toast(`${accentName} phonetic: ${phName || 'none found'} · Recording: ${rec}`);
+      const auName = AU_SOURCES[au?.dataset.src]?.[1];
+      if (auName) { say(auName); return; }
+      // Not known yet: ask the server (it finds and keeps the recording; nothing is played or stored here).
+      say('checking…');
+      api('GET', `/api/pronounce-source/${btn.dataset.accent}/${encodeURIComponent(btn.dataset.word)}`).then(({ src }) => {
+        if (src) setAudioSource(au, src);
+        say(AU_SOURCES[src]?.[1] || 'none found');
+      }).catch(() => say("couldn't check right now"));
     }, 450);
   });
   for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) btn.addEventListener(ev, () => clearTimeout(timer));
@@ -809,7 +814,7 @@ function pronButton(word, accent, fallback) {
   const badge = h('span', { class: 'ph-src', 'aria-hidden': 'true', hidden: true });
   if (fallback) setPhSource(badge, 'ecdict');
   const auBadge = h('span', { class: 'ph-src au-src', 'aria-hidden': 'true', hidden: true });
-  const btn = h('button', { class: 'pron', 'aria-label': `Play ${name} pronunciation of ${word}`, onclick: () => playWord(word, accent, btn) },
+  const btn = h('button', { class: 'pron', dataset: { word, accent }, 'aria-label': `Play ${name} pronunciation of ${word}`, onclick: () => playWord(word, accent, btn) },
     h('span', { class: 'accent' }, accent.toUpperCase()), badge, ipa, svg(ICONS.speaker), auBadge);
   enableSourceLongPress(btn, name);
   phoneticsFor(word).then((p) => {

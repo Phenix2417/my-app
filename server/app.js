@@ -220,6 +220,14 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
       }
     }, true],
     // Audio for <audio> elements, which can't send a sign-in header; limited to dictionary words.
+    // Which source a word's recording comes from (the server fetches and keeps it if needed; no audio is sent).
+    ['GET', /^\/api\/pronounce-source\/(uk|us)\/([a-z-]{1,40})$/, async ({ params: [accent, word] }) => {
+      if (!pronounce) throw new HttpError(503, 'Pronunciation is not set up on this server');
+      try { return { src: (await pronounce(accent, word)).src || '' }; } catch (e) {
+        if (e instanceof PronounceError) { if (e.status === 404) return { src: '' }; throw new HttpError(e.status, e.message); }
+        throw e;
+      }
+    }, true],
     ['GET', /^\/api\/pronounce\/(uk|us)\/([a-z-]{1,40})$/, async ({ params: [accent, word] }) => {
       if (!pronounce) throw new HttpError(503, 'Pronunciation is not set up on this server');
       try {
