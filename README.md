@@ -90,3 +90,7 @@ page's built-in storage instead of the Node server. Build it with `node artifact
 together with the files in `public/bible/`. Notes are stored privately per person; while someone shares with at
 least one friend, a copy of their notes is kept in the page's shared storage and shown only to the friends they
 switched on.
+
+## Icons
+
+Icons are from [Lucide](https://lucide.dev) (ISC License; portions from Feather, MIT License), copied into `public/app.js` so the app has no icon dependency.

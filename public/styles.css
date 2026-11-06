@@ -447,7 +447,7 @@ body.bars-hidden .back-pill { bottom: calc(20px + env(safe-area-inset-bottom, 0p
 .pron { -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; }
 
 /* Outline icons */
-svg.line-icon { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+svg.line-icon { fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
 .side-btn svg.line-icon { width: 26px; height: 26px; }
 
 .side-btn, .side-tab, .swatch, .icon-btn, .to-top, .size-btn, .bubble-btn { -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; }
@@ -608,3 +608,8 @@ body.bars-hidden .b-size-panel { display: none; }
 .lib-more svg { width: 20px; height: 20px; }
 .grip svg { width: 20px; height: 20px; display: block; }
 .manage-actions .delete-note { width: 40px; height: 40px; }
+
+/* Icons: one size wherever they sit in a bar or button (smaller only inline with text) */
+.bottom-nav svg, .side-btn svg.line-icon, .b-bar-btn svg, .toc-close svg, .to-top svg, .side-tab svg { width: 24px; height: 24px; }
+.bubble-btn svg, .edit-note svg, .lib-more svg, .grip svg { width: 22px; height: 22px; }
+.mark svg.line-icon { stroke-width: 2.4; }

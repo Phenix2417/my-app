@@ -31,37 +31,35 @@ const svg = (d) => {
   s.append(p);
   return s;
 };
-// Every icon is an outline drawing in one style; the same purpose always uses the same icon.
+// One icon set for the whole app: Lucide (https://lucide.dev, ISC License), drawn on the same 24px grid with the
+// same line. Dictionary and Edit commentary list are combined from Lucide shapes the way Lucide combines its own.
+// The same purpose always uses the same icon.
 const ICONS = {
-  // Reading-page side bar: notes from people, commentary books standing on a shelf, and a serif "Aa".
-  friendsNotes: '<path d="M14.5 3.5H6.5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h5"/><path d="M8 8.5h6M8 12h3.5"/><circle cx="17" cy="13" r="2.6"/><path d="M12.6 21c.5-2.5 2.3-3.9 4.4-3.9s3.9 1.4 4.4 3.9"/>',
-  commentaryBooks: '<rect x="3" y="5" width="5" height="15.5" rx="1"/><path d="M3 8h5M3 17.5h5"/><rect x="8" y="3" width="5.5" height="17.5" rx="1"/><path d="M10.75 6v3.6M9.5 7.3h2.5"/><path d="M8 17.5h5.5"/><rect x="14.3" y="5.5" width="5" height="15" rx="1" transform="rotate(14 14.3 20.5)"/>',
-  // Commentary side bar: the commentary books with a pencil (edit your list of commentaries).
-  editShelf: '<rect x="3" y="5" width="5" height="15.5" rx="1"/><path d="M3 8h5M3 17.5h5"/><rect x="8" y="3" width="5.5" height="17.5" rx="1"/><path d="M10.75 6v3.6M9.5 7.3h2.5"/><path d="M8 17.5h5.5"/><path d="M14.6 21l.7-2.9 5-5a1.3 1.3 0 0 1 1.9 1.9l-5 5z"/>',
-  // Selection bubble: copy, and dictionary (an open book with a magnifier) for one word or several.
-  copy: '<rect x="8.5" y="8.5" width="12" height="12" rx="2"/><path d="M15.5 8.5V5a1.5 1.5 0 0 0-1.5-1.5H5A1.5 1.5 0 0 0 3.5 5v9A1.5 1.5 0 0 0 5 15.5h3.5"/>',
-  dictionary: '<path d="M12 7C10 5.4 6.8 5 2.8 5.8v12.6c4-.8 7.2-.4 9.2 1.2 2-1.6 5.2-2 9.2-1.2V5.8C17.2 5 14 5.4 12 7z"/><path d="M12 7v12.6"/><circle cx="16.5" cy="12.5" r="3.2"/><path d="M18.8 14.8l2.1 2.1"/>',
-  pencil: '<path d="M4.5 19.5l.9-4 10.8-10.8a1.9 1.9 0 0 1 2.7 0l.4.4a1.9 1.9 0 0 1 0 2.7L8.5 18.6z"/><path d="M14.6 6.3l3.1 3.1"/>',
-  // Books: tab (a closed book), add a book, and a book's contents.
-  books: '<path d="M6.5 3.5H19v14H6.5A1.5 1.5 0 0 0 5 19V5a1.5 1.5 0 0 1 1.5-1.5z"/><path d="M5 19a1.5 1.5 0 0 0 1.5 1.5H19"/><path d="M10 3.5v6.5l2-1.4 2 1.4V3.5"/>',
-  addBook: '<path d="M6.5 3.5H16v11H6.5A1.5 1.5 0 0 0 5 16V5a1.5 1.5 0 0 1 1.5-1.5z"/><path d="M5 16a1.5 1.5 0 0 0 1.5 1.5H11"/><path d="M18 14.5v6M15 17.5h6"/>',
-  contents: '<path d="M8 6h12M8 12h12M8 18h12"/><circle cx="4" cy="6" r=".9" fill="currentColor"/><circle cx="4" cy="12" r=".9" fill="currentColor"/><circle cx="4" cy="18" r=".9" fill="currentColor"/>',
-  back: '<path d="M20 12H5M11 5l-7 7 7 7"/>',
-  close: '<path d="M6 6l12 12M18 6L6 18"/>',
-  more: '<circle cx="5" cy="12" r="1.3" fill="currentColor"/><circle cx="12" cy="12" r="1.3" fill="currentColor"/><circle cx="19" cy="12" r="1.3" fill="currentColor"/>',
-  sliders: '<path d="M4 7.5h7M17 7.5h3M4 16.5h3M13 16.5h7"/><circle cx="14" cy="7.5" r="2.5"/><circle cx="10" cy="16.5" r="2.5"/>',
-  serifAa: '<text x="1.5" y="19.5" font-family="Georgia,\'Noto Serif\',serif" font-size="17" font-weight="700" fill="currentColor" stroke="none">A</text><text x="13.5" y="19.5" font-family="Georgia,\'Noto Serif\',serif" font-size="12" font-weight="700" fill="currentColor" stroke="none">a</text>',
-  read: '<path d="M12 7C10 5.4 6.8 5 2.8 5.8v12.6c4-.8 7.2-.4 9.2 1.2 2-1.6 5.2-2 9.2-1.2V5.8C17.2 5 14 5.4 12 7z"/><path d="M12 7v12.6"/>',
-  notes: '<path d="M5 3.5h14v11l-5.5 6H5z"/><path d="M13.5 20.5v-6H19"/><path d="M8.5 8h7M8.5 11.5h4"/>',
-  refresh: '<path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3"/><path d="M19.5 4.5v4h-4"/>',
-  personAdd: '<circle cx="10" cy="8" r="3.4"/><path d="M3 20c.7-3.7 3.5-5.9 7-5.9 1.4 0 2.7.4 3.8 1"/><path d="M18.5 13v7M15 16.5h7"/>',
-  account: '<circle cx="12" cy="8" r="3.6"/><path d="M4.5 20c.8-3.9 3.8-6.2 7.5-6.2s6.7 2.3 7.5 6.2"/>',
-  speaker: '<path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M15.5 9.2a4 4 0 0 1 0 5.6M18 6.8a7.5 7.5 0 0 1 0 10.4"/>',
-  chevronLeft: '<path d="M14.5 6l-6 6 6 6"/>',
-  friends: '<circle cx="9" cy="8" r="3.2"/><path d="M3 19.5c.6-3.3 3-5.2 6-5.2s5.4 1.9 6 5.2"/><circle cx="16.8" cy="9" r="2.6"/><path d="M16.8 14.3c2.3 0 4 1.5 4.4 4.2"/>',
-  arrowUp: '<path d="M12 19.5v-15M5.5 11l6.5-6.5 6.5 6.5"/>',
-  arrowDown: '<path d="M12 4.5v15M5.5 13l6.5 6.5 6.5-6.5"/>',
-  grip: '<circle cx="9" cy="6" r="1.3" fill="currentColor"/><circle cx="15" cy="6" r="1.3" fill="currentColor"/><circle cx="9" cy="12" r="1.3" fill="currentColor"/><circle cx="15" cy="12" r="1.3" fill="currentColor"/><circle cx="9" cy="18" r="1.3" fill="currentColor"/><circle cx="15" cy="18" r="1.3" fill="currentColor"/>',
+  read: '<path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/>',
+  notes: '<path d="M16 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8Z"/><path d="M15 3v4a2 2 0 0 0 2 2h4"/>',
+  books: '<path d="M10 2v8l3-3 3 3V2"/><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a1 1 0 0 1 0-5H20"/>',
+  addBook: '<path d="M12 7v6"/><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a1 1 0 0 1 0-5H20"/><path d="M9 10h6"/>',
+  friends: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+  account: '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+  personAdd: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" x2="19" y1="8" y2="14"/><line x1="22" x2="16" y1="11" y2="11"/>',
+  friendsNotes: '<path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M15 18a3 3 0 1 0-6 0"/><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"/><circle cx="12" cy="13" r="2"/>',
+  commentaryBooks: '<rect width="8" height="18" x="3" y="3" rx="1"/><path d="M7 3v18"/><path d="M20.4 18.9c.2.5-.1 1.1-.6 1.3l-1.9.7c-.5.2-1.1-.1-1.3-.6L11.1 5.1c-.2-.5.1-1.1.6-1.3l1.9-.7c.5-.2 1.1.1 1.3.6Z"/>',
+  editShelf: '<rect width="8" height="18" x="3" y="3" rx="1"/><path d="M7 3v18"/><path d="M21.378 16.626a1 1 0 0 0-3.004-3.004l-4.01 4.012a2 2 0 0 0-.506.854l-.837 2.87a.5.5 0 0 0 .62.62l2.87-.837a2 2 0 0 0 .854-.506z"/>',
+  copy: '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
+  dictionary: '<path d="M12 21V7"/><circle cx="17" cy="10" r="3"/><path d="m19.2 12.2 2.8 2.8"/><path d="M22 6V4a1 1 0 0 0-1-1h-5a4 4 0 0 0-4 4 4 4 0 0 0-4-4H3a1 1 0 0 0-1 1v13a1 1 0 0 0 1 1h6a3 3 0 0 1 3 3 3 3 0 0 1 3-3h6a1 1 0 0 0 1-1v-1.3"/>',
+  pencil: '<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/>',
+  contents: '<path d="M3 12h.01"/><path d="M3 18h.01"/><path d="M3 6h.01"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M8 6h13"/>',
+  back: '<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>',
+  close: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  more: '<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>',
+  sliders: '<line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/>',
+  serifAa: '<path d="M21 14h-5"/><path d="M16 16v-3.5a2.5 2.5 0 0 1 5 0V16"/><path d="M4.5 13h6"/><path d="m3 16 4.5-9 4.5 9"/>',
+  refresh: '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
+  speaker: '<path d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z"/><path d="M16 9a5 5 0 0 1 0 6"/><path d="M19.364 18.364a9 9 0 0 0 0-12.728"/>',
+  chevronLeft: '<path d="m15 18-6-6 6-6"/>',
+  arrowUp: '<path d="m5 12 7-7 7 7"/><path d="M12 19V5"/>',
+  arrowDown: '<path d="M12 5v14"/><path d="m19 12-7 7-7-7"/>',
+  grip: '<circle cx="9" cy="12" r="1"/><circle cx="9" cy="5" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="19" r="1"/>',
 };
 
 /* ---------------- storage ---------------- */
