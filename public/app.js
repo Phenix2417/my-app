@@ -1099,17 +1099,17 @@ function toggleDictionary(bar, btn) {
     if (!topics.length && e?.base) { bdWord = e.base.word; topics = await bibleTopicsFor(bdWord); }
     if (!topics.length || !bibleSlot.isConnected) return; // none, or another word was tapped meanwhile
     const sections = {};
+    // Show (fetching the first time) and scroll to the entry; tapping again just scrolls back to it.
     const toggle = (lang) => async (ev) => {
       const btn = ev.currentTarget;
       let section = sections[lang];
-      if (section && !section.hidden) { section.hidden = true; btn.setAttribute('aria-pressed', 'false'); positionToolbar(); return; }
-      btn.setAttribute('aria-pressed', 'true');
       if (!section) {
+        if (btn.classList.contains('loading')) return;
         btn.classList.add('loading');
         try {
           section = sections[lang] = bibleSection(await bibleTextFor(bdWord, lang), { english: lang === 'en' });
         } catch (err) {
-          btn.classList.remove('loading'); btn.setAttribute('aria-pressed', 'false');
+          btn.classList.remove('loading');
           toast(err instanceof OfflineError ? 'The Bible dictionary needs a connection.' : err.message);
           return;
         }
@@ -1125,8 +1125,8 @@ function toggleDictionary(bar, btn) {
       section.classList.remove('flash'); void section.offsetWidth; section.classList.add('flash');
     };
     body.querySelector('.dict-head')?.append(
-      h('button', { class: 'bd-jump', type: 'button', 'aria-pressed': 'false', 'aria-label': 'Show the Chinese Bible dictionary entry', onclick: toggle('zh') }, '圣经辞典'),
-      h('button', { class: 'bd-jump', type: 'button', lang: 'en', 'aria-pressed': 'false', 'aria-label': 'Show the English Bible dictionary entry', onclick: toggle('en') }, 'Bible Dictionary'));
+      h('button', { class: 'bd-jump', type: 'button', 'aria-label': 'Show the Chinese Bible dictionary entry', onclick: toggle('zh') }, '圣经辞典'),
+      h('button', { class: 'bd-jump', type: 'button', lang: 'en', 'aria-label': 'Show the English Bible dictionary entry', onclick: toggle('en') }, 'Bible Dictionary'));
     positionToolbar();
   };
   const dictBox = h('div', { class: 'dict' }, trans, body,

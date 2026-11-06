@@ -402,7 +402,6 @@ body.bars-hidden .bottom-nav { transform: translateY(100%); }
 .bd-term-en { text-transform: capitalize; }
 .bd-english .bd-text { font-family: "Noto Serif", Georgia, serif; line-height: 1.6; }
 
-.bd-jump[aria-pressed="true"] { background: var(--primary); color: var(--on-primary); }
 .bd-slot > .bd:first-child:not([hidden]) ~ .bd { margin-top: 14px; }
 
 .bd-jump.loading { opacity: .6; cursor: progress; }
@@ -412,3 +411,6 @@ body.bars-hidden .bottom-nav { transform: translateY(100%); }
 .to-top { position: absolute; right: 14px; bottom: 14px; z-index: 2; width: 40px; height: 40px; border-radius: 20px; border: 0;
   background: var(--primary); color: var(--on-primary); font-size: 20px; line-height: 1; box-shadow: 0 3px 10px rgba(0,0,0,.3); cursor: pointer; }
 .to-top:focus-visible { outline: 2px solid var(--on-bg); outline-offset: 2px; }
+
+/* Bible dictionary buttons: always solid */
+.bd-jump { background: var(--primary); color: var(--on-primary); border-color: var(--primary); }
