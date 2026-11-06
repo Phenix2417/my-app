@@ -1529,9 +1529,11 @@ async function analyzeGrammar(text) {
 const bibleTopicsCache = new Map();
 function bibleTopicsFor(word) {
   const w = String(word || '').toLowerCase();
-  if (!w) return Promise.resolve([]);
+  if (!w) return Promise.resolve({ topics: [], easton: false, isbe: false });
   if (!bibleTopicsCache.has(w)) {
-    bibleTopicsCache.set(w, api('GET', `/api/bible-dictionary/${encodeURIComponent(w)}`).then((r) => r.topics || []).catch(() => { bibleTopicsCache.delete(w); return []; }));
+    bibleTopicsCache.set(w, api('GET', `/api/bible-dictionary/${encodeURIComponent(w)}`)
+      .then((r) => ({ topics: r.topics || [], easton: !!r.easton, isbe: !!r.isbe }))
+      .catch(() => { bibleTopicsCache.delete(w); return { topics: [], easton: false, isbe: false }; }));
   }
   return bibleTopicsCache.get(w);
 }
@@ -1572,6 +1574,63 @@ function wikiSection(found, lang) {
     h('div', { class: 'bd-entry' },
       h('div', { class: 'bd-term' + (zh ? '' : ' wiki-term-en') }, x.title), text,
       h('div', { class: 'wiki-actions' }, more, h('a', { class: 'wiki-link', href: x.url, target: '_blank', rel: 'noopener noreferrer' }, zh ? '在维基百科阅读' : 'Read on Wikipedia'))));
+}
+// Easton's Bible Dictionary and the ISBE (built in on the server, public domain).
+const BD_ORDER = ['zh', 'en', 'easton', 'isbe'];
+const encyclopediaCache = new Map();
+function encyclopediaFor(source, word) {
+  const key = `${source}/${word}`;
+  if (!encyclopediaCache.has(key)) {
+    const p = api('GET', `/api/encyclopedia/${source}/${encodeURIComponent(word)}`);
+    encyclopediaCache.set(key, p);
+    p.catch(() => encyclopediaCache.delete(key));
+  }
+  return encyclopediaCache.get(key);
+}
+// OSIS book abbreviations, in Bible order (the same order as state.books).
+const OSIS_BOOKS = 'Gen Exod Lev Num Deut Josh Judg Ruth 1Sam 2Sam 1Kgs 2Kgs 1Chr 2Chr Ezra Neh Esth Job Ps Prov Eccl Song Isa Jer Lam Ezek Dan Hos Joel Amos Obad Jonah Mic Nah Hab Zeph Hag Zech Mal Matt Mark Luke John Acts Rom 1Cor 2Cor Gal Eph Phil Col 1Thess 2Thess 1Tim 2Tim Titus Phlm Heb Jas 1Pet 2Pet 1John 2John 3John Jude Rev'.split(' ');
+// Text with ⟦Gen.6.8|Gen. 6:8⟧ references -> text and tappable reference buttons (like the Bible dictionary's).
+function osisLinks(text) {
+  const out = [];
+  let last = 0;
+  for (const m of String(text).matchAll(/⟦([^|⟧]*)\|([^⟧]*)⟧/g)) {
+    out.push(text.slice(last, m.index));
+    last = m.index + m[0].length;
+    const [from, to] = m[1].split('-');
+    const [b, c, v] = from.split('.'), end = to?.split('.');
+    const meta = state.books?.[OSIS_BOOKS.indexOf(b)];
+    const ch = +c, v1 = v ? +v : null;
+    const v2 = end && end[0] === b && +end[1] === ch && end[2] ? +end[2] : v1;
+    if (!meta || !(ch >= 1 && ch <= meta.chapters)) { out.push(m[2]); continue; }
+    out.push(h('button', { class: 'vref', type: 'button', title: 'Open in the Bible', onclick: (e) => { e.stopPropagation(); openReference(meta.id, ch, v1, v2); } }, m[2]));
+  }
+  out.push(text.slice(last));
+  return out.filter((x) => x !== '');
+}
+const plainOsis = (text) => String(text).replace(/⟦[^|⟧]*\|([^⟧]*)⟧/g, '$1');
+// Cut text with references at a word boundary, never inside a reference.
+function shortenOsis(full, limit) {
+  let n = 0, i = 0;
+  while (i < full.length && n < limit) {
+    if (full[i] === '⟦') { const j = full.indexOf('⟧', i); n += plainOsis(full.slice(i, j + 1)).length; i = j + 1; } else { n++; i++; }
+  }
+  return i >= full.length ? full : `${full.slice(0, i).replace(/\s+[^\s⟧]*$/, '')}…`;
+}
+function encyclopediaSection(found, source) {
+  const LIMIT = source === 'isbe' ? 420 : 360;
+  return h('section', { class: 'bd bd-english', lang: 'en' },
+    h('div', { class: 'bd-head' }, source === 'isbe' ? 'ISBE' : 'Easton', h('span', { class: 'bd-src' }, ` · ${found.source}`)),
+    ...found.entries.map((entry) => {
+      const full = entry.text, long = plainOsis(full).length > LIMIT;
+      const text = h('p', { class: 'bd-text' }, ...osisLinks(long ? shortenOsis(full, LIMIT) : full));
+      const more = long ? h('button', { class: 'text-btn bd-more', type: 'button', onclick: () => {
+        const open = more.textContent === 'More';
+        text.replaceChildren(...osisLinks(open ? full : shortenOsis(full, LIMIT)));
+        more.textContent = open ? 'Less' : 'More';
+        positionToolbar();
+      } }, 'More') : null;
+      return h('div', { class: 'bd-entry' }, h('div', { class: 'bd-term bd-term-en' }, entry.term.toLowerCase()), text, more);
+    }));
 }
 // Cut a long entry at a word boundary, without leaving an empty bullet line at the end.
 const shorten = (full, limit) => `${full.slice(0, limit).replace(/\s+\S*$/, '').replace(/\n[•·\s]*$/, '')}…`;
@@ -1746,15 +1805,18 @@ function toggleDictionary(bar, btn) {
       h('p', { class: 'dict-muted' }, 'Not in the English dictionary.'), bibleSlot, wikiSlot);
     else body.replaceChildren(...[...block(e, !e.base), ...(e.base ? [h('div', { class: 'dict-base' }, `Base form: ${e.base.word}`), ...block(e.base, true)] : []), bibleSlot, wikiSlot].filter(Boolean));
     positionToolbar();
-    // Bible dictionary buttons, only if the word (or its base form) has topics. The text is fetched on tap.
+    // Bible dictionary buttons (圣经辞典, Bible Dictionary, Easton, ISBE), only for the sources that have the word
+    // (or its base form). The text is fetched on tap.
     let bdWord = w;
-    let topics = await bibleTopicsFor(w);
-    if (!topics.length && e?.base) { bdWord = e.base.word; topics = await bibleTopicsFor(bdWord); }
+    let info = await bibleTopicsFor(w);
+    const hasAny = (i) => i.topics.length > 0 || i.easton || i.isbe;
+    if (!hasAny(info) && e?.base) { bdWord = e.base.word; info = await bibleTopicsFor(bdWord); }
+    const { topics } = info;
     if (!bibleSlot.isConnected) return; // another word was tapped meanwhile
     // Bible Wiki (Wikipedia), after the Bible dictionaries: for words with Bible topics, and for names.
     const token = all.find((t) => dictKey(t) === w) || w;
     const isName = /^[A-Z]/.test(token.replace(/^[^A-Za-z]+/, ''));
-    if (topics.length || isName) {
+    if (hasAny(info) || isName) {
       const wikiBoxes = {};
       // 圣经wiki (Chinese) and Bible Wiki (English): one lookup, Chinese shown above English whichever was opened first.
       const wikiToggle = (lang) => () => {
@@ -1771,7 +1833,7 @@ function toggleDictionary(bar, btn) {
       };
       // The buttons appear only once the article is known to exist (in that language); the lookup is kept.
       let found = null;
-      wikiFor(topics.length ? bdWord : w).then((r) => {
+      wikiFor(hasAny(info) ? bdWord : w).then((r) => {
         found = r;
         if (!wikiSlot.isConnected) return;
         body.querySelector('.dict-head')?.append(...[
@@ -1781,7 +1843,7 @@ function toggleDictionary(bar, btn) {
         positionToolbar();
       }).catch(() => { /* no article, or Wikipedia unreachable: no buttons */ });
     }
-    if (!topics.length) { positionToolbar(); return; }
+    if (!hasAny(info)) { positionToolbar(); return; }
     const sections = {};
     // Show (fetching the first time) and scroll to the entry; tapping again just scrolls back to it.
     const toggle = (lang) => async (ev) => {
@@ -1791,7 +1853,9 @@ function toggleDictionary(bar, btn) {
         if (btn.classList.contains('loading')) return;
         btn.classList.add('loading');
         try {
-          section = sections[lang] = bibleSection(await bibleTextFor(bdWord, lang), { english: lang === 'en' });
+          section = sections[lang] = lang === 'zh' || lang === 'en'
+            ? bibleSection(await bibleTextFor(bdWord, lang), { english: lang === 'en' })
+            : encyclopediaSection(await encyclopediaFor(lang, bdWord), lang);
         } catch (err) {
           btn.classList.remove('loading');
           toast(err instanceof OfflineError ? 'The Bible dictionary needs a connection.' : err.message);
@@ -1799,8 +1863,10 @@ function toggleDictionary(bar, btn) {
         }
         btn.classList.remove('loading');
         if (!bibleSlot.isConnected) return;
-        // Chinese above English, whichever was opened first.
-        if (lang === 'zh') bibleSlot.prepend(section); else bibleSlot.append(section);
+        // In the buttons' order (Chinese, English, Easton, ISBE), whichever was opened first.
+        section.dataset.src = lang;
+        const later = [...bibleSlot.children].find((x) => BD_ORDER.indexOf(x.dataset.src) > BD_ORDER.indexOf(lang));
+        bibleSlot.insertBefore(section, later || null);
       }
       section.hidden = false;
       positionToolbar();
@@ -1808,16 +1874,21 @@ function toggleDictionary(bar, btn) {
       if (box) box.scrollBy({ top: section.getBoundingClientRect().top - box.getBoundingClientRect().top - 6, behavior: 'smooth' });
       section.classList.remove('flash'); void section.offsetWidth; section.classList.add('flash');
     };
-    const zhBtn = h('button', { class: 'bd-jump bd-dict', type: 'button', 'aria-label': 'Show the Chinese Bible dictionary entry', onclick: toggle('zh') }, '圣经辞典');
-    const enBtn = h('button', { class: 'bd-jump bd-dict', type: 'button', lang: 'en', 'aria-label': 'Show the English Bible dictionary entry', onclick: toggle('en') }, 'Bible Dictionary');
+    const btn = (lang, label, aria) => h('button', { class: 'bd-jump bd-dict', type: 'button', lang: lang === 'zh' ? 'zh-Hans' : 'en', 'aria-label': aria, onclick: toggle(lang) }, label);
+    const buttons = [
+      topics.length ? btn('zh', '圣经辞典', 'Show the Chinese Bible dictionary entry') : null,
+      topics.length ? btn('en', 'Bible Dictionary', 'Show the English Bible dictionary entry') : null,
+      info.easton ? btn('easton', 'Easton', "Show the Easton's Bible Dictionary entry") : null,
+      info.isbe ? btn('isbe', 'ISBE', 'Show the International Standard Bible Encyclopedia entry') : null,
+    ].filter(Boolean);
     const head = body.querySelector('.dict-head'), wikiBtn = head?.querySelector('.bd-wiki');
-    if (wikiBtn) wikiBtn.before(zhBtn, enBtn); else head?.append(zhBtn, enBtn);
-    // No English dictionary entry: show the Chinese Bible dictionary entry straight away.
-    if (noEnglish) toggle('zh')({ currentTarget: zhBtn });
+    if (wikiBtn) wikiBtn.before(...buttons); else head?.append(...buttons);
+    // No English dictionary entry: show the first Bible dictionary entry straight away.
+    if (noEnglish && buttons[0]) buttons[0].click();
     positionToolbar();
   };
   const dictBox = h('div', { class: 'dict' }, trans, body,
-    h('p', { class: 'dict-credit' }, multi ? 'Translation: Youdao · Chinese: ECDICT, Wiktionary (CC BY-SA) · English: ECDICT, Free Dictionary (Wiktionary), WordNet · Phonetics & audio: Youdao, Free Dictionary API · 圣经辞典: 信望爱 · 圣经wiki / Bible Wiki: Wikipedia (CC BY-SA)' : 'Chinese: ECDICT, Wiktionary (CC BY-SA) · English: ECDICT, Free Dictionary (Wiktionary), WordNet · Phonetics & audio: Youdao, Free Dictionary API · 圣经辞典: 信望爱 · 圣经wiki / Bible Wiki: Wikipedia (CC BY-SA)'));
+    h('p', { class: 'dict-credit' }, multi ? 'Translation: Youdao · Chinese: ECDICT, Wiktionary (CC BY-SA) · English: ECDICT, Free Dictionary (Wiktionary), WordNet · Phonetics & audio: Youdao, Free Dictionary API · 圣经辞典: 信望爱 · Easton (1897), ISBE (1915): public domain, via CrossWire · 圣经wiki / Bible Wiki: Wikipedia (CC BY-SA)' : 'Chinese: ECDICT, Wiktionary (CC BY-SA) · English: ECDICT, Free Dictionary (Wiktionary), WordNet · Phonetics & audio: Youdao, Free Dictionary API · 圣经辞典: 信望爱 · Easton (1897), ISBE (1915): public domain, via CrossWire · 圣经wiki / Bible Wiki: Wikipedia (CC BY-SA)'));
   // An ↑ button appears once the panel is scrolled down, and takes it back to the top.
   const toTop = h('button', { class: 'to-top', type: 'button', hidden: true, 'aria-label': 'Back to top', title: 'Back to top',
     onclick: () => dictBox.scrollTo({ top: 0, behavior: 'smooth' }) }, svg(ICONS.arrowUp));

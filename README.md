@@ -51,6 +51,11 @@ Read the Bible, highlight passages, write notes, and see the notes your friends 
   (`server/data/topics.json`, 5,952 titles, no text; rebuild with `node scripts/build-topic-index.mjs`), so the
   **圣经辞典** / **Bible Dictionary** buttons cost nothing to show. Tapping one fetches that text from FHL's JSON API
   (`st.php`); the server keeps a copy.
+- **Easton / ISBE** — after the Bible Dictionary buttons: Easton's Bible Dictionary (1897, about 4,000 short entries) and
+  the International Standard Bible Encyclopedia (1915, about 9,300 articles), both public domain, from CrossWire's
+  SWORD modules. They're built in (`server/data/easton.json.gz`, `isbe.json.gz`; rebuild with
+  `node scripts/build-encyclopedias.mjs <Easton folder> <ISBE folder>`), so the buttons appear only when there's an
+  entry, with no outside request. Bible references in them are tappable. Easton's headwords also colour words in the text.
 - **圣经wiki / Bible Wiki** — two buttons after the Bible dictionary ones (Chinese, English), for words with Bible topics and for names: the Wikipedia article
   (CC BY-SA 4.0), in Chinese (simplified, when Wikipedia has one) and English, with a link to the full article.
   One request asks for Bible-specific titles at once ("Grace (Bible)", "Grace in Christianity", …); the bare word

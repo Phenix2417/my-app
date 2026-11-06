@@ -41,6 +41,9 @@ const SOURCES = {
   en: { name: 'Nave’s / Torrey’s Topical Bible', N: (book) => String(book) },
 };
 
+// Common words that are rarely what a topic is about: not coloured in the Bible text.
+export const MARK_SKIP = new Set('on i will no so new time first years way state good put present second form example company college interest one two all a an the and or but of to in at by for from with as is was be he she it they we you his her its their our my me him them us this that these those who what which when where how not ah aha'.split(' '));
+
 export function createBibleDictionary({
   cacheDir, fetchImpl = globalThis.fetch, upstream = 'https://bible.fhl.net/json/st.php',
   indexFile = path.join(here, 'data', 'topics.json'), index = null, maxTopics = 3,
@@ -84,7 +87,6 @@ export function createBibleDictionary({
   // For colouring words in the Bible text: the first word of every topic title ("grace" from "Grace of God"),
   // less common words that are rarely what the topic is about ("on", "will", "so", …).
   let heads = null;
-  const MARK_SKIP = new Set('on i will no so new time first years way state good put present second form example company college interest one two all'.split(' '));
   const headSet = () => {
     if (!heads) heads = new Set(loadIndex().map(([, , t]) => String(t).toLowerCase().trim().split(/[ ,]/)[0]).filter((w) => w && !MARK_SKIP.has(w)));
     return heads;

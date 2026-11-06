@@ -6,7 +6,7 @@ import { BOOKS, BOOK_IDS } from './books.js';
 import { commentaryList, CommentaryError, COMMENTARY_IDS } from './commentary.js';
 import { PronounceError } from './pronounce.js';
 import { TranslateError } from './translate.js';
-import { BibleDictError } from './bibledict.js';
+import { BibleDictError, MARK_SKIP } from './bibledict.js';
 import { WikiError } from './wiki.js';
 import { VERSIONS, VERSION_IDS, VersionError } from './versions.js';
 import { LibraryError, BOOK_TYPES, MAX_BOOK_BYTES, MAX_LIBRARY_BYTES, MAX_COVER_BYTES, sniffFormat, sniffImage } from './library.js';
@@ -76,7 +76,7 @@ export function seedTestUsers(db, users) {
   return created;
 }
 
-export function createApp(db, { publicDir, trustProxy = false, commentary = null, pronounce = null, phonetics = null, translate = null, bibleDict = null, library = null, freeDict = null, versions = null, wiki = null } = {}) {
+export function createApp(db, { publicDir, trustProxy = false, commentary = null, pronounce = null, phonetics = null, translate = null, bibleDict = null, library = null, freeDict = null, versions = null, wiki = null, encyclopedias = null } = {}) {
   const q = (sql) => db.prepare(sql);
   const stmt = {
     userByName: q('SELECT * FROM users WHERE username = ?'),
@@ -427,7 +427,9 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
     // Which Bible dictionary topics a word has (from the built-in index, no outside request) — for the buttons.
     ['GET', /^\/api\/bible-dictionary\/([a-z' %-]{1,60})$/, ({ params: [word] }) => {
       if (!bibleDict) throw new HttpError(503, 'The Bible dictionary is not set up on this server');
-      return { topics: bibleDict.has(decodeURIComponent(word)) };
+      const w = decodeURIComponent(word);
+      // Also: whether Easton's and the ISBE have an entry (answered from memory).
+      return { topics: bibleDict.has(w), ...(encyclopedias ? encyclopedias.has(w) : {}) };
     }, true],
     // The full entry, in Chinese (zh) or English (en), fetched when a button is tapped.
     ['GET', /^\/api\/bible-dictionary\/([a-z' %-]{1,60})\/(zh|en)$/, async ({ params: [word, lang] }) => {
@@ -444,12 +446,21 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
     ['POST', /^\/api\/bible-dictionary\/marks$/, ({ body }) => {
       if (!bibleDict) throw new HttpError(503, 'The Bible dictionary is not set up on this server');
       const words = Array.isArray(body?.words) ? body.words.slice(0, 2000).map(String) : [];
-      return { words: bibleDict.marks(words) };
+      const found = new Set(bibleDict.marks(words));
+      if (encyclopedias) for (const w of encyclopedias.marks(words, MARK_SKIP)) found.add(w);
+      return { words: words.filter((w) => found.has(w)) };
     }, true],
     // …and which names have a Bible wiki article (one Wikipedia request per chapter at most, then kept).
     ['POST', /^\/api\/wiki\/names$/, async ({ body }) => {
       if (!wiki?.names) throw new HttpError(503, 'The Bible wiki is not set up on this server');
       return { names: await wiki.names(Array.isArray(body?.names) ? body.names.slice(0, 200).map(String) : []) };
+    }, true],
+    // An Easton's Bible Dictionary or ISBE entry (built in, public domain).
+    ['GET', /^\/api\/encyclopedia\/(easton|isbe)\/([a-z' %-]{1,60})$/, ({ params: [source, word] }) => {
+      if (!encyclopedias) throw new HttpError(503, 'Easton and the ISBE are not set up on this server');
+      const found = encyclopedias.entry(source, decodeURIComponent(word));
+      if (!found) throw new HttpError(404, source === 'easton' ? "Not in Easton's Bible Dictionary" : 'Not in the ISBE');
+      return found;
     }, true],
     // Bible wiki: the Wikipedia article about a Bible word or name, English and Chinese.
     ['GET', /^\/api\/wiki\/([a-z' %-]{1,60})$/, async ({ params: [word] }) => {
