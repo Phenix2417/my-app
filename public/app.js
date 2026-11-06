@@ -838,7 +838,9 @@ function notesAt(p) {
   const { mine, friends } = pageNotes();
   const at = (n) => { const [s, e] = noteRange(n); return inRange(p, s, e); };
   const orig = (n) => n._orig || n;
-  return { mine: mine.filter(at).map(orig), friends: friends.filter(at).map(orig) };
+  // A note on both versions is placed twice (its words in each): list it once.
+  const once = (list) => [...new Map(list.filter(at).map(orig).map((n) => [n.id, n])).values()];
+  return { mine: once(mine), friends: once(friends) };
 }
 
 // Apply highlight colors, friend underlines, note markers and the selection to the rendered words.
