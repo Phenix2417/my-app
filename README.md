@@ -18,12 +18,12 @@ Read the Bible, highlight passages, write notes, and see the notes your friends 
 - **Dictionary** — select one word and tap **Dictionary** (or double-tap the word) for its pronunciation,
   Chinese meanings and English definitions. With several words selected, the selection is translated into Chinese
   (Youdao), with a button per word for its dictionary entry; inflected words also show their base form.
-  - Chinese: Wiktionary's translations by meaning (CC BY-SA 4.0, via the wiktextract extract at kaikki.org) first,
-    then ECDICT (MIT licence). `curl -sL https://kaikki.org/dictionary/English/kaikki.org-dictionary-English.jsonl |
+  - Chinese: ECDICT (MIT licence) first, then Wiktionary's translations by meaning (CC BY-SA 4.0, via the wiktextract
+    extract at kaikki.org) for words ECDICT lacks. `curl -sL https://kaikki.org/dictionary/English/kaikki.org-dictionary-English.jsonl |
     node scripts/build-wiktionary-zh.mjs` regenerates `public/wikt/`; `node scripts/build-dict.mjs ecdict.csv`
     regenerates `public/dict/`. Both keep only words used in the Bible text.
-  - English: the Free Dictionary API (online, Wiktionary content) first, then Princeton WordNet 3.1 built in
-    (`node scripts/build-wordnet.mjs <wordnet-db package>` regenerates `public/wordnet/`), then ECDICT.
+  - English: ECDICT first, then the Free Dictionary API (online, Wiktionary content), then Princeton WordNet 3.1
+    built in (`node scripts/build-wordnet.mjs <wordnet-db package>` regenerates `public/wordnet/`).
   Tap the phonetic or the **UK** / **US** speaker buttons to hear recorded British or American pronunciation
   (Youdao audio, fetched by the server once per word and kept in the data folder).
 - **Pronunciation sources** — phonetics and recordings come from Youdao first, then the Free Dictionary API

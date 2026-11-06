@@ -892,7 +892,7 @@ function letterFile(dir, letter) {
 }
 const wiktFor = async (w) => (await letterFile('wikt', w[0]).catch(() => ({})))[w] || null;
 const wordnetFor = async (w) => (await letterFile('wordnet', w[0]).catch(() => ({})))[w] || null;
-// English definitions: the Free Dictionary (online, Wiktionary) first, then WordNet (built in), then ECDICT's line.
+// English definitions for words ECDICT has none for: the Free Dictionary (online, Wiktionary), then WordNet (built in).
 const definitions = new Map();
 function englishFor(w, zhHint = '') {
   // "be的过去式" (past tense of be): an inflected word with no definitions of its own uses its base word's.
@@ -919,7 +919,7 @@ function englishFor(w, zhHint = '') {
   }
   return definitions.get(w);
 }
-// Chinese lines: Wiktionary's translations by meaning (grouped by part of speech), else ECDICT's.
+// Chinese lines from Wiktionary's translations by meaning (grouped by part of speech), for words ECDICT lacks.
 // Specialist meanings that only clutter a Bible reader's dictionary.
 const OFF_TOPIC = /^(computing|programming|chess|card games?|poker|sports?|baseball|cricket|golf|tennis|football|soccer|mathematics|physics|chemistry|electronics|slang|internet|video games?)\b|playing card|playing piece|\bchess\b/i;
 function chineseLines(rows) {
@@ -1510,15 +1510,15 @@ function toggleDictionary(bar, btn) {
     body.replaceChildren(h('p', { class: 'dict-muted' }, 'Looking up…'));
     let e;
     try { e = await lookUp(w); } catch { body.replaceChildren(h('p', { class: 'dict-muted' }, "Couldn't load the dictionary. Check your connection.")); positionToolbar(); return; }
-    // Chinese: Wiktionary first, ECDICT when it has none. English: Free Dictionary, then WordNet, then ECDICT.
+    // Chinese: ECDICT first, Wiktionary when it has none. English: ECDICT first, then Free Dictionary, then WordNet.
     const zhRows = async (x) => wiktFor(x.word);
     const rows = { [e?.word]: e ? await zhRows(e) : null, ...(e?.base ? { [e.base.word]: await zhRows(e.base) } : {}) };
     const block = (x, main) => [
       h('div', { class: 'dict-head' }, h('span', { class: 'dict-word' }, x.word)),
       // British and American phonetics; tapping either plays that recording.
       h('div', { class: 'dict-prons' }, pronButton(x.word, 'uk', x.p), pronButton(x.word, 'us', x.p)),
-      rows[x.word]?.length ? chineseLines(rows[x.word]) : x.t ? h('p', { class: 'dict-zh', lang: 'zh-Hans' }, x.t) : null,
-      main ? englishLines(englishFor(x.word, x.t), x.d) : null,
+      x.t ? h('p', { class: 'dict-zh', lang: 'zh-Hans' }, x.t) : rows[x.word]?.length ? chineseLines(rows[x.word]) : null,
+      !main ? null : x.d ? h('p', { class: 'dict-en' }, x.d) : englishLines(englishFor(x.word, x.t)),
     ];
     const bibleSlot = h('div', { class: 'bd-slot' });
     // Not in the English dictionary: still show the word (the Bible dictionary buttons attach to it).
@@ -1568,7 +1568,7 @@ function toggleDictionary(bar, btn) {
     positionToolbar();
   };
   const dictBox = h('div', { class: 'dict' }, trans, body,
-    h('p', { class: 'dict-credit' }, multi ? 'Translation: Youdao · Chinese: Wiktionary (CC BY-SA), ECDICT · English: Free Dictionary (Wiktionary), WordNet · Phonetics & audio: Youdao, Free Dictionary API · 圣经辞典: 信望爱' : 'Chinese: Wiktionary (CC BY-SA), ECDICT · English: Free Dictionary (Wiktionary), WordNet · Phonetics & audio: Youdao, Free Dictionary API · 圣经辞典: 信望爱'));
+    h('p', { class: 'dict-credit' }, multi ? 'Translation: Youdao · Chinese: ECDICT, Wiktionary (CC BY-SA) · English: ECDICT, Free Dictionary (Wiktionary), WordNet · Phonetics & audio: Youdao, Free Dictionary API · 圣经辞典: 信望爱' : 'Chinese: ECDICT, Wiktionary (CC BY-SA) · English: ECDICT, Free Dictionary (Wiktionary), WordNet · Phonetics & audio: Youdao, Free Dictionary API · 圣经辞典: 信望爱'));
   // An ↑ button appears once the panel is scrolled down, and takes it back to the top.
   const toTop = h('button', { class: 'to-top', type: 'button', hidden: true, 'aria-label': 'Back to top', title: 'Back to top',
     onclick: () => dictBox.scrollTo({ top: 0, behavior: 'smooth' }) }, svg(ICONS.arrowUp));

@@ -1,6 +1,6 @@
 // Builds public/wikt/<letter>.json: Chinese (Mandarin, simplified) translations of English words, by meaning,
 // from Wiktionary (CC BY-SA 4.0, https://en.wiktionary.org) via the wiktextract extract at kaikki.org.
-// Only words in the app's dictionary (Bible words and their base forms) are kept. The extract is large (~3.4 GB),
+// ECDICT's Chinese comes first in the app, so only Bible words ECDICT lacks are kept (mostly names and places). The extract is large (~3.4 GB),
 // so it's read as it downloads and never saved:
 //   curl -sL https://kaikki.org/dictionary/English/kaikki.org-dictionary-English.jsonl | node scripts/build-wiktionary-zh.mjs
 import fs from 'node:fs';
@@ -12,8 +12,15 @@ const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dictDir = path.join(root, 'public', 'dict');
 const outDir = path.join(root, 'public', 'wikt');
 
+const normalize = (w) => w.toLowerCase().replace(/[’']s$/, '').replace(/[^a-z-]/g, '').replace(/^-+|-+$/g, '');
+const inEcdict = new Set();
+for (const f of fs.readdirSync(dictDir)) if (/^[a-z]\.json$/.test(f)) for (const w of Object.keys(JSON.parse(fs.readFileSync(path.join(dictDir, f), 'utf8')))) inEcdict.add(w);
 const wanted = new Set();
-for (const f of fs.readdirSync(dictDir)) if (/^[a-z]\.json$/.test(f)) for (const w of Object.keys(JSON.parse(fs.readFileSync(path.join(dictDir, f), 'utf8')))) wanted.add(w);
+for (const f of fs.readdirSync(path.join(root, 'public', 'bible'))) {
+  for (const ch of JSON.parse(fs.readFileSync(path.join(root, 'public', 'bible', f), 'utf8'))) {
+    for (const [t] of ch) for (const raw of t.split(/[\s—–]+/)) { const w = normalize(raw); if (w && !inEcdict.has(w)) wanted.add(w); }
+  }
+}
 
 const POS = { noun: 'n.', verb: 'v.', adj: 'adj.', adv: 'adv.', pron: 'pron.', prep: 'prep.', conj: 'conj.', intj: 'int.', num: 'num.', det: 'det.', article: 'art.', name: 'n.' };
 // "優雅／优雅" → "优雅"; traditional-only forms are skipped.
@@ -58,5 +65,5 @@ fs.mkdirSync(outDir, { recursive: true });
 const byLetter = new Map();
 for (const [w, rows] of out) { const l = w[0]; if (!/[a-z]/.test(l)) continue; if (!byLetter.has(l)) byLetter.set(l, {}); byLetter.get(l)[w] = rows; }
 for (const [l, data] of byLetter) fs.writeFileSync(path.join(outDir, `${l}.json`), JSON.stringify(data));
-fs.writeFileSync(path.join(outDir, 'LICENSE'), 'Chinese translations from Wiktionary (https://en.wiktionary.org), available under the Creative Commons Attribution-ShareAlike 4.0 licence (https://creativecommons.org/licenses/by-sa/4.0/). Extracted with wiktextract (https://kaikki.org). Only words used in the Bible text are included.\n');
+fs.writeFileSync(path.join(outDir, 'LICENSE'), 'Chinese translations from Wiktionary (https://en.wiktionary.org), available under the Creative Commons Attribution-ShareAlike 4.0 licence (https://creativecommons.org/licenses/by-sa/4.0/). Extracted with wiktextract (https://kaikki.org). Only words used in the Bible text that ECDICT lacks are included.\n');
 console.log(`${lines} lines read; ${out.size} words with Chinese translations (of ${wanted.size} wanted)`);
