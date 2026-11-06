@@ -192,3 +192,15 @@ test('chats: private and group conversations, shared verses, unread counts', asy
   for (const u of [chen, li, wang]) await api('DELETE', `/api/groups/${group.id}/members/me`, { token: u.token });
   assert.equal((await api('GET', '/api/chats', { token: wang.token })).data.chats.filter((c) => c.kind === 'group').length, 0);
 });
+
+test('a shared verse can carry two versions, each with its name', async () => {
+  const reg = async (u) => (await api('POST', '/api/register', { body: { username: u, password: 'password1' } })).data;
+  const a = await reg('pair_a'), b = await reg('pair_b');
+  await api('POST', '/api/friends/requests', { token: a.token, body: { username: 'pair_b' } });
+  await api('POST', `/api/friends/${a.user.id}/accept`, { token: b.token });
+  const ref = { book: 'galatians', chapter: 4, start: 2, end: 3, version: 'uX1234567', label: 'ESV', text: 'but he is under guardians',
+    alt: { version: 'uY1234567', label: '和合本', text: '乃在师傅和管家的手下' } };
+  await api('POST', `/api/messages/${b.user.id}`, { token: a.token, body: { ref } });
+  const [m] = (await api('GET', `/api/messages/${a.user.id}`, { token: b.token })).data.messages;
+  assert.deepEqual([m.ref.label, m.ref.text, m.ref.alt.label, m.ref.alt.text], ['ESV', 'but he is under guardians', '和合本', '乃在师傅和管家的手下']);
+});

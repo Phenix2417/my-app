@@ -894,9 +894,10 @@ function selectionHasFullSentence() {
   return false;
 }
 
-function selectedQuote() {
+// which: 'main' or 'alt' — only the first or only the second version's words (reading two side by side).
+function selectedQuote(which = null) {
   const { start, end } = state.selection;
-  const ws = reader.words.filter((x) => inRange(x, start, end));
+  const ws = reader.words.filter((x) => inRange(x, start, end) && (!which || (which === 'alt') !== Number.isInteger(x.v)));
   const CJK = /[\u3000-\u303f\u3400-\u9fff\uff00-\uffef]/;
   return ws.map((x, i) => {
     if (!i) return x.el.textContent;
@@ -1121,7 +1122,12 @@ function showToolbar() {
       clearSelection();
     }),
     bubbleBtn('Share to chat', ICONS.message, () => {
-      const verse = { book: state.pos.book, chapter: state.pos.chapter, start: Math.floor(start.v), end: Math.floor(end.v), version: textVersion, text: selectedQuote().slice(0, 2000) };
+      // Each version's words apart (reading two side by side), each with its name.
+      const main = selectedQuote('main'), alt = reader.altVersion ? selectedQuote('alt') : '';
+      const mainVersion = main ? state.version : reader.altVersion;
+      const verse = { book: state.pos.book, chapter: state.pos.chapter, start: Math.floor(start.v), end: Math.floor(end.v),
+        version: mainVersion, label: versionInfo(mainVersion).short, text: (main || alt).slice(0, 2000),
+        ...(main && alt ? { alt: { version: reader.altVersion, label: versionInfo(reader.altVersion).short, text: alt.slice(0, 2000) } } : {}) };
       clearSelection();
       shareVerse(verse);
     }),
@@ -3038,7 +3044,7 @@ async function renderNotes() {
       const notes = Object.values(state.mine.notes).sort((a, b) => b.updatedAt - a.updatedAt);
       list.replaceChildren(...(notes.length ? notes.map((n) => noteCard(n, { onClick: open(n), menu: [
         { id: `note-share-${n.id}`, label: 'Share to chat', icon: ICONS.message, action: () => shareVerse(
-          { book: n.book, chapter: n.chapter, start: n.start.verse, end: n.end.verse, version: n.version || 'web', text: n.quote.slice(0, 2000) }, n.body) },
+          { book: n.book, chapter: n.chapter, start: n.start.verse, end: n.end.verse, version: n.version || 'web', label: versionInfo(n.version || 'web').short, text: n.quote.slice(0, 2000) }, n.body) },
         { id: `note-edit-${n.id}`, label: 'Edit note', icon: ICONS.pencil, action: () => noteEditor(n) },
         { id: `note-delete-${n.id}`, label: 'Delete', icon: ICONS.close, action: () => confirmDeleteNote(n, () => renderNotes()) },
       ] }))
@@ -3088,11 +3094,18 @@ const verseRef = (v) => `${bookName(v.book)} ${v.chapter}:${v.start}${v.end > v.
 // A shared verse in a conversation: the reference, the text, and a link to read it.
 function verseCard(v) {
   const known = (state.versions || []).some((x) => x.id === v.version);
+  // The translations' names: as sent (the sender's own Bible may not be one this person has), else from the list.
+  const name = (x) => x.label || ((state.versions || []).find((y) => y.id === x.version)?.short) || (x.version === 'web' ? 'WEB' : '');
+  const names = [name(v), v.alt ? name(v.alt) : ''].filter(Boolean).join(' + ');
+  const zh = (x) => (/[\u3400-\u9fff]/.test(x.text) ? 'zh-Hans' : 'en');
   return h('div', { class: 'verse-card' },
-    h('div', { class: 'verse-card-head' }, `${tr('Shared verse')} · ${verseRef(v)}`),
-    h('p', { class: 'verse-card-text', lang: isChineseVersion(v.version) ? 'zh-Hans' : 'en' }, v.text),
+    h('div', { class: 'verse-card-head' }, `${tr('Shared verse')} · ${verseRef(v)}`, names ? h('span', { class: 'verse-card-version' }, ` · ${names}`) : null),
+    h('p', { class: 'verse-card-text', lang: zh(v) }, v.text),
+    v.alt ? h('p', { class: 'verse-card-text verse-card-alt', lang: zh(v.alt) }, v.alt.text) : null,
     h('button', { class: 'text-btn verse-card-open', type: 'button', onclick: () => {
       if (known) setVersion(v.version, { quiet: true });
+      // Both versions side by side, when this person has the second one too.
+      if (known && v.alt && (state.versions || []).some((x) => x.id === v.alt.version)) { state.parallel = v.alt.version; store.set('parallel', state.parallel); }
       goTo({ book: v.book, chapter: v.chapter }, v.start);
     } }, 'Open in Read →'));
 }

@@ -270,7 +270,12 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
     const book = BOOK_IDS.has(ref.book) ? ref.book : null, chapter = n(ref.chapter, 150), start = n(ref.start, 176);
     const end = n(ref.end, 176) || start, text = String(ref.text ?? '').trim().slice(0, 2000);
     if (!book || !chapter || !start || end < start || !text) throw new HttpError(400, 'Invalid verse');
-    return { book, chapter, start, end, version: /^[\w-]{2,20}$/.test(ref.version || '') ? ref.version : 'web', text };
+    const version = (x) => (/^[\w-]{2,20}$/.test(x?.version || '') ? x.version : 'web');
+    const label = (x) => String(x?.label ?? '').trim().slice(0, 20);
+    // The second version's words, when two were read side by side.
+    const altText = String(ref.alt?.text ?? '').trim().slice(0, 2000);
+    return { book, chapter, start, end, version: version(ref), ...(label(ref) ? { label: label(ref) } : {}), text,
+      ...(altText ? { alt: { version: version(ref.alt), ...(label(ref.alt) ? { label: label(ref.alt) } : {}), text: altText } } : {}) };
   }
   const messageOut = (m, me) => ({ id: m.id, mine: m.from_id === me, body: m.body, createdAt: m.created_at,
     ...(m.ref ? { ref: JSON.parse(m.ref) } : {}),
