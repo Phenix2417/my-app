@@ -427,8 +427,10 @@ async function renderReader() {
   };
   const screen = h('main', { class: 'screen reader-page' },
     h('header', { class: 'r-head' },
-      h('h1', {}, h('button', { class: 'r-title', onclick: openPicker, 'aria-label': `${meta.name} ${chapter}. Choose book and chapter` },
-        h('span', {}, meta.name), h('span', {}, String(chapter))))),
+      // The book name opens the list of books; the chapter number opens this book's chapters.
+      h('h1', { class: 'r-title' },
+        h('button', { type: 'button', onclick: () => openPicker(), 'aria-label': `${meta.name}. Choose a book` }, meta.name),
+        h('button', { type: 'button', onclick: () => openPicker({ chapters: true }), 'aria-label': `Chapter ${chapter}. Choose a chapter` }, String(chapter)))),
     scroller,
     sideDock([
       { id: 'show-friends', label: "Friends' notes", icon: ICONS.friendsNotes, toggle: { get: () => state.showFriends, set: setShowFriends } },
@@ -2041,7 +2043,7 @@ function showCommentaryToolbar() {
   positionToolbar();
 }
 
-async function openPicker() {
+async function openPicker({ chapters = false } = {}) {
   const books = await loadBooks();
   openSheet((close) => {
     const wrap = h('div');
@@ -2062,7 +2064,8 @@ async function openPicker() {
           onclick: () => { close(); goTo({ book: b.id, chapter: i + 1 }); },
         }, i + 1))));
     };
-    showBooks();
+    const current = books.find((b) => b.id === state.pos.book);
+    if (chapters && current) showChapters(current); else showBooks();
     return wrap;
   }, { label: 'Choose book and chapter' });
 }
