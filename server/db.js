@@ -112,6 +112,7 @@ export function openDb(file) {
   if (!db.prepare('PRAGMA table_info(library_books)').all().some((c) => c.name === 'sha256')) db.exec('ALTER TABLE library_books ADD COLUMN sha256 TEXT');
   // Notes made before Bible versions existed are on the World English Bible.
   // Which ebook a Bible version was imported from (its SHA-256), so opening that ebook on the shelf opens the Bible reader.
+  if (!db.prepare('PRAGMA table_info(user_versions)').all().some((c) => c.name === 'year')) db.exec('ALTER TABLE user_versions ADD COLUMN year INTEGER');
   if (!db.prepare('PRAGMA table_info(user_versions)').all().some((c) => c.name === 'source_sha')) db.exec('ALTER TABLE user_versions ADD COLUMN source_sha TEXT');
   if (!db.prepare('PRAGMA table_info(notes)').all().some((c) => c.name === 'version')) db.exec("ALTER TABLE notes ADD COLUMN version TEXT NOT NULL DEFAULT 'web'");
   return db;

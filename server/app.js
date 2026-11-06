@@ -147,7 +147,7 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
     deleteLibraryNote: q('DELETE FROM library_notes WHERE id = ? AND user_id = ?'),
     myVersions: q('SELECT * FROM user_versions WHERE user_id = ? ORDER BY created_at'),
     userVersion: q('SELECT * FROM user_versions WHERE id = ? AND user_id = ?'),
-    addUserVersion: q('INSERT INTO user_versions (id, user_id, short, name, lang, created_at, source_sha) VALUES (?, ?, ?, ?, ?, ?, ?)'),
+    addUserVersion: q('INSERT INTO user_versions (id, user_id, short, name, lang, created_at, source_sha, year) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'),
     setVersionSource: q('UPDATE user_versions SET source_sha = ? WHERE id = ? AND user_id = ?'),
     deleteUserVersion: q('DELETE FROM user_versions WHERE id = ? AND user_id = ?'),
     deleteVersionNotes: q('DELETE FROM notes WHERE version = ? AND user_id = ?'),
@@ -372,7 +372,7 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
       // that stopped partway), so the app can offer to complete it.
       ...(me ? await Promise.all(stmt.myVersions.all(me.id).map(async (v) => {
         const have = new Set(library ? await library.versionBooks(me.id, v.id) : []);
-        return { id: v.id, short: v.short, name: v.name, lang: v.lang, mine: true, credit: `${v.name} (from your own copy)`, source: v.source_sha || null,
+        return { id: v.id, short: v.short, name: v.name, lang: v.lang, mine: true, credit: `${v.name} (from your own copy)`, source: v.source_sha || null, year: v.year || null,
           missing: BOOKS.filter((b) => !have.has(b.id)).map((b) => b.id) };
       })) : []),
     ] })],
@@ -384,8 +384,9 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
       const lang = /^zh(-Hans|-Hant)?$/.test(body.lang) ? body.lang : 'en';
       const id = 'u' + crypto.randomBytes(9).toString('base64url');
       const source = /^[0-9a-f]{64}$/.test(body.source || '') ? body.source : null; // the ebook's fingerprint
-      stmt.addUserVersion.run(id, me.id, short, name, lang, now(), source);
-      return { status: 201, body: { version: { id, short, name, lang, mine: true, source } } };
+      const year = Number.isInteger(body.year) && body.year >= 100 && body.year <= 2200 ? body.year : null; // when it was published
+      stmt.addUserVersion.run(id, me.id, short, name, lang, now(), source, year);
+      return { status: 201, body: { version: { id, short, name, lang, mine: true, source, year } } };
     }, true],
     // Link a version to the ebook it came from (for versions imported before that was recorded).
     ['PUT', /^\/api\/my-versions\/(u[\w-]{6,20})$/, ({ me, params: [id], body }) => {

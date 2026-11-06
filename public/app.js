@@ -2869,6 +2869,7 @@ async function checkBibleEpub(bufPromise, fileName, file = null, repair = null) 
     const good = part.verses > 0;
     part.nameIn = h('input', { value: part.name, maxlength: 80 });
     part.shortIn = h('input', { value: part.short, maxlength: 12 });
+    part.yearIn = h('input', { value: VERSION_YEARS[part.short] || '', inputmode: 'numeric', maxlength: 4, placeholder: '2001' });
     // Repairing: only the translation in the version's language is saved.
     part.pick = h('input', { type: 'checkbox', checked: good && (!repair || /^zh/.test(part.lang) === /^zh/.test(repair.lang)) });
     return h('section', { class: 'bible-part' + (both ? ' boxed' : '') }, ...[
@@ -2880,6 +2881,7 @@ async function checkBibleEpub(bufPromise, fileName, file = null, repair = null) 
       good && part.pct < 90 ? h('p', { class: 'error' }, "This ebook's layout wasn't fully understood, so some verses may be in the wrong place. Check the samples below.") : null,
       ...(good ? [sample(part, 'genesis', 1, 1), sample(part, 'psalms', 23, 1), sample(part, 'john', 3, 16)].filter(Boolean) : []),
       good && !repair ? h('label', { class: 'field' }, h('span', {}, 'Name'), part.nameIn) : null,
+      good && !repair ? h('label', { class: 'field' }, h('span', {}, 'Year published'), part.yearIn) : null,
       good && !repair ? h('label', { class: 'field' }, h('span', {}, 'Short name'), part.shortIn) : null,
     ].filter((x) => x != null && x !== false));
   });
@@ -2902,7 +2904,7 @@ async function checkBibleEpub(bufPromise, fileName, file = null, repair = null) 
         btn.closest('.sheet-actions')?.before(keepOpen);
         try {
           for (const part of chosen) {
-            const version = repair || (await api('POST', '/api/my-versions', { short: part.shortIn.value, name: part.nameIn.value, lang: part.lang, source })).version;
+            const version = repair || (await api('POST', '/api/my-versions', { short: part.shortIn.value, name: part.nameIn.value, lang: part.lang, source, year: parseInt(part.yearIn.value, 10) || null })).version;
             if (repair && !repair.source && source) api('PUT', `/api/my-versions/${repair.id}`, { source }).catch(() => {});
             if (!repair) added.push(version);
             // Save the books six at a time. A repair saves only the books the version is missing, never over the others.

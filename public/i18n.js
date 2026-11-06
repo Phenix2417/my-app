@@ -40,7 +40,7 @@ const ZH = {
   'Tip: hold a word or tap a verse number to select. Swipe sideways to change chapter.': '提示：按住一个词或点经节号来选择文字，左右滑动换章。',
   "Couldn't load this chapter. Check your connection and try again.": '无法载入这一章，请检查网络连接后再试。',
   "Couldn't load this chapter.": '无法载入这一章。', 'Selection start': '选择起点', 'Selection end': '选择终点',
-  'Dictionary counts': '词典数量标记', Translate: '翻译', Original: '原文', 'Try again': '重试', 'Open as ebook': '作为电子书打开', 'Putting it on your shelf…': '正在放到书架上…', Repair: '补全', 'Your Bibles': '我的圣经', 'Add a Bible from an EPUB you own': '从你拥有的 EPUB 添加圣经', 'Add a Bible': '添加圣经',
+  'Dictionary counts': '词典数量标记', Translate: '翻译', Original: '原文', 'Try again': '重试', 'Open as ebook': '作为电子书打开', 'Year published': '出版年份', 'Putting it on your shelf…': '正在放到书架上…', Repair: '补全', 'Your Bibles': '我的圣经', 'Add a Bible from an EPUB you own': '从你拥有的 EPUB 添加圣经', 'Add a Bible': '添加圣经',
   'Old Testament': '旧约', 'New Testament': '新约', 'Add the Chinese translation': '添加中文译本', 'Add the English translation': '添加英文译本',
   'Keep the app open until saving finishes.': '保存完成前请不要关闭应用。', 'Choose a book': '选择书卷', 'Choose book and chapter': '选择书卷和章',
   'Read these verses': '阅读这几节经文', 'Back to where you started': '回到开始的位置', 'Back up to where you started': '向上回到开始的位置',
