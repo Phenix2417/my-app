@@ -401,6 +401,7 @@ function openSheet(build, { label, onClose } = {}) {
   const scrim = h('div', { class: 'scrim' }, sheet);
   const close = () => {
     if (!scrim.isConnected) return;
+    if (document.querySelector('.more-menu') && sheet.querySelector('.more-btn[aria-expanded="true"]')) closeMenu(); // its menu goes with it
     scrim.remove(); document.removeEventListener('keydown', onKey);
     onClose?.();
     if (openSheets.get(key) === close) openSheets.delete(key);
@@ -2238,6 +2239,9 @@ function textSizeControl() {
 // Items: { id, label, icon } plus one of: action (run it), toggle { get, set } (ticked when on), popover (a control shown in the menu).
 let closeMenu = () => {};
 document.addEventListener('pointerdown', (e) => { if (!e.target.closest?.('.more-menu, .more-btn')) closeMenu(); }, true);
+// A menu belongs to where it was opened: scrolling (outside it) or resizing closes it.
+document.addEventListener('scroll', (e) => { if (!e.target.closest?.('.more-menu')) closeMenu(); }, true);
+addEventListener('resize', () => closeMenu());
 // Switch the interface between English and Chinese, and draw the current page again.
 function switchLanguage(lang = LANG === 'zh' ? 'en' : 'zh') {
   setLang(lang);
@@ -2260,6 +2264,7 @@ function moreMenu(items, { lang: withLanguage = true } = {}) {
   const onKey = (e) => { if (e.key === 'Escape') { close(); btn.focus(); } };
   const open = () => {
     closeMenu();
+    closeMenu = close; // the menu that's open is the one an outside tap, a scroll or a new screen closes
     // Every ⋯ menu ends with the interface language switch (shown in the other language, so it can be found).
     const all = withLanguage ? [...items, { id: 'ui-language', label: LANG === 'zh' ? 'English interface' : '中文界面', icon: ICONS.versions, action: () => switchLanguage(), lang: true }] : items;
     menu = h('div', { class: 'more-menu', role: 'menu', 'aria-label': 'More options' },
@@ -2292,10 +2297,9 @@ function moreMenu(items, { lang: withLanguage = true } = {}) {
     menu.style.right = `${Math.max(8, innerWidth - r.right)}px`;
     btn.setAttribute('aria-expanded', 'true');
     document.addEventListener('keydown', onKey);
-    menu.querySelector('.menu-item')?.focus();
+    menu.querySelector('.menu-item')?.focus({ preventScroll: true });
   };
   btn.addEventListener('click', () => (menu ? close() : open()));
-  closeMenu = close;
   return btn;
 }
 
@@ -4010,6 +4014,7 @@ function saveBookPosition(now) {
 /* ---------------- shell ---------------- */
 let navEl;
 function mount(screen) {
+  closeMenu();
   $app.replaceChildren(screen, navEl);
 }
 function buildNav() {
