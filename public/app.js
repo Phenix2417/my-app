@@ -1663,7 +1663,7 @@ function renderCommentaryPage() {
   // Back to the Bible text: the same bottom-left pill as after following a reference.
   const back = h('button', { class: 'back-pill', type: 'button', onclick: () => goTo(state.pos, cm.returnVerse) }, `‹ Back to ${meta.name} ${chapter}`);
   new ResizeObserver(() => { cm.scroller.style.paddingTop = `${head.offsetHeight + 10}px`; }).observe(head);
-  // The dictionary panel's up arrow, once you've scrolled down: it returns to where the page opened.
+  // The dictionary panel's arrow, once you've scrolled away from where the page opened: it returns there.
   cm.homeTop = 0;
   const toTop = h('button', { class: 'to-top page-top', type: 'button', hidden: true, 'aria-label': 'Back to where you started', title: 'Back to where you started',
     onclick: () => cm.scroller.scrollTo({ top: cm.homeTop, behavior: 'smooth' }) }, '↑');
@@ -1672,7 +1672,14 @@ function renderCommentaryPage() {
   cm.scroller.addEventListener('scroll', () => {
     const top = cm.scroller.scrollTop;
     if (touched && top > lastTop + 6 && top > 60 && !cm.manageOpen) setBars(false);
-    toTop.hidden = top < cm.homeTop + 300 || cm.manageOpen;
+    // Below where the page opened: an up arrow. Above it: a down arrow. Either returns there.
+    const dir = cm.manageOpen ? 0 : top > cm.homeTop + 300 ? 1 : top < cm.homeTop - 300 ? -1 : 0;
+    toTop.hidden = !dir;
+    if (dir) {
+      toTop.textContent = dir > 0 ? '↑' : '↓';
+      const name = dir > 0 ? 'Back up to where you started' : 'Back down to where you started';
+      toTop.setAttribute('aria-label', name); toTop.title = name;
+    }
     lastTop = top;
   }, { passive: true });
   // A tap on the text (not a button, link or the list editor) shows or hides the bars.
