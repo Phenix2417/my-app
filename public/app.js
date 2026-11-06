@@ -48,6 +48,7 @@ const ICONS = {
   editShelf: '<path d="M3.5 8v11a3 3 0 0 0 3 3H16"/><path d="M12 3H9a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2v-5"/><path d="M10.5 15.5h6"/><path d="M21.4 6.6a1 1 0 0 0-3-3l-4.5 4.5a2 2 0 0 0-.5.9l-.8 2.9a.5.5 0 0 0 .6.6l2.9-.8a2 2 0 0 0 .8-.5z"/>', // the same pages with a pen
   noteLink: '<path d="M20.1 8.4 15.6 3.9H5.7a1.8 1.8 0 0 0-1.8 1.8v12.6a1.8 1.8 0 0 0 1.8 1.8h5.8"/><path d="M20.1 8.4v3.1"/><path d="M14.7 3.9v3.6a1.8 1.8 0 0 0 1.8 1.8h3.6"/><g transform="translate(12.6 12.6) scale(.5)" stroke-width="3.5"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></g>', // the note with Lucide's link in its corner: a note that links to the quoted commentary
   versions: '<path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/>', // Lucide languages: Bible versions
+  parallel: '<rect width="18" height="7" x="3" y="3" rx="1.5"/><rect width="18" height="7" x="3" y="14" rx="1.5"/>', // two versions, one above the other
   copy: '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
   dictionary: '<path d="M12 21V7"/><circle cx="17" cy="10" r="3"/><path d="m19.2 12.2 2.8 2.8"/><path d="M22 6V4a1 1 0 0 0-1-1h-5a4 4 0 0 0-4 4 4 4 0 0 0-4-4H3a1 1 0 0 0-1 1v13a1 1 0 0 0 1 1h6a3 3 0 0 1 3 3 3 3 0 0 1 3-3h6a1 1 0 0 0 1-1v-1.3"/>',
   pencil: '<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/>',
@@ -84,6 +85,7 @@ const state = {
   books: null,
   pos: store.get('pos', { book: 'john', chapter: 1 }),
   version: store.get('version', 'web'), // Bible version being read; notes remember the version they were made in
+  parallel: store.get('parallel', null), // a second version shown under each verse (reading only), or null
   versions: store.get('versions', null),
   showFriends: store.get('showFriends', true),
   fontSize: store.get('fontSize', 22),
@@ -561,11 +563,13 @@ async function renderReader() {
       h('h1', { class: 'r-title' },
         h('button', { type: 'button', onclick: () => openPicker(), 'aria-label': `${meta.name}. Choose a book` }, meta.name),
         h('button', { type: 'button', onclick: () => openPicker({ chapters: true }), 'aria-label': `Chapter ${chapter}. Choose a chapter` }, String(chapter)),
-        h('button', { type: 'button', class: 'r-version', onclick: () => openVersionPicker(), 'aria-label': `${versionInfo().name}. Choose a Bible version` }, versionInfo().short)),
+        h('button', { type: 'button', class: 'r-version', onclick: () => openVersionPicker(), 'aria-label': `${versionInfo().name}. Choose a Bible version` },
+          state.parallel && state.parallel !== state.version ? `${versionInfo().short} + ${versionInfo(state.parallel).short}` : versionInfo().short)),
       moreMenu([
       { id: 'show-friends', label: "Friends' notes", icon: ICONS.friendsNotes, toggle: { get: () => state.showFriends, set: setShowFriends } },
       { id: 'open-commentary', label: 'Commentary', icon: ICONS.commentaryBooks, action: () => openCommentaryPage(topVisibleVerse()) },
       { id: 'bible-version', label: 'Bible version', icon: ICONS.versions, action: () => openVersionPicker() },
+      { id: 'parallel-version', label: 'Parallel version', icon: ICONS.parallel, action: () => openParallelPicker() },
       { id: 'text-size', label: 'Text size', icon: ICONS.serifAa, popover: textSizeControl },
     ])),
     scroller);
@@ -597,13 +601,18 @@ async function renderReader() {
     return;
   }
   if (state.pos.book !== book || state.pos.chapter !== chapter || state.tab !== 'read' || state.version !== version) return;
-  buildVerses(data || []);
+  // A second version under each verse, like a parallel Bible (reading only; it may still be loading).
+  let alt = null;
+  const parallel = state.parallel && state.parallel !== version ? state.parallel : null;
+  if (parallel) alt = await loadChapter(meta.id, chapter, parallel).catch(() => null);
+  if (state.pos.book !== book || state.pos.chapter !== chapter || state.tab !== 'read' || state.version !== version) return;
+  buildVerses(data || [], alt, parallel);
   paint();
   if (reader.slideFrom) { body.classList.add(reader.slideFrom > 0 ? 'slide-from-right' : 'slide-from-left'); reader.slideFrom = 0; }
   refreshChapterFriendNotes().then(() => { if (reader.body === body) paint(); });
 }
 
-function buildVerses(verses) {
+function buildVerses(verses, alt = null, altVersion = null) {
   reader.words = []; reader.gaps = []; reader.verseEls = [];
   const frag = document.createDocumentFragment();
   verses.forEach(([text, para], vi) => {
@@ -620,10 +629,13 @@ function buildVerses(verses) {
         verse.append(g);
       }
     });
+    const altText = alt?.[vi]?.[0];
+    if (altText) verse.append(h('span', { class: 'verse-alt', lang: versionInfo(altVersion).lang }, altText));
     reader.verseEls[v] = verse;
     frag.append(verse);
   });
   reader.chapterData = verses;
+  reader.body.classList.toggle('parallel', !!alt);
   if (state.version !== 'web') frag.append(h('p', { class: 'version-credit' }, versionInfo().credit || versionInfo().name));
   reader.body.lang = isChineseVersion() ? versionInfo().lang : 'en';
   reader.body.append(frag);
@@ -2296,6 +2308,21 @@ async function openVersionPicker() {
   ], { label: 'Bible version' });
 }
 
+// A second version shown under each verse of the one being read (e.g. ESV with 和合本 underneath).
+async function openParallelPicker() {
+  const versions = (await loadVersions()).filter((v) => v.id !== state.version);
+  const choose = (id) => { closeSheet(); state.parallel = id; store.set('parallel', id); const verse = topVisibleVerse(); goTo(state.pos, verse > 1 ? verse : null); };
+  const row = (id, short, name, lang) => h('button', { class: 'version-item', type: 'button', role: 'radio', 'aria-checked': String((state.parallel || null) === id), lang,
+    onclick: () => choose(id) }, h('span', { class: 'version-short' }, short), h('span', { class: 'version-name' }, name), svg(ICONS.check));
+  const closeSheet = openSheet(() => [
+    h('h2', {}, 'Parallel version'),
+    h('p', { class: 'confirm-text' }, `Show a second version under each verse of ${versionInfo().short}, like a parallel Bible. Highlights and notes stay on ${versionInfo().short}.`),
+    h('div', { class: 'version-list', role: 'radiogroup', 'aria-label': 'Parallel version' },
+      row(null, 'None', 'Only one version'),
+      ...versions.map((v) => row(v.id, v.short, v.name, v.lang))),
+  ], { label: 'Parallel version' });
+}
+
 async function deleteMyVersion(v, closePicker) {
   if (!await confirmSheet({ title: `Delete ${v.short}?`, message: `${v.name}, and the highlights and notes you made in it, will be removed from your account.` })) return;
   try {
@@ -2304,6 +2331,7 @@ async function deleteMyVersion(v, closePicker) {
     saveMine();
     closePicker();
     await loadVersions();
+    if (state.parallel === v.id) { state.parallel = null; store.set('parallel', null); }
     if (state.version === v.id) setVersion('web'); else toast(`${v.short} deleted`);
   } catch (e) { toast(e.message); }
 }
