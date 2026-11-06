@@ -1020,10 +1020,10 @@ function bibleSection(found, { english = false } = {}) {
     ...found.entries.map((entry) => {
       const full = entry.text;
       const long = full.length > LIMIT;
-      const text = h('p', { class: 'bd-text' }, long ? shorten(full, LIMIT) : full);
+      const text = h('p', { class: 'bd-text' }, ...withVerseLinks(long ? shorten(full, LIMIT) : full));
       const more = long ? h('button', { class: 'text-btn bd-more', type: 'button', onclick: () => {
         const open = more.textContent === 'More';
-        text.textContent = open ? full : shorten(full, LIMIT);
+        text.replaceChildren(...withVerseLinks(open ? full : shorten(full, LIMIT)));
         more.textContent = open ? 'Less' : 'More';
         positionToolbar();
       } }, 'More') : null;
@@ -1031,6 +1031,52 @@ function bibleSection(found, { english = false } = {}) {
         ? h('div', { class: 'bd-term bd-term-en' }, String(entry.english).toLowerCase())
         : h('div', { class: 'bd-term' }, entry.term, h('span', { class: 'bd-en', lang: 'en' }, ` ${String(entry.english).toLowerCase()}`)), text, more);
     }));
+}
+
+/* ----- Tappable verse references in Bible dictionary text: （约 4:24; 林后 3:17） / (Joh 4:24; 2Co 3:17) ----- */
+const REF_ZH = '创 出 利 民 申 书 士 得 撒上 撒下 王上 王下 代上 代下 拉 尼 斯 伯 诗 箴 传 歌 赛 耶 哀 结 但 何 珥 摩 俄 拿 弥 鸿 哈 番 该 亚 玛 太 可 路 约 徒 罗 林前 林后 加 弗 腓 西 帖前 帖后 提前 提后 多 门 来 雅 彼前 彼后 约一 约二 约三 犹 启'.split(' ');
+const REF_EN = 'Ge Ex Le Nu De Jos Jud Ru 1Sa 2Sa 1Ki 2Ki 1Ch 2Ch Ezr Ne Es Job Ps Pr Ec So Isa Jer La Eze Da Ho Joe Am Ob Jon Mic Na Hab Zep Hag Zec Mal Mt Mr Lu Joh Ac Ro 1Co 2Co Ga Eph Php Col 1Th 2Th 1Ti 2Ti Tit Phm Heb Jas 1Pe 2Pe 1Jo 2Jo 3Jo Jude Re'.split(' ');
+const REF_BOOK = new Map([...REF_ZH.map((a, i) => [a, i]), ...REF_EN.map((a, i) => [a, i])]);
+const REF_BOOK_RE = [...REF_BOOK.keys()].sort((a, b) => b.length - a.length).map((a) => a.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+// One reference inside a group: optional book, then chapter[:verse][-verse] (or just a verse after a comma).
+const REF_ONE = new RegExp(`^(${REF_BOOK_RE})?\\s*(\\d+)(?::(\\d+))?(?:[-–](\\d+))?$`);
+
+// Turn text into text nodes and buttons, linking every reference inside （…） or (…).
+function withVerseLinks(text) {
+  const out = [];
+  let last = 0;
+  for (const m of String(text).matchAll(/([（(])([^）)]*)([）)])/g)) {
+    out.push(text.slice(last, m.index), m[1]);
+    let book = null, chapter = null, hadVerse = false;
+    for (const part of m[2].split(/([;,；，])/)) {
+      if (/^[;,；，]$/.test(part)) { if (part === ';' || part === '；') hadVerse = false; out.push(part); continue; }
+      const lead = part.match(/^\s*/)[0];
+      const r = part.trim().match(REF_ONE);
+      if (!r) { out.push(part); book = null; continue; }
+      let [, b, x, y, z] = r;
+      let v1, v2, ch;
+      if (b) { book = REF_BOOK.get(b); ch = +x; v1 = y ? +y : null; v2 = z ? +z : v1; }
+      else if (y) { ch = +x; v1 = +y; v2 = z ? +z : v1; }                         // 9:4-6 (same book)
+      else if (hadVerse && chapter) { ch = chapter; v1 = +x; v2 = z ? +z : v1; }    // ,45 or ,57-65 (same chapter)
+      else { ch = +x; v1 = null; v2 = null; }                                      // a whole chapter
+      const meta = book != null ? state.books?.[book] : null;
+      if (!meta || ch < 1 || ch > meta.chapters) { out.push(part); continue; }
+      chapter = ch; hadVerse = v1 != null;
+      out.push(lead, h('button', { class: 'vref', type: 'button', title: 'Open in the Bible', onclick: (e) => {
+        e.stopPropagation();
+        openReference(meta.id, ch, v1, v2);
+      } }, part.trim()));
+    }
+    out.push(m[3]);
+    last = m.index + m[0].length;
+  }
+  out.push(text.slice(last));
+  return out.filter((x) => x !== '');
+}
+
+// Go to a passage in the reader and select it (verses v1–v2; a whole chapter just opens at the top).
+function openReference(book, chapter, v1, v2) {
+  goTo({ book, chapter }, v1 || null, v1 ? [v1, Math.max(v1, v2 || v1)] : null);
 }
 
 // Double tap: select the word and open its dictionary entry in the bubble.
@@ -1598,7 +1644,7 @@ async function openPicker() {
   }, { label: 'Choose book and chapter' });
 }
 
-function goTo(pos, verse) {
+function goTo(pos, verse, select) {
   if (!pos) return;
   clearSelection();
   state.pos = { book: pos.book, chapter: pos.chapter };
@@ -1607,8 +1653,15 @@ function goTo(pos, verse) {
   render().then(() => {
     if (verse && reader.verseEls[verse]) {
       reader.verseEls[verse].scrollIntoView({ block: 'center' });
-      reader.verseEls[verse].classList.add('flash');
+      if (!select) reader.verseEls[verse].classList.add('flash');
     } else if (reader.scroller) reader.scroller.scrollTop = 0;
+    // Select verses [from, to] (clamped to the chapter), which also shows the selection bubble.
+    if (select && reader.words.length) {
+      const last = reader.verseEls.length - 1;
+      const from = Math.min(select[0], last), to = Math.min(select[1], last);
+      const lastWord = reader.words.filter((x) => x.v === to).pop();
+      if (lastWord) requestAnimationFrame(() => setSelection({ v: from, w: 0 }, { v: to, w: lastWord.w }));
+    }
   });
 }
 
