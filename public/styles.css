@@ -710,3 +710,14 @@ body.bars-hidden .b-size-panel { display: none; }
 .field-row > .field:first-child { flex: 1; min-width: 0; }
 .field-row > .field-year { flex: 0 0 5em; }
 .field-row > .field input { width: 100%; }
+/* Messages between friends */
+.chat-btn { margin-top: 10px; display: inline-flex; align-items: center; gap: 6px; }
+.chat-btn .line-icon { width: 18px; height: 18px; }
+.unread-count { background: var(--error); color: var(--on-error); border-radius: 10px; min-width: 20px; padding: 0 6px; font-size: 12px; line-height: 20px; text-align: center; }
+.chat-list { max-height: 45vh; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding: 4px 0 10px; }
+.chat-msg { max-width: 85%; align-self: flex-start; background: var(--surface); border-radius: 14px 14px 14px 4px; padding: 8px 12px; }
+.chat-msg.mine { align-self: flex-end; background: var(--pill); border-radius: 14px 14px 4px 14px; }
+.chat-msg .note-body { margin: 0; white-space: pre-wrap; }
+.chat-msg .note-time { display: block; margin-top: 2px; font-size: 11px; }
+.chat-input { width: 100%; box-sizing: border-box; border: 1px solid var(--divider); border-radius: 12px; background: var(--surface-2); color: var(--on-bg);
+  font: inherit; font-size: 16px; padding: 10px 12px; resize: vertical; }

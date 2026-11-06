@@ -66,6 +66,9 @@ Read the Bible, highlight passages, write notes, and see the notes your friends 
 - **Friends and imported Bibles** — a note made in one of your own imported Bibles is shared like any other, quoted text
   included, labelled with that Bible's short name. A friend who has that Bible too (imported from the same ebook, or a version
   with the same short name and language) sees it in their copy.
+- **Messages** — friends can message each other (Friends → a friend → Messages); unread messages are counted on the
+  Friends tab. Tapping a friend's note made in a Bible you don't have asks whether to read that verse in your current
+  translation or to ask the friend about that Bible (a message already drafted: where did you get the EPUB?).
 - **Imported Bibles on the shelf** — opening an EPUB on the shelf that was imported as a Bible version opens the Bible
   reader instead, with all its translations side by side, in the book's own order. Versions remember the ebook's
   fingerprint when imported; older ones are recognised from the title ("HOLY BIBLE (ESV-CUV)" → ESV and 和合本) and linked

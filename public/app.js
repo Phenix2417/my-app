@@ -39,6 +39,7 @@ const svg = (d) => {
 // text with a speech bubble, and Edit commentary list the same pages with a pen.
 // The same purpose always uses the same icon.
 const ICONS = {
+  message: '<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/>',
   read: '<path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/>',
   notes: '<path d="M15.6 3.9H5.7a1.8 1.8 0 0 0-1.8 1.8v12.6a1.8 1.8 0 0 0 1.8 1.8h12.6a1.8 1.8 0 0 0 1.8-1.8V8.4Z"/><path d="M14.7 3.9v3.6a1.8 1.8 0 0 0 1.8 1.8h3.6"/>', // Lucide sticky-note at 90%, so its closed square isn't heavier than the open icons beside it
   books: '<path d="M2 21h20"/><rect width="5" height="13" x="3" y="5" rx="1"/><rect width="5" height="15" x="8" y="3" rx="1"/><path d="M8 7h5"/><path d="M21.3 16.7c.1.5-.2 1.1-.7 1.2l-2 .5c-.5.1-1.1-.2-1.2-.7L14.2 5.6c-.1-.5.2-1.1.7-1.2l2-.5c.5-.1 1.1.2 1.2.7Z"/>', // a bookshelf (Lucide's library, standing on a shelf)
@@ -3016,7 +3017,7 @@ async function renderNotes() {
         : [h('p', { class: 'empty' }, 'No notes yet. In Read, hold a word to start a highlight.')]));
     } else {
       const notes = state.friendsFeed;
-      list.replaceChildren(...(notes.length ? notes.map((n) => noteCard(n, { friend: true, onClick: open(n) }))
+      list.replaceChildren(...(notes.length ? notes.map((n) => noteCard(n, { friend: true, onClick: n.versionLabel ? () => friendNoteChoice(n) : open(n) }))
         : [h('p', { class: 'empty' }, "Nothing here yet. Friends' notes appear once they turn on “Can see my notes” for you.")]));
     }
   };
@@ -3028,6 +3029,55 @@ async function renderNotes() {
 }
 
 /* ---------------- Friends tab ---------------- */
+// A conversation with a friend: the messages, newest at the bottom, and a box to write one (prefill: a draft to start from).
+async function openChat(u, prefill = '') {
+  const list = h('div', { class: 'chat-list', 'aria-live': 'polite' }, h('p', { class: 'empty-inline' }, 'Loading…'));
+  const input = h('textarea', { class: 'chat-input', rows: 3, maxlength: 2000, placeholder: 'Write a message' });
+  input.value = prefill;
+  const bubble = (m) => h('div', { class: 'chat-msg' + (m.mine ? ' mine' : '') },
+    h('p', { class: 'note-body' }, m.body), h('span', { class: 'note-time' }, new Date(m.createdAt).toLocaleString(LANG === 'zh' ? 'zh-CN' : undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })));
+  const show = (messages) => {
+    list.replaceChildren(...(messages.length ? messages.map(bubble) : [h('p', { class: 'empty-inline' }, 'No messages yet.')]));
+    list.scrollTop = list.scrollHeight;
+  };
+  const send = h('button', { class: 'filled-btn', type: 'button', onclick: async () => {
+    const text = input.value.trim();
+    if (!text) return;
+    send.disabled = true;
+    try {
+      const { message } = await api('POST', `/api/messages/${u.id}`, { body: text });
+      if (!list.querySelector('.chat-msg')) list.replaceChildren();
+      list.append(bubble(message)); list.scrollTop = list.scrollHeight;
+      input.value = '';
+    } catch (e) { toast(e instanceof OfflineError ? "You're offline. Try again when connected." : e.message); }
+    send.disabled = false;
+  } }, 'Send');
+  openSheet(() => [h('h2', {}, `Messages with ${dn(u)}`), list, input,
+    h('div', { class: 'sheet-actions' }, h('span', { class: 'spacer' }), send)], { label: 'Messages', onClose: () => { refreshFriends().then(updateBadge); } });
+  try { show((await api('GET', `/api/messages/${u.id}`)).messages); refreshFriends().then(updateBadge); }
+  catch (e) { list.replaceChildren(h('p', { class: 'error' }, e instanceof OfflineError ? "You're offline. Try again when connected." : e.message)); }
+  if (prefill) input.focus();
+}
+
+// A friend's note made in a Bible this person doesn't have: read the verse in their own translation, or ask the friend
+// about that Bible (where to get the ebook).
+function friendNoteChoice(n) {
+  const where = ref(n), label = n.versionLabel, current = versionInfo();
+  openSheet((close) => [
+    h('h2', {}, `${dn(n.author)}'s note is in ${label}`),
+    h('p', { class: 'confirm-text' }, `You don't have ${label}. Read ${where} in ${current.short}, or ask ${dn(n.author)} about ${label} — for example where to get the same ebook.`),
+    h('div', { class: 'add-bible-choices' },
+      h('button', { class: 'filled-btn', type: 'button', onclick: () => { close(); goTo({ book: n.book, chapter: n.chapter }, n.start.verse); } },
+        svg(ICONS.read), `Read ${where} in ${current.short}`),
+      h('button', { class: 'tonal-btn', type: 'button', onclick: () => {
+        close();
+        openChat(n.author, LANG === 'zh'
+          ? `你好！我看到你在${where}的笔记用的是 ${label}。你是从哪里得到这本 ${label} 的电子书（EPUB）的？我也想要一份。`
+          : `Hi! I saw your note on ${where} in ${label}. Where did you get the ${label} ebook (EPUB)? I'd like a copy too.`);
+      } }, svg(ICONS.message), `Ask ${dn(n.author)} about ${label}`)),
+  ], { label: 'Friend note' });
+}
+
 async function renderFriends() {
   const content = h('div');
   mount(h('main', { class: 'screen' },
@@ -3074,7 +3124,9 @@ async function renderFriends() {
           h('label', { for: id }, h('div', { class: 'label' }, 'Can see my notes'),
             h('div', { class: 'sub' }, u.sharing ? `${dn(u)} can read all your notes` : `Your notes are hidden from ${dn(u)}`)),
           sw),
-        h('div', { class: 'status-line' }, u.sharesWithMe ? `You can see ${dn(u)}'s notes` : `${dn(u)} hasn't shared notes with you yet`)));
+        h('div', { class: 'status-line' }, u.sharesWithMe ? `You can see ${dn(u)}'s notes` : `${dn(u)} hasn't shared notes with you yet`),
+        h('button', { class: 'tonal-btn small-btn chat-btn', type: 'button', onclick: () => openChat(u) }, svg(ICONS.message), 'Messages',
+          u.unread ? h('span', { class: 'unread-count' }, String(u.unread)) : null)));
     }
     if (f.outgoing.length) {
       kids.push(h('div', { class: 'section-label' }, 'Sent requests'));
@@ -3644,7 +3696,8 @@ function buildNav() {
 }
 function updateBadge() {
   const b = navEl?.querySelector('[data-tab="friends"] .badge');
-  const n = state.friends?.incoming.length || 0;
+  // Friend requests and unread messages.
+  const n = (state.friends?.incoming.length || 0) + (state.friends?.friends || []).reduce((sum, f) => sum + (f.unread || 0), 0);
   if (b) { if (n) b.dataset.count = n; else delete b.dataset.count; }
 }
 function rerender() { if (state.tab === 'read' || state.tab === 'book') paint(); else if (state.tab !== 'commentary') render(); }

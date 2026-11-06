@@ -43,7 +43,18 @@ test('friends only see notes after the owner allows it', async () => {
   r = await api('GET', '/api/friends', { token: james.token });
   assert.equal(r.data.incoming[0].username, 'alice');
   r = await api('POST', `/api/friends/${alice.user.id}/accept`, { token: james.token });
-  assert.deepEqual(r.data.friends, [{ id: alice.user.id, username: 'alice', displayName: 'alice', sharing: false, sharesWithMe: false }]);
+  assert.deepEqual(r.data.friends, [{ id: alice.user.id, username: 'alice', displayName: 'alice', sharing: false, sharesWithMe: false, unread: 0 }]);
+
+  // Friends can message each other; unread messages are counted until the conversation is opened.
+  assert.equal((await api('POST', `/api/messages/${alice.user.id}`, { token: james.token, body: { body: '  Where did you get your ESV?  ' } })).status, 201);
+  assert.equal((await api('POST', `/api/messages/${alice.user.id}`, { token: james.token, body: { body: '   ' } })).status, 400);
+  assert.equal((await api('GET', '/api/friends', { token: alice.token })).data.friends[0].unread, 1);
+  let conv = await api('GET', `/api/messages/${james.user.id}`, { token: alice.token });
+  assert.deepEqual(conv.data.messages.map((m) => [m.mine, m.body]), [[false, 'Where did you get your ESV?']]);
+  assert.equal((await api('GET', '/api/friends', { token: alice.token })).data.friends[0].unread, 0);
+  await api('POST', `/api/messages/${james.user.id}`, { token: alice.token, body: { body: 'From the publisher’s site.' } });
+  conv = await api('GET', `/api/messages/${alice.user.id}`, { token: james.token });
+  assert.deepEqual(conv.data.messages.map((m) => [m.mine, m.body]), [[true, 'Where did you get your ESV?'], [false, 'From the publisher’s site.']]);
 
   // Friends but sharing off: still hidden.
   fn = await api('GET', '/api/friends/notes?book=john&chapter=1', { token: james.token });
@@ -67,10 +78,12 @@ test('friends only see notes after the owner allows it', async () => {
   await api('DELETE', '/api/notes/note-alice-1', { token: james.token });
   assert.equal((await api('GET', '/api/notes', { token: alice.token })).data.notes.length, 1);
 
-  // Unfriending removes access.
+  // Unfriending removes access, to notes and to messages.
   await api('DELETE', `/api/friends/${alice.user.id}`, { token: james.token });
   fn = await api('GET', '/api/friends/notes', { token: james.token });
   assert.deepEqual(fn.data.notes, []);
+  assert.equal((await api('POST', `/api/messages/${alice.user.id}`, { token: james.token, body: { body: 'hi' } })).status, 404);
+  assert.equal((await api('GET', `/api/messages/${alice.user.id}`, { token: james.token })).status, 404);
 });
 
 test('validation and auth', async () => {

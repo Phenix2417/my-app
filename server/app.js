@@ -96,12 +96,17 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
     friendRows: q(`
       SELECT f.*, u.id AS other_id, u.username AS other_name, u.display_name AS other_display,
         EXISTS (SELECT 1 FROM shares WHERE owner_id = :me AND viewer_id = u.id) AS i_share,
-        EXISTS (SELECT 1 FROM shares WHERE owner_id = u.id AND viewer_id = :me) AS they_share
+        EXISTS (SELECT 1 FROM shares WHERE owner_id = u.id AND viewer_id = :me) AS they_share,
+        (SELECT COUNT(*) FROM messages WHERE from_id = u.id AND to_id = :me AND read_at IS NULL) AS unread
       FROM friendships f
       JOIN users u ON u.id = CASE WHEN f.user_a = :me THEN f.user_b ELSE f.user_a END
       WHERE f.user_a = :me OR f.user_b = :me
       ORDER BY u.username COLLATE NOCASE`),
 
+    conversation: q(`SELECT * FROM (SELECT * FROM messages WHERE (from_id = :me AND to_id = :other) OR (from_id = :other AND to_id = :me)
+      ORDER BY id DESC LIMIT 200) ORDER BY id`),
+    markRead: q('UPDATE messages SET read_at = ? WHERE from_id = ? AND to_id = ? AND read_at IS NULL'),
+    addMessage: q('INSERT INTO messages (from_id, to_id, body, created_at) VALUES (?, ?, ?, ?)'),
     share: q('INSERT OR IGNORE INTO shares (owner_id, viewer_id) VALUES (?, ?)'),
     unshare: q('DELETE FROM shares WHERE owner_id = ? AND viewer_id = ?'),
     canView: q(`SELECT 1 FROM shares s JOIN friendships f
@@ -230,13 +235,19 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
     const out = { friends: [], incoming: [], outgoing: [] };
     for (const r of stmt.friendRows.all({ me })) {
       const user = userOut(r.other_id, r.other_name, r.other_display);
-      if (r.status === 'accepted') out.friends.push({ ...user, sharing: !!r.i_share, sharesWithMe: !!r.they_share });
+      if (r.status === 'accepted') out.friends.push({ ...user, sharing: !!r.i_share, sharesWithMe: !!r.they_share, unread: r.unread || 0 });
       else if (r.requested_by === me) out.outgoing.push(user);
       else out.incoming.push(user);
     }
     return out;
   }
 
+  function acceptedFriend(me, id) {
+    const other = stmt.userById.get(Number(id));
+    const f = other && stmt.friendship.get(Math.min(me, other.id), Math.max(me, other.id));
+    if (!f || f.status !== 'accepted') throw new HttpError(404, 'You are not friends with this person');
+    return other;
+  }
   function otherUser(id) {
     const u = stmt.userById.get(Number(id));
     if (!u) throw new HttpError(404, 'User not found');
@@ -583,6 +594,21 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
     }, true],
 
     ['GET', /^\/api\/friends$/, ({ me }) => friendsPayload(me.id), true],
+
+    // Messages between friends: the conversation (the friend's messages are then marked read), and sending one.
+    ['GET', /^\/api\/messages\/(\d+)$/, ({ me, params: [id] }) => {
+      const other = acceptedFriend(me.id, id);
+      const rows = stmt.conversation.all({ me: me.id, other: other.id });
+      stmt.markRead.run(now(), other.id, me.id);
+      return { messages: rows.map((m) => ({ id: m.id, mine: m.from_id === me.id, body: m.body, createdAt: m.created_at })) };
+    }, true],
+    ['POST', /^\/api\/messages\/(\d+)$/, ({ me, params: [id], body }) => {
+      const other = acceptedFriend(me.id, id);
+      const text = String(body.body ?? '').replace(/\r\n?/g, '\n').trim().slice(0, 2000);
+      if (!text) throw new HttpError(400, 'Write a message first');
+      const r = stmt.addMessage.run(me.id, other.id, text, now());
+      return { status: 201, body: { message: { id: Number(r.lastInsertRowid), mine: true, body: text, createdAt: now() } } };
+    }, true],
 
     ['POST', /^\/api\/friends\/requests$/, ({ me, body }) => {
       const other = stmt.userByName.get(String(body.username || '').trim().replace(/^@/, ''));

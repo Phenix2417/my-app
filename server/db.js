@@ -94,6 +94,17 @@ export function openDb(file) {
     );
     CREATE INDEX IF NOT EXISTS library_notes_by_book ON library_notes (user_id, book_id);
 
+    -- Messages between friends.
+    CREATE TABLE IF NOT EXISTS messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      from_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      to_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      body TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      read_at INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS messages_pair ON messages (from_id, to_id, id);
+
     -- Bible versions a person added from an ebook they own (text kept privately in their library folder).
     CREATE TABLE IF NOT EXISTS user_versions (
       id TEXT PRIMARY KEY,
