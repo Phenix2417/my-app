@@ -456,9 +456,7 @@ function noteCard(n, { onClick, friend, onEdit, onDelete, title } = {}) {
     onkeydown: onClick ? (e) => { if (e.key === 'Enter') onClick(); } : null },
   h('div', { class: 'card-head' }, h('span', { class: 'note-title' }, title || noteRef(n), noteTime(n)), friend ? h('span', { class: 'who', title: '@' + n.author.username }, dn(n.author)) : null,
     onEdit || onDelete ? h('span', { class: 'note-actions' }, onEdit ? editNoteBtn(onEdit) : null, onDelete ? deleteNoteBtn(onDelete) : null) : null),
-  // A friend's note in a Bible this person doesn't have: no quoted text, just which Bible it was in.
-  n.textHidden ? h('div', { class: 'quote quote-hidden', dataset: { c: n.color } }, LANG === 'zh' ? `（${n.versionLabel}经文未显示：你没有这本圣经）` : `(${n.versionLabel} text not shown: you don't have this Bible)`)
-    : h('div', { class: 'quote', dataset: { c: n.color } }, n.quote),
+  h('div', { class: 'quote', dataset: { c: n.color } }, n.quote),
   n.body ? h('p', { class: 'note-body' }, noteBodyNodes(n.body)) : null);
 }
 
