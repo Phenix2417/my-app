@@ -232,18 +232,10 @@ h1 { font-size: 28px; font-weight: 500; margin: 18px 0 24px; }
 .grip { color: var(--muted); font-size: 18px; letter-spacing: -3px; padding: 0 4px 0 2px; flex: none; }
 
 /* Side tab + slide-out vertical bar on the right edge */
-.side-dock { position: fixed; z-index: 15; top: 50%; right: 0; display: flex; align-items: center;
   transform: translate(calc(100% - 34px), -50%); transition: transform .22s ease; }
-.side-dock.open { transform: translate(0, -50%); }
-.side-tab { flex: none; width: 34px; height: 64px; border: 0; border-radius: 16px 0 0 16px; padding: 0;
   background: var(--pill); color: var(--on-bg); display: grid; place-items: center; box-shadow: -2px 2px 10px rgba(0,0,0,.3); }
-.side-tab svg { width: 22px; height: 22px; transition: transform .22s ease; }
-.side-dock.open .side-tab svg { transform: rotate(180deg); }
-.side-tab:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
-.side-panel { display: flex; flex-direction: column; gap: 14px; padding: 14px 12px;
   padding-right: calc(12px + env(safe-area-inset-right, 0px)); background: var(--surface); border-radius: 18px 0 0 18px;
   box-shadow: -4px 4px 18px rgba(0,0,0,.35); }
-@media (prefers-reduced-motion: reduce) { .side-dock, .side-tab svg { transition: none; } }
 
 .commentary-page h1 { margin-top: 4px; }
 .commentary-page .chips { margin-top: 18px; }
@@ -280,12 +272,7 @@ body.bars-hidden .c-head { transform: translateY(-100%); }
 @keyframes slide-l { from { transform: translateX(-40px); opacity: .3; } }
 
 
-.side-btn { width: 52px; height: 52px; border-radius: 26px; border: 0; display: grid; place-items: center;
   background: var(--surface-2); color: var(--muted); }
-.side-btn svg { width: 24px; height: 24px; }
-.side-btn[aria-pressed="true"] { background: var(--primary); color: var(--on-primary); }
-.side-btn:not([aria-pressed]) { color: var(--primary); }
-.side-btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
 
 /* Read page: fixed title and chapter navigation, Bible text scrolls on its own */
 .reader-page { height: 100dvh; display: flex; flex-direction: column; overflow: hidden; position: relative; padding-block: 0; }
@@ -308,7 +295,6 @@ body.bars-hidden .c-head { transform: translateY(-100%); }
 body.bars-hidden .r-head { transform: translateY(-100%); }
 body.bars-hidden .bottom-nav { transform: translateY(100%); }
 
-.side-popover { position: absolute; left: -8px; transform: translate(-100%, -50%);
   display: flex; align-items: center; gap: 6px; padding: 8px; background: var(--surface); border-radius: 28px;
   box-shadow: -4px 4px 18px rgba(0,0,0,.35); white-space: nowrap; }
 .size-btn { display: inline-flex; align-items: center; gap: 1px; line-height: 1; height: 44px; min-width: 52px; justify-content: center; border: 0;
@@ -448,9 +434,7 @@ body.bars-hidden .back-pill { bottom: calc(20px + env(safe-area-inset-bottom, 0p
 
 /* Outline icons */
 svg.line-icon { fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
-.side-btn svg.line-icon { width: 26px; height: 26px; }
 
-.side-btn, .side-tab, .swatch, .icon-btn, .to-top, .size-btn, .bubble-btn { -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; }
 
 /* Long-press info bubble, attached to the pressed item */
 .tip { position: fixed; z-index: 60; max-width: min(280px, calc(100vw - 16px)); padding: 8px 12px; border-radius: 10px;
@@ -610,6 +594,24 @@ body.bars-hidden .b-size-panel { display: none; }
 .manage-actions .delete-note { width: 40px; height: 40px; }
 
 /* Icons: one size wherever they sit in a bar or button (smaller only inline with text) */
-.bottom-nav svg, .side-btn svg.line-icon, .b-bar-btn svg, .toc-close svg, .to-top svg, .side-tab svg { width: 24px; height: 24px; }
+.bottom-nav svg, .b-bar-btn svg, .toc-close svg, .to-top svg, .more-btn svg { width: 24px; height: 24px; }
 .bubble-btn svg, .edit-note svg, .lib-more svg, .grip svg { width: 22px; height: 22px; }
 .mark svg.line-icon { stroke-width: 2.4; }
+
+/* The ⋯ button (top right of each page) and its menu */
+.more-btn { display: grid; place-items: center; padding: 0; width: 40px; height: 40px; border-radius: 20px; background: none; color: var(--on-bg); flex: none; }
+.more-btn[aria-expanded="true"] { background: var(--pill); }
+.r-head { display: flex; align-items: center; gap: 8px; }
+.r-head .r-title { flex: 1; min-width: 0; }
+.c-titlebar .more-btn, .title-row .more-btn { margin-right: -8px; }
+.r-head .more-btn { margin-right: -8px; }
+.more-menu { position: fixed; z-index: 35; min-width: 220px; max-width: calc(100vw - 16px); padding: 6px; border-radius: 16px;
+  background: var(--surface); box-shadow: 0 8px 28px rgba(0,0,0,.28); display: grid; animation: fade .12s; }
+.menu-item { display: flex; align-items: center; gap: 14px; width: 100%; padding: 12px 14px; border: 0; border-radius: 10px; background: none;
+  color: var(--on-bg); font-size: 16px; text-align: left; }
+.menu-item:active, .menu-item:focus-visible { background: var(--pill); outline: none; }
+.menu-item svg { width: 22px; height: 22px; flex: none; color: var(--primary); }
+.menu-label { flex: 1; }
+.menu-check { display: grid; visibility: hidden; }
+.menu-item[aria-checked="true"] .menu-check { visibility: visible; }
+.menu-control { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 6px 8px 10px; }

@@ -56,9 +56,9 @@ const ICONS = {
   serifAa: '<path d="M21 14h-5"/><path d="M16 16v-3.5a2.5 2.5 0 0 1 5 0V16"/><path d="M4.5 13h6"/><path d="m3 16 4.5-9 4.5 9"/>',
   refresh: '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
   speaker: '<path d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z"/><path d="M16 9a5 5 0 0 1 0 6"/><path d="M19.364 18.364a9 9 0 0 0 0-12.728"/>',
-  chevronLeft: '<path d="m15 18-6-6 6-6"/>',
   arrowUp: '<path d="m5 12 7-7 7 7"/><path d="M12 19V5"/>',
   arrowDown: '<path d="M12 5v14"/><path d="m19 12-7 7-7-7"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
   grip: '<circle cx="9" cy="12" r="1"/><circle cx="9" cy="5" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="19" r="1"/>',
 };
 
@@ -475,13 +475,13 @@ async function renderReader() {
       // The book name opens the list of books; the chapter number opens this book's chapters.
       h('h1', { class: 'r-title' },
         h('button', { type: 'button', onclick: () => openPicker(), 'aria-label': `${meta.name}. Choose a book` }, meta.name),
-        h('button', { type: 'button', onclick: () => openPicker({ chapters: true }), 'aria-label': `Chapter ${chapter}. Choose a chapter` }, String(chapter)))),
-    scroller,
-    sideDock([
+        h('button', { type: 'button', onclick: () => openPicker({ chapters: true }), 'aria-label': `Chapter ${chapter}. Choose a chapter` }, String(chapter))),
+      moreMenu([
       { id: 'show-friends', label: "Friends' notes", icon: ICONS.friendsNotes, toggle: { get: () => state.showFriends, set: setShowFriends } },
       { id: 'open-commentary', label: 'Commentary', icon: ICONS.commentaryBooks, action: () => openCommentaryPage(topVisibleVerse()) },
       { id: 'text-size', label: 'Text size', icon: ICONS.serifAa, popover: textSizeControl },
-    ]));
+    ])),
+    scroller);
   enableChapterSwipe(scroller, body, goChapter);
   if (!store.get('seenReadTip', false)) { // the instructions used to sit above the text; show them once instead
     store.set('seenReadTip', true);
@@ -1608,52 +1608,56 @@ function textSizeControl() {
 }
 
 /* Side bar: a tab fixed to the middle of the right edge; tapping it slides out a vertical bar of switches. */
-let closeSideDock = () => {};
-document.addEventListener('pointerdown', (e) => { if (!e.target.closest?.('.side-dock')) closeSideDock(); }, true);
-function sideDock(items) {
-  const panel = h('div', { class: 'side-panel', id: 'side-panel', role: 'group', 'aria-label': 'Reading options' },
-    // Icon-only buttons: a toggle shows its state by being filled; an action opens something.
-    ...items.map(({ id, label, icon, toggle, action, popover }) => {
-      const btn = h('button', { id, class: 'side-btn', title: label, 'aria-label': label }, svg(icon));
-      if (toggle) {
-        const show = () => btn.setAttribute('aria-pressed', String(!!toggle.get()));
-        btn.addEventListener('click', () => {
-          const on = !toggle.get(); toggle.set(on); show();
-          if (toggle.announce !== false) toast(`${label} ${on ? 'on' : 'off'}`);
-        });
-        show();
-      } else if (popover) {
-        // Opens a small control beside the bar; the bar stays open while it's used.
-        btn.setAttribute('aria-expanded', 'false');
-        btn.addEventListener('click', () => {
-          const existing = dock.querySelector('.side-popover');
-          existing?.remove();
-          const opening = !existing;
-          btn.setAttribute('aria-expanded', String(opening));
-          if (!opening) return;
-          const pop = h('div', { class: 'side-popover', role: 'group', 'aria-label': label }, popover());
-          dock.append(pop);
-          pop.style.top = `${btn.offsetTop + panel.offsetTop + btn.offsetHeight / 2}px`;
-          pop.querySelector('button')?.focus();
-        });
-      } else btn.addEventListener('click', () => { closeSideDock(); action(); });
-      return btn;
-    }));
-  const tab = h('button', { class: 'side-tab', 'aria-controls': 'side-panel', 'aria-expanded': 'false', 'aria-label': 'Show options' },
-    svg(ICONS.chevronLeft));
-  const dock = h('div', { class: 'side-dock' }, tab, panel);
-  const setOpen = (open) => {
-    dock.classList.toggle('open', open);
-    tab.setAttribute('aria-expanded', String(open));
-    tab.setAttribute('aria-label', open ? 'Hide options' : 'Show options');
-    panel.inert = !open;
-    if (!open) { dock.querySelector('.side-popover')?.remove(); dock.querySelector('[aria-expanded="true"].side-btn')?.setAttribute('aria-expanded', 'false'); }
+// The ⋯ button in a page's top-right corner: a menu of that page's options (this replaced the side bar).
+// Items: { id, label, icon } plus one of: action (run it), toggle { get, set } (ticked when on), popover (a control shown in the menu).
+let closeMenu = () => {};
+document.addEventListener('pointerdown', (e) => { if (!e.target.closest?.('.more-menu, .more-btn')) closeMenu(); }, true);
+function moreMenu(items) {
+  const btn = h('button', { class: 'icon-btn more-btn', type: 'button', 'aria-label': 'More options', title: 'More options',
+    'aria-haspopup': 'menu', 'aria-expanded': 'false' }, svg(ICONS.more));
+  let menu = null;
+  const close = () => {
+    if (!menu) return;
+    menu.remove(); menu = null;
+    btn.setAttribute('aria-expanded', 'false');
+    document.removeEventListener('keydown', onKey);
   };
-  setOpen(false);
-  closeSideDock = () => setOpen(false); // tapping anywhere else slides it back
-  tab.addEventListener('click', () => setOpen(!dock.classList.contains('open')));
-  dock.addEventListener('keydown', (e) => { if (e.key === 'Escape') { setOpen(false); tab.focus(); } });
-  return dock;
+  const onKey = (e) => { if (e.key === 'Escape') { close(); btn.focus(); } };
+  const open = () => {
+    closeMenu();
+    menu = h('div', { class: 'more-menu', role: 'menu', 'aria-label': 'More options' },
+      ...items.map(({ id, label, icon, toggle, action, popover }) => {
+        const item = h('button', { id, class: 'menu-item', type: 'button', role: toggle ? 'menuitemcheckbox' : 'menuitem' },
+          svg(icon), h('span', { class: 'menu-label' }, label), toggle ? h('span', { class: 'menu-check' }, svg(ICONS.check)) : null);
+        const showState = () => item.setAttribute('aria-checked', String(!!toggle.get()));
+        if (toggle) {
+          showState();
+          item.addEventListener('click', () => {
+            const on = !toggle.get(); toggle.set(on); showState(); close();
+            if (toggle.announce !== false) toast(`${label} ${on ? 'on' : 'off'}`);
+          });
+        } else if (popover) { // the control opens inside the menu, which stays open while it's used
+          item.setAttribute('aria-expanded', 'false');
+          item.addEventListener('click', () => {
+            const existing = menu.querySelector(`.menu-control[data-for="${id}"]`);
+            if (existing) { existing.remove(); item.setAttribute('aria-expanded', 'false'); return; }
+            item.after(h('div', { class: 'menu-control', role: 'group', 'aria-label': label, dataset: { for: id } }, popover()));
+            item.setAttribute('aria-expanded', 'true');
+          });
+        } else item.addEventListener('click', () => { close(); action(); });
+        return item;
+      }));
+    document.body.append(menu);
+    const r = btn.getBoundingClientRect();
+    menu.style.top = `${r.bottom + 6}px`;
+    menu.style.right = `${Math.max(8, innerWidth - r.right)}px`;
+    btn.setAttribute('aria-expanded', 'true');
+    document.addEventListener('keydown', onKey);
+    menu.querySelector('.menu-item')?.focus();
+  };
+  btn.addEventListener('click', () => (menu ? close() : open()));
+  closeMenu = close;
+  return btn;
 }
 
 function setStatus(...kids) { cm.status?.replaceChildren(...kids.filter(Boolean)); }
@@ -1685,7 +1689,7 @@ function setManageOpen(open) {
   drawManage(); drawCommentaryChips();
   if (cm.scroller) cm.scroller.scrollTop = 0;
   document.getElementById('side-edit-list')?.setAttribute('aria-pressed', String(open));
-  closeSideDock(); // don't cover the list's remove buttons
+  closeMenu();
 }
 
 function drawManage() {
@@ -1805,7 +1809,10 @@ function renderCommentaryPage() {
   attachReaderGestures(cm.listEl);
   // Same bars as the Read page: a slim title bar on top and the tabs below, both sliding away while reading.
   const head = h('header', { class: 'c-head' },
-    h('div', { class: 'c-titlebar' }, h('h1', {}, 'Commentary')),
+    h('div', { class: 'c-titlebar' }, h('h1', {}, 'Commentary'),
+      moreMenu([
+        { id: 'side-edit-list', label: 'Edit commentary list', icon: ICONS.editShelf, toggle: { get: () => cm.manageOpen, set: setManageOpen, announce: false } },
+      ])),
     cm.chips);
   // Back to the Bible text: the same bottom-left pill as after following a reference.
   // Back to the Bible text, with the words selected when the commentary was opened still selected.
@@ -1843,10 +1850,7 @@ function renderCommentaryPage() {
     head,
     cm.scroller,
     back,
-    toTop,
-    sideDock([
-      { id: 'side-edit-list', label: 'Edit commentary list', icon: ICONS.editShelf, toggle: { get: () => cm.manageOpen, set: setManageOpen, announce: false } },
-    ])));
+    toTop));
   loadCommentaryPage();
 }
 const BOOKS_FALLBACK = () => [{ id: state.pos.book, name: bookName(state.pos.book), chapters: 999 }];
@@ -2157,12 +2161,14 @@ async function renderNotes() {
   const seg = h('div', { class: 'segmented', role: 'group', 'aria-label': 'Whose notes' },
     h('button', { 'aria-pressed': String(state.notesTab === 'mine'), onclick: () => { state.notesTab = 'mine'; renderNotes(); } }, 'Mine'),
     h('button', { 'aria-pressed': String(state.notesTab === 'friends'), onclick: () => { state.notesTab = 'friends'; renderNotes(); } }, "Friends'"));
-  mount(h('main', { class: 'screen' }, h('h1', {}, state.notesTab === 'mine' ? 'My notes' : "Friends' notes"), seg, banner, list,
-    sideDock([
-      { id: 'side-notes-friends', label: "Friends' notes", icon: ICONS.friendsNotes,
-        toggle: { get: () => state.notesTab === 'friends', set: (on) => { state.notesTab = on ? 'friends' : 'mine'; renderNotes(); }, announce: false } },
-      { id: 'side-refresh', label: 'Refresh', icon: ICONS.refresh, action: () => renderNotes() },
-    ])));
+  mount(h('main', { class: 'screen' },
+    h('div', { class: 'title-row' }, h('h1', {}, state.notesTab === 'mine' ? 'My notes' : "Friends' notes"),
+      moreMenu([
+        { id: 'side-notes-friends', label: "Friends' notes", icon: ICONS.friendsNotes,
+          toggle: { get: () => state.notesTab === 'friends', set: (on) => { state.notesTab = on ? 'friends' : 'mine'; renderNotes(); }, announce: false } },
+        { id: 'side-refresh', label: 'Refresh', icon: ICONS.refresh, action: () => renderNotes() },
+      ])),
+    seg, banner, list));
   await loadBooks();
 
   const draw = (failed) => {
@@ -2190,13 +2196,11 @@ async function renderFriends() {
   const content = h('div');
   mount(h('main', { class: 'screen' },
     h('div', { class: 'title-row' }, h('h1', {}, 'Friends'),
-      h('button', { class: 'text-btn', onclick: openAccount }, 'Account'),
-      h('button', { class: 'text-btn', onclick: openAddFriend }, 'Add')),
-    content,
-    sideDock([
-      { id: 'side-add-friend', label: 'Add a friend', icon: ICONS.personAdd, action: () => openAddFriend() },
-      { id: 'side-account', label: 'Account', icon: ICONS.account, action: () => openAccount() },
-    ])));
+      moreMenu([
+        { id: 'side-add-friend', label: 'Add a friend', icon: ICONS.personAdd, action: () => openAddFriend() },
+        { id: 'side-account', label: 'Account', icon: ICONS.account, action: () => openAccount() },
+      ])),
+    content));
 
   const draw = () => {
     const f = state.friends;
@@ -2398,9 +2402,8 @@ async function renderLibrary() {
   const input = h('input', { type: 'file', accept: BOOK_ACCEPT, multiple: true, hidden: true, onchange: () => { addBooks([...input.files]); input.value = ''; } });
   const pick = () => input.click();
   mount(h('main', { class: 'screen library-page' },
-    h('div', { class: 'title-row' }, h('h1', {}, 'Books'), h('button', { class: 'text-btn', onclick: pick }, 'Add')),
-    status, grid, input,
-    sideDock([{ id: 'side-add-book', label: 'Add a book', icon: ICONS.addBook, action: pick }])));
+    h('div', { class: 'title-row' }, h('h1', {}, 'Books'), moreMenu([{ id: 'side-add-book', label: 'Add a book', icon: ICONS.addBook, action: pick }])),
+    status, grid, input));
   const draw = (books, failed) => {
     status.replaceChildren(failed ? h('p', { class: 'error' }, "Couldn't refresh your books. Showing the saved list.") : '');
     if (!books?.length) {
@@ -2791,7 +2794,7 @@ setInterval(async () => {
 window.addEventListener('resize', () => { positionHandles(); positionToolbar(); });
 
 // Long-press any icon-only button to see what it does (its accessible name), without pressing it.
-const ICON_BUTTONS = '.side-btn, .side-tab, .swatch, .icon-btn, .to-top, .size-btn, .bubble-btn';
+const ICON_BUTTONS = '.swatch, .icon-btn, .to-top, .size-btn, .bubble-btn';
 {
   let timer = null, target = null, fired = null;
   document.addEventListener('pointerdown', (e) => {
