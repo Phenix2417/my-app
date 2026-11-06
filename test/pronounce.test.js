@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { createPronounceService, createPhoneticsService, audioType, wiktionaryPhonetics } from '../server/pronounce.js';
+import { createPronounceService, createPhoneticsService, audioType, wiktionaryPhonetics, merriamWebsterIpa } from '../server/pronounce.js';
 import { openDb } from '../server/db.js';
 import { createServer } from '../server/app.js';
 
@@ -85,4 +85,20 @@ test('falls back to Wiktionary, once, when Youdao has nothing', async () => {
   assert.deepEqual(await get('caiaphas'), { uk: 'ˈkaɪ.ə.fəs', us: 'ˈkaɪ.ə.fəs', src: { uk: 'wiktionary', us: 'wiktionary' } });
   await get('caiaphas');
   assert.equal(calls.filter((u) => u.includes('wiktionary')).length, 1);
+});
+
+test('Merriam-Webster gives the US phonetic when a key is set', async () => {
+  assert.equal(merriamWebsterIpa([{ meta: { id: 'graceful' }, hwi: { prs: [{ ipa: 'x' }] } }, { meta: { id: 'grace:1' }, hwi: { prs: [{ ipa: 'ˈgreɪs' }] } }], 'grace'), 'ˈgreɪs');
+  assert.equal(merriamWebsterIpa(['gracious', 'grease'], 'grace'), '', 'suggestions mean no entry');
+  const calls = [];
+  const fetchImpl = async (u) => {
+    calls.push(u);
+    if (u.includes('dictionaryapi.com')) return Response.json([{ meta: { id: 'tomato' }, hwi: { prs: [{ ipa: 'təˈmeɪtoʊ-mw' }] } }]);
+    return Response.json({ ec: { word: [{ ukphone: 'təˈmɑːtəʊ', usphone: 'təˈmeɪtoʊ' }] } });
+  };
+  const get = createPhoneticsService({ fetchImpl, words: new Set(['tomato']), wiktionary: false, mwKey: 'k' });
+  assert.deepEqual(await get('tomato'), { uk: 'təˈmɑːtəʊ', us: 'təˈmeɪtoʊ-mw', src: { uk: 'youdao', us: 'mw' } });
+  assert.ok(calls.some((u) => u.startsWith('https://www.dictionaryapi.com/api/v3/references/learners/json/tomato?key=k')));
+  const noKey = createPhoneticsService({ fetchImpl, words: new Set(['tomato']), wiktionary: false, mwKey: '' });
+  assert.equal((await noKey('tomato')).src.us, 'youdao', 'without a key nothing changes');
 });

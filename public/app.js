@@ -739,7 +739,7 @@ function namePronRow(word) {
 }
 // Where a phonetic came from: a small badge before it.
 const PH_SOURCES = {
-  youdao: ['Y', 'Youdao'], wiktionary: ['W', 'Wiktionary'], 'ipa-dict': ['i', 'ipa-dict'], ecdict: ['E', 'ECDICT (offline dictionary)'],
+  mw: ['M', 'Merriam-Webster'], youdao: ['Y', 'Youdao'], wiktionary: ['W', 'Wiktionary'], 'ipa-dict': ['i', 'ipa-dict'], ecdict: ['E', 'ECDICT (offline dictionary)'],
 };
 function setPhSource(badge, src) {
   const s = PH_SOURCES[src];

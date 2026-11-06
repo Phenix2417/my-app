@@ -83,6 +83,20 @@ export function createPronounceService({
   };
 }
 
+// American IPA for a word from a Merriam-Webster Learner's API reply: the first entry for exactly this
+// headword (meta.id "grace" or "grace:1") that has a pronunciation. Suggestions (plain strings) mean no entry.
+export function merriamWebsterIpa(reply, word) {
+  if (!Array.isArray(reply)) return '';
+  for (const e of reply) {
+    if (!e || typeof e !== 'object') continue;
+    const id = String(e.meta?.id || '').split(':')[0].toLowerCase();
+    if (id !== word) continue;
+    const ipa = (e.hwi?.prs || []).map((p) => p?.ipa).find(Boolean);
+    if (ipa) return String(ipa).trim();
+  }
+  return '';
+}
+
 // IPA from a Wiktionary page's English section: { uk, us } (unlabelled pronunciations count for both).
 export function wiktionaryPhonetics(wikitext) {
   const en = `\n${wikitext}`.split(/\n==English==\n/)[1]?.split(/\n==[^=]/)[0] || '';
@@ -108,6 +122,8 @@ export function createPhoneticsService({
   dictDir = path.join(here, '..', 'public', 'dict'), words = null,
   namesFile = path.join(here, 'data', 'name-phonetics.json'), names = null,
   wiktionary = true, wiktionaryUpstream = 'https://en.wiktionary.org/w/index.php',
+  // Merriam-Webster's Learner's Dictionary (American IPA), the main source for US phonetics when a key is set.
+  mwKey = process.env.MW_LEARNERS_KEY || '', mwUpstream = 'https://www.dictionaryapi.com/api/v3/references/learners/json',
 } = {}) {
   let known = words;
   // Built-in phonetics for Bible names and places (Wiktionary, ipa-dict), used when Youdao has none.
@@ -118,7 +134,7 @@ export function createPhoneticsService({
   const clean = (s) => (typeof s === 'string' ? s.trim().replace(/^\/|\/$/g, '').slice(0, 80) : '');
 
   async function load(word) {
-    const file = cacheDir && path.join(cacheDir, `${word}.v2.json`); // v2: records each phonetic's source
+    const file = cacheDir && path.join(cacheDir, `${word}.v2${mwKey ? '-mw' : ''}.json`); // v2: records each phonetic's source
     if (file) { try { return JSON.parse(await fs.promises.readFile(file, 'utf8')); } catch { /* not cached */ } }
     let res;
     try { res = await fetchImpl(`${upstream}?q=${encodeURIComponent(word)}`, { signal: AbortSignal.timeout(15000) }); } catch {
@@ -131,6 +147,11 @@ export function createPhoneticsService({
     const ec = pick(data?.ec?.word), simple = pick(data?.simple?.word);
     let value = { uk: clean(ec.ukphone || simple.ukphone), us: clean(ec.usphone || simple.usphone) };
     value.src = { uk: value.uk ? 'youdao' : '', us: value.us ? 'youdao' : '' };
+    // Merriam-Webster first for the American phonetic.
+    if (mwKey) {
+      const mw = await fromMerriamWebster(word).catch(() => '');
+      if (mw) { value.us = mw; value.src.us = 'mw'; }
+    }
     // Nothing from Youdao (common for Bible names): ask Wiktionary for this one word.
     if (!value.uk && !value.us && wiktionary) {
       const w = await fromWiktionary(word).catch(() => null);
@@ -138,6 +159,12 @@ export function createPhoneticsService({
     }
     if (file) { try { await fs.promises.mkdir(cacheDir, { recursive: true }); await fs.promises.writeFile(file, JSON.stringify(value)); } catch { /* best effort */ } }
     return value;
+  }
+
+  async function fromMerriamWebster(word) {
+    const res = await fetchImpl(`${mwUpstream}/${encodeURIComponent(word)}?key=${encodeURIComponent(mwKey)}`, { signal: AbortSignal.timeout(10000) });
+    if (!res.ok) return '';
+    return merriamWebsterIpa(await res.json(), word);
   }
 
   // Pronunciation section of the English Wiktionary entry (CC BY-SA): IPA, labelled UK/RP or US/GA where given.
