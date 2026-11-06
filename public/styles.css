@@ -442,3 +442,7 @@ body.bars-hidden .back-pill { bottom: calc(20px + env(safe-area-inset-bottom, 0p
 .au-src { border-radius: 50%; margin-left: -2px; }
 
 .pron { -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; }
+
+/* Outline icons */
+svg.line-icon { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.side-btn svg.line-icon { width: 26px; height: 26px; }

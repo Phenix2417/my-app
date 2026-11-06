@@ -22,6 +22,8 @@ const svg = (d) => {
   const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   s.setAttribute('viewBox', '0 0 24 24');
   s.setAttribute('aria-hidden', 'true');
+  // Line icons are written as SVG markup (constants in this file, never user data).
+  if (d.startsWith('<')) { s.classList.add('line-icon'); s.innerHTML = d; return s; }
   const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
   p.setAttribute('d', d);
   p.setAttribute('fill', 'currentColor');
@@ -29,6 +31,10 @@ const svg = (d) => {
   return s;
 };
 const ICONS = {
+  // Reading-page side bar: notes from people, an open Bible with a quill, and a serif "Aa".
+  friendsNotes: '<path d="M14.5 3.5H6.5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h5"/><path d="M8 8.5h6M8 12h3.5"/><circle cx="17" cy="13" r="2.6"/><path d="M12.6 21c.5-2.5 2.3-3.9 4.4-3.9s3.9 1.4 4.4 3.9"/>',
+  bibleQuill: '<path d="M12 7.2C9.8 5.6 6.5 5.2 3 6v12.5c3.5-.8 6.8-.4 9 1.2 2.2-1.6 5.5-2 9-1.2V12"/><path d="M12 7.2v12.5"/><path d="M21.5 2.5c-3.6.7-5.9 3.3-6.8 7.6l-.5 2.4"/><path d="M21.5 2.5c-.2 3.6-1.9 6.4-5 7.5"/>',
+  serifAa: '<text x="1.5" y="19.5" font-family="Georgia,\'Noto Serif\',serif" font-size="17" font-weight="700" fill="currentColor" stroke="none">A</text><text x="13.5" y="19.5" font-family="Georgia,\'Noto Serif\',serif" font-size="12" font-weight="700" fill="currentColor" stroke="none">a</text>',
   read: 'M21 5c-1.1-.35-2.3-.5-3.5-.5-1.95 0-4.05.4-5.5 1.5-1.45-1.1-3.55-1.5-5.5-1.5S2.45 4.9 1 6v14.65c0 .25.25.5.5.5.1 0 .15-.05.25-.05C3.1 20.45 5.05 20 6.5 20c1.95 0 4.05.4 5.5 1.5 1.35-.85 3.8-1.5 5.5-1.5 1.65 0 3.35.3 4.75 1.05.1.05.15.05.25.05.25 0 .5-.25.5-.5V6c-.6-.45-1.25-.75-2-1zm0 13.5c-1.1-.35-2.3-.5-3.5-.5-1.7 0-4.15.65-5.5 1.5V8c1.35-.85 3.8-1.5 5.5-1.5 1.2 0 2.4.15 3.5.5v11.5zM17.5 10.5c.88 0 1.73.09 2.5.26V9.24c-.79-.15-1.64-.24-2.5-.24-1.7 0-3.24.29-4.5.83v1.66c1.13-.64 2.7-.99 4.5-.99zM13 12.49v1.66c1.13-.64 2.7-.99 4.5-.99.88 0 1.73.09 2.5.26V11.9c-.79-.15-1.64-.24-2.5-.24-1.7 0-3.24.3-4.5.83zM17.5 14.33c-1.7 0-3.24.29-4.5.83v1.66c1.13-.64 2.7-.99 4.5-.99.88 0 1.73.09 2.5.26v-1.52c-.79-.16-1.64-.24-2.5-.24z',
   notes: 'M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h10l6-6V5c0-1.1-.9-2-2-2zM5 19V5h14v9h-5v5H5zm2-12h10v2H7zm0 4h10v2H7zm0 4h5v2H7z',
   commentary: 'M21.99 4c0-1.1-.89-2-1.99-2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h14l4 4-.01-18zM18 14H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z',
@@ -324,9 +330,9 @@ async function renderReader() {
         h('span', {}, meta.name), h('span', {}, String(chapter))))),
     scroller,
     sideDock([
-      { id: 'show-friends', label: "Friends' notes", icon: ICONS.friends, toggle: { get: () => state.showFriends, set: setShowFriends } },
-      { id: 'open-commentary', label: 'Commentary', icon: ICONS.commentary, action: () => openCommentaryPage(topVisibleVerse()) },
-      { id: 'text-size', label: 'Text size', icon: ICONS.textSize, popover: textSizeControl },
+      { id: 'show-friends', label: "Friends' notes", icon: ICONS.friendsNotes, toggle: { get: () => state.showFriends, set: setShowFriends } },
+      { id: 'open-commentary', label: 'Commentary', icon: ICONS.bibleQuill, action: () => openCommentaryPage(topVisibleVerse()) },
+      { id: 'text-size', label: 'Text size', icon: ICONS.serifAa, popover: textSizeControl },
     ]));
   enableChapterSwipe(scroller, body, goChapter);
   if (!store.get('seenReadTip', false)) { // the instructions used to sit above the text; show them once instead
