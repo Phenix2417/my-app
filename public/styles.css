@@ -18,7 +18,6 @@
   --hl-purple: #5a4287;
   --scrim: rgba(0, 0, 0, 0.55);
   --verse-size: 22px;
-  --divine: #f0c35a;
   --mark-bd: #8fdcc4; --mark-easton: #f2b45a; --mark-isbe: #9cc3ff; --mark-wiki: #c9b4ff;
   color-scheme: dark;
 }
@@ -30,7 +29,6 @@
     --error: #ba1a1a; --on-error: #fff; --divider: #d4dedb; --handle: #e08a10; --sel: rgba(242, 166, 59, 0.28);
     --hl-yellow: #f6e08e; --hl-green: #b9e4c6; --hl-blue: #bdd6f5; --hl-pink: #f3c3d9; --hl-purple: #dacbf5;
     --scrim: rgba(0, 0, 0, 0.35);
-    --divine: #a35f00;
     --mark-bd: #006b58; --mark-easton: #9a5600; --mark-isbe: #1d5fbf; --mark-wiki: #6a3fc1;
     color-scheme: light;
   }
@@ -93,8 +91,6 @@ h1 { font-size: 28px; font-weight: 500; margin: 18px 0 24px; }
 [data-c="blue"] { background: var(--hl-blue); }
 [data-c="pink"] { background: var(--hl-pink); }
 [data-c="purple"] { background: var(--hl-purple); }
-/* God's names and titles (Read ⋯ → Divine names). */
-.w.divine { color: var(--divine); }
 /* How many Bible dictionaries have this word: a small number after it (Read ⋯ → Dictionary counts). */
 .w .dn::after { content: attr(data-n); font: 600 .5em/1 system-ui, sans-serif; color: var(--muted); vertical-align: super; margin: 0 .05em 0 .1em; }
 body.no-word-marks .w .dn { display: none; }
