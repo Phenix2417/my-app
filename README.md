@@ -21,6 +21,10 @@ Read the Bible, highlight passages, write notes, and see the notes your friends 
   word used in the Bible text: `node scripts/build-dict.mjs ecdict.csv` regenerates `public/dict/`.
   Tap the phonetic or the **UK** / **US** speaker buttons to hear recorded British or American pronunciation
   (Youdao audio, fetched by the server once per word and kept in the data folder).
+- **Names and places** — words missing from the English dictionary still get UK/US phonetic symbols where possible:
+  Youdao first, then a built-in list from ipa-dict (MIT, `server/data/name-phonetics.json`, rebuilt with
+  `node scripts/build-name-phonetics.mjs en_US.txt en_UK.txt`), then the word's Wiktionary page (CC BY-SA), asked
+  by the server once per name and kept. The row is hidden when no phonetics exist.
 - **圣经辞典 / Bible Dictionary** — Nave's and Torrey's Topical Bibles (public domain), in the 信望愛 (FHL) Chinese
   translation and in English. Whether a word has an entry is checked against a built-in index of topic titles
   (`server/data/topics.json`, 5,952 titles, no text; rebuild with `node scripts/build-topic-index.mjs`), so the

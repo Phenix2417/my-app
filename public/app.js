@@ -731,6 +731,12 @@ function phoneticsFor(word) {
   return phoneticsCache.get(word);
 }
 // "UK /ɡreɪs/ 🔊": shows the dictionary's phonetic until the accent-specific one arrives.
+// UK/US row for a word missing from the English dictionary (a name or place): shown only when phonetics exist.
+function namePronRow(word) {
+  const row = h('div', { class: 'dict-prons', hidden: true }, pronButton(word, 'uk'), pronButton(word, 'us'));
+  phoneticsFor(word).then((p) => { if (p?.uk || p?.us) { row.hidden = false; positionToolbar(); } }).catch(() => {});
+  return row;
+}
 function pronButton(word, accent, fallback) {
   const name = accent === 'uk' ? 'British' : 'American';
   const ipa = h('span', { class: 'ipa' + (fallback ? ' pending' : '') }, fallback ? `/${fallback}/` : '…');
@@ -1168,6 +1174,8 @@ function toggleDictionary(bar, btn) {
     // Not in the English dictionary: still show the word (the Bible dictionary buttons attach to it).
     const noEnglish = !e || (!e.t && !e.d && !e.base);
     if (noEnglish) body.replaceChildren(h('div', { class: 'dict-head' }, h('span', { class: 'dict-word' }, w)),
+      // Pronunciations are still looked up; the row is removed if no phonetic symbols are found.
+      namePronRow(w),
       h('p', { class: 'dict-muted' }, 'Not in the English dictionary.'), bibleSlot);
     else body.replaceChildren(...[...block(e, !e.base), ...(e.base ? [h('div', { class: 'dict-base' }, `Base form: ${e.base.word}`), ...block(e.base, true)] : []), bibleSlot].filter(Boolean));
     positionToolbar();

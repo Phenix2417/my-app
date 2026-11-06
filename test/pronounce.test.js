@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { createPronounceService, createPhoneticsService, audioType } from '../server/pronounce.js';
+import { createPronounceService, createPhoneticsService, audioType, wiktionaryPhonetics } from '../server/pronounce.js';
 import { openDb } from '../server/db.js';
 import { createServer } from '../server/app.js';
 
@@ -48,11 +48,41 @@ test('audio route serves the right content type without sign-in', async () => {
 test('British and American phonetics come from the dictionary service, once per word', async () => {
   const calls = [];
   const fetchImpl = async (url) => { calls.push(url); return Response.json({ ec: { word: [{ ukphone: 'təˈmɑːtəʊ', usphone: 'təˈmeɪtoʊ' }] } }); };
-  const get = createPhoneticsService({ fetchImpl, words: new Set(['tomato']) });
+  const get = createPhoneticsService({ fetchImpl, words: new Set(['tomato']), wiktionary: false });
   assert.deepEqual(await get('tomato'), { uk: 'təˈmɑːtəʊ', us: 'təˈmeɪtoʊ' });
   await get('tomato');
   assert.deepEqual(calls, ['https://dict.youdao.com/jsonapi?q=tomato']);
   await assert.rejects(get('zzzz'), { status: 404 });
-  const empty = createPhoneticsService({ fetchImpl: async () => Response.json({}), words: new Set(['x-ray']) });
+  const empty = createPhoneticsService({ fetchImpl: async () => Response.json({}), words: new Set(['x-ray']), wiktionary: false });
   assert.deepEqual(await empty('x-ray'), { uk: '', us: '' });
+});
+
+test('built-in phonetics for Bible names are used without asking the service', async () => {
+  const calls = [];
+  const get = createPhoneticsService({ fetchImpl: async (u) => { calls.push(u); return Response.json({}); },
+    words: new Set(['caiaphas', 'malchus']), names: { caiaphas: { uk: 'ˈkaɪ.ə.fəs' } }, wiktionary: false });
+  assert.deepEqual(await get('caiaphas'), { uk: 'ˈkaɪ.ə.fəs', us: 'ˈkaɪ.ə.fəs' });
+  assert.equal(calls.length, 0);
+  assert.deepEqual(await get('malchus'), { uk: '', us: '' });
+  assert.equal(calls.length, 1, 'other words still ask the service');
+});
+
+test('reads IPA from Wiktionary wikitext, with UK/US labels', () => {
+  const page = '==English==\n===Pronunciation===\n* {{IPA|en|/ˌbɛθˈseɪ.ɪ.də/|aa=UK}}\n* {{IPA|en|/ˌbɛθˈseɪ.ɪ.ɾə/|aa=US}}\n==Latin==\n* {{IPA|la|/x/}}';
+  assert.deepEqual(wiktionaryPhonetics(page), { uk: 'ˌbɛθˈseɪ.ɪ.də', us: 'ˌbɛθˈseɪ.ɪ.ɾə' });
+  assert.deepEqual(wiktionaryPhonetics('==English==\n* {{IPA|en|/ˈkaɪ.ə.fəs/}}'), { uk: 'ˈkaɪ.ə.fəs', us: 'ˈkaɪ.ə.fəs' });
+  assert.deepEqual(wiktionaryPhonetics('no entry'), { uk: '', us: '' });
+});
+
+test('falls back to Wiktionary, once, when Youdao has nothing', async () => {
+  const calls = [];
+  const fetchImpl = async (u) => {
+    calls.push(u);
+    if (u.includes('wiktionary')) return new Response(u.includes('title=Caiaphas') ? '==English==\n* {{IPA|en|/ˈkaɪ.ə.fəs/}}' : '', { status: u.includes('title=Caiaphas') ? 200 : 404 });
+    return Response.json({});
+  };
+  const get = createPhoneticsService({ fetchImpl, words: new Set(['caiaphas']), names: {} });
+  assert.deepEqual(await get('caiaphas'), { uk: 'ˈkaɪ.ə.fəs', us: 'ˈkaɪ.ə.fəs' });
+  await get('caiaphas');
+  assert.equal(calls.filter((u) => u.includes('wiktionary')).length, 1);
 });

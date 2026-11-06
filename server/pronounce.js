@@ -26,7 +26,20 @@ function loadWords(dictDir) {
     for (const f of fs.readdirSync(dictDir)) {
       if (f.endsWith('.json')) for (const w of Object.keys(JSON.parse(fs.readFileSync(path.join(dictDir, f), 'utf8')))) words.add(w);
     }
-  } catch { /* no dictionary: nothing can be pronounced */ }
+  } catch { /* no dictionary */ }
+  // Every word in the Bible text too (names and places that the dictionary lacks), so they can be pronounced.
+  try {
+    const bibleDir = path.join(dictDir, '..', 'bible');
+    for (const f of fs.readdirSync(bibleDir)) {
+      if (!f.endsWith('.json')) continue;
+      for (const ch of JSON.parse(fs.readFileSync(path.join(bibleDir, f), 'utf8'))) {
+        for (const [t] of ch) for (const raw of String(t).split(/[\s—–]+/)) {
+          const w = raw.toLowerCase().replace(/[’']s$/, '').replace(/[^a-z-]/g, '').replace(/^-+|-+$/g, '');
+          if (w) words.add(w);
+        }
+      }
+    }
+  } catch { /* no Bible text */ }
   return words;
 }
 
@@ -70,12 +83,36 @@ export function createPronounceService({
   };
 }
 
+// IPA from a Wiktionary page's English section: { uk, us } (unlabelled pronunciations count for both).
+export function wiktionaryPhonetics(wikitext) {
+  const en = `\n${wikitext}`.split(/\n==English==\n/)[1]?.split(/\n==[^=]/)[0] || '';
+  const out = { uk: '', us: '' };
+  for (const line of en.split('\n')) {
+    for (const m of line.matchAll(/\{\{IPA\|en\|([^}]*)\}\}/g)) {
+      const parts = m[1].split('|');
+      const ipa = parts.find((x) => /^[/[]/.test(x));
+      if (!ipa) continue;
+      const label = `${line} ${parts.join(' ')}`;
+      const uk = /\b(UK|RP|British)\b/.test(label), us = /\b(US|GA|GenAm|American)\b/.test(label);
+      const v = ipa.replace(/^[/[]|[/\]]$/g, '').trim();
+      if ((uk || !us) && !out.uk) out.uk = v;
+      if ((us || !uk) && !out.us) out.us = v;
+    }
+  }
+  return out;
+}
+
 // British and American phonetic symbols, from Youdao's dictionary data; kept on disk once fetched.
 export function createPhoneticsService({
   cacheDir, fetchImpl = globalThis.fetch, upstream = 'https://dict.youdao.com/jsonapi',
   dictDir = path.join(here, '..', 'public', 'dict'), words = null,
+  namesFile = path.join(here, 'data', 'name-phonetics.json'), names = null,
+  wiktionary = true, wiktionaryUpstream = 'https://en.wiktionary.org/w/index.php',
 } = {}) {
   let known = words;
+  // Built-in phonetics for Bible names and places (Wiktionary, ipa-dict), used when Youdao has none.
+  let builtIn = names;
+  const loadNames = () => { if (!builtIn) { try { builtIn = JSON.parse(fs.readFileSync(namesFile, 'utf8')); } catch { builtIn = {}; } } return builtIn; };
   const memory = new Map();
   const inflight = new Map();
   const clean = (s) => (typeof s === 'string' ? s.trim().replace(/^\/|\/$/g, '').slice(0, 80) : '');
@@ -92,9 +129,26 @@ export function createPhoneticsService({
     try { data = await res.json(); } catch { throw new PronounceError(502, 'The dictionary service sent something unexpected'); }
     const pick = (list) => (Array.isArray(list) ? list[0] : list) || {};
     const ec = pick(data?.ec?.word), simple = pick(data?.simple?.word);
-    const value = { uk: clean(ec.ukphone || simple.ukphone), us: clean(ec.usphone || simple.usphone) };
+    let value = { uk: clean(ec.ukphone || simple.ukphone), us: clean(ec.usphone || simple.usphone) };
+    // Nothing from Youdao (common for Bible names): ask Wiktionary for this one word.
+    if (!value.uk && !value.us && wiktionary) {
+      const w = await fromWiktionary(word).catch(() => null);
+      if (w) value = { uk: w.uk || w.us, us: w.us || w.uk };
+    }
     if (file) { try { await fs.promises.mkdir(cacheDir, { recursive: true }); await fs.promises.writeFile(file, JSON.stringify(value)); } catch { /* best effort */ } }
     return value;
+  }
+
+  // Pronunciation section of the English Wiktionary entry (CC BY-SA): IPA, labelled UK/RP or US/GA where given.
+  async function fromWiktionary(word) {
+    for (const title of [word[0].toUpperCase() + word.slice(1), word]) {
+      const res = await fetchImpl(`${wiktionaryUpstream}?title=${encodeURIComponent(title)}&action=raw`, {
+        signal: AbortSignal.timeout(10000), headers: { 'User-Agent': 'BibleStudyApp/1.0 (personal Bible study app)' } });
+      if (!res.ok) continue;
+      const found = wiktionaryPhonetics(await res.text());
+      if (found.uk || found.us) return found;
+    }
+    return null;
   }
 
   return async function getPhonetics(rawWord) {
@@ -102,8 +156,13 @@ export function createPhoneticsService({
     known ??= loadWords(dictDir);
     if (!/^[a-z][a-z-]{0,39}$/.test(word) || !known.has(word)) throw new PronounceError(404, 'Not a dictionary word');
     if (memory.has(word)) return memory.get(word);
-    if (!inflight.has(word)) inflight.set(word, load(word).finally(() => inflight.delete(word)));
-    const value = await inflight.get(word);
+    const local = loadNames()[word];
+    let value;
+    if (local) value = { uk: local.uk || local.us || '', us: local.us || local.uk || '' }; // no request needed
+    else {
+      if (!inflight.has(word)) inflight.set(word, load(word).finally(() => inflight.delete(word)));
+      value = await inflight.get(word);
+    }
     memory.set(word, value);
     if (memory.size > 2000) memory.delete(memory.keys().next().value);
     return value;
