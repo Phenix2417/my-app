@@ -420,3 +420,10 @@ body.bars-hidden .bottom-nav { transform: translateY(100%); }
 .vref { background: none; border: 0; padding: 0; font: inherit; color: var(--primary); text-decoration: underline;
   text-decoration-thickness: 1px; text-underline-offset: 3px; cursor: pointer; }
 .vref:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; border-radius: 3px; }
+
+/* Back to where a verse reference was opened from */
+.back-pill { position: fixed; z-index: 14; left: max(16px, env(safe-area-inset-left, 0px)); bottom: calc(100px + env(safe-area-inset-bottom, 0px));
+  border: 0; border-radius: 20px; padding: 10px 16px; background: var(--primary); color: var(--on-primary); font-weight: 600; font-size: 15px;
+  box-shadow: 0 4px 14px rgba(0,0,0,.3); cursor: pointer; transition: bottom .22s ease; }
+body.bars-hidden .back-pill { bottom: calc(20px + env(safe-area-inset-bottom, 0px)); }
+.back-pill:focus-visible { outline: 2px solid var(--on-bg); outline-offset: 2px; }

@@ -336,6 +336,8 @@ async function renderReader() {
   mount(screen);
   reader.body = body;
   reader.scroller = scroller;
+  const back = backButton();
+  if (back) screen.append(back);
   setBars(true);
   // Reading further down slides the bars away; a tap brings them back.
   let lastTop = 0;
@@ -1075,8 +1077,35 @@ function withVerseLinks(text) {
 }
 
 // Go to a passage in the reader and select it (verses v1–v2; a whole chapter just opens at the top).
+// Remember where we came from (chapter, scroll, selection, open panel) so a Back button can return there.
+const backStack = [];
 function openReference(book, chapter, v1, v2) {
+  const panel = reader.toolbar?.querySelector('.dict-btn[aria-expanded="true"]') ? 'dict' : null;
+  backStack.push({ pos: { ...state.pos }, scrollTop: reader.scroller?.scrollTop || 0, selection: state.selection ? { ...state.selection } : null, panel,
+    target: { book, chapter } });
+  if (backStack.length > 20) backStack.shift();
   goTo({ book, chapter }, v1 || null, v1 ? [v1, Math.max(v1, v2 || v1)] : null);
+}
+function goBack() {
+  const from = backStack.pop();
+  if (!from) return;
+  clearSelection();
+  state.pos = from.pos; store.set('pos', state.pos); state.tab = 'read';
+  render().then(() => {
+    if (reader.scroller) reader.scroller.scrollTop = from.scrollTop;
+    if (!from.selection) return;
+    requestAnimationFrame(() => {
+      setSelection(from.selection.start, from.selection.end);
+      if (from.panel) reader.toolbar?.querySelector('.dict-btn')?.click(); // reopen the Dictionary/Translate panel
+    });
+  });
+}
+// A "Back to …" button on the Read page while we're on a chapter opened from a reference.
+function backButton() {
+  const from = backStack[backStack.length - 1];
+  if (!from) return null;
+  if (from.target.book !== state.pos.book || from.target.chapter !== state.pos.chapter) { backStack.length = 0; return null; } // moved on
+  return h('button', { class: 'back-pill', type: 'button', onclick: goBack }, `‹ Back to ${bookName(from.pos.book)} ${from.pos.chapter}`);
 }
 
 // Double tap: select the word and open its dictionary entry in the bubble.
