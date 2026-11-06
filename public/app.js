@@ -1085,6 +1085,13 @@ function toggleDictionary(bar, btn) {
     const found = (await bibleEntryFor(w)) || (e?.base ? await bibleEntryFor(e.base.word) : null);
     if (!found || !bibleSlot.isConnected) return; // another word was tapped meanwhile
     bibleSlot.replaceChildren(bibleSection(found));
+    // A button after the word that scrolls down to its Bible dictionary entry.
+    body.querySelector('.dict-head')?.append(h('button', { class: 'bd-jump', type: 'button', 'aria-label': 'Go to the Bible dictionary entry', onclick: () => {
+      const box = body.closest('.dict');
+      const target = bibleSlot.querySelector('.bd') || bibleSlot;
+      if (box) box.scrollBy({ top: target.getBoundingClientRect().top - box.getBoundingClientRect().top - 6, behavior: 'smooth' });
+      target.classList.remove('flash'); void target.offsetWidth; target.classList.add('flash');
+    } }, '圣经辞典 ↓'));
     positionToolbar();
   };
   bar.append(h('div', { class: 'dict' }, trans, body,

@@ -392,3 +392,9 @@ body.bars-hidden .bottom-nav { transform: translateY(100%); }
 .bd-en { font-weight: 400; font-size: 12px; color: var(--muted); text-transform: capitalize; }
 .bd-text { margin: 4px 0 2px; font-size: 14px; line-height: 1.7; white-space: pre-line; }
 .bd-more { padding: 2px 0; font-size: 14px; }
+
+.dict-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.bd-jump { border: 1px solid var(--primary); background: none; color: var(--primary); border-radius: 12px; padding: 2px 10px;
+  font: 600 12px var(--font-ui, Roboto, system-ui, sans-serif); cursor: pointer; }
+.bd-jump:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.bd.flash { animation: flash 1.6s ease-out; border-radius: 8px; }
