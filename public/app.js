@@ -1361,10 +1361,9 @@ async function loadCommentaryList() {
 
 // The person's own commentary list, in their order. Until they customise it, Chinese readers get the
 // Chinese commentary first; everyone gets every English commentary and the cross references.
-function defaultCommentaryIds(list) {
-  const lang = (navigator.language || '').toLowerCase();
-  const zh = lang.startsWith('zh') ? [/-(tw|hk|mo)|hant/.test(lang) ? 'fhl-zh-hant' : 'fhl-zh-hans'] : [];
-  return [...zh, ...list.filter((c) => c.lang === 'en' && c.id !== 'tsk').map((c) => c.id), 'tsk'];
+// The starting list for someone who hasn't edited theirs; the others can be added with Edit list.
+function defaultCommentaryIds() {
+  return ['matthew-henry', 'fhl-zh-hans', 'tyndale'];
 }
 function myCommentaryIds(list) {
   const known = new Set(list.map((c) => c.id));
