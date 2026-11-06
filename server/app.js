@@ -147,6 +147,7 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
     deleteLibraryNote: q('DELETE FROM library_notes WHERE id = ? AND user_id = ?'),
     myVersions: q('SELECT * FROM user_versions WHERE user_id = ? ORDER BY created_at'),
     userVersion: q('SELECT * FROM user_versions WHERE id = ? AND user_id = ?'),
+    versionById: q('SELECT * FROM user_versions WHERE id = ?'),
     addUserVersion: q('INSERT INTO user_versions (id, user_id, short, name, lang, created_at, source_sha, year) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'),
     setVersionSource: q('UPDATE user_versions SET source_sha = ? WHERE id = ? AND user_id = ?'),
     deleteUserVersion: q('DELETE FROM user_versions WHERE id = ? AND user_id = ?'),
@@ -624,7 +625,18 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
       const book = query.get('book');
       if (book && !BOOK_IDS.has(book)) throw new HttpError(400, 'Unknown book');
       const rows = stmt.friendNotes.all({ viewer: me.id, book: book || null, chapter: book ? Number(query.get('chapter')) : null });
-      return { notes: rows.map(noteOut) };
+      // A note made in a friend's own imported Bible (and its quoted text) is shown only to someone who has that Bible
+      // too — imported from the same ebook, or a version with the same short name and language — and in their copy.
+      const mine = stmt.myVersions.all(me.id), owners = new Map();
+      const visible = [];
+      for (const n of rows) {
+        if (!/^u/.test(n.version || '')) { visible.push(n); continue; }
+        if (!owners.has(n.version)) owners.set(n.version, stmt.versionById.get(n.version));
+        const theirs = owners.get(n.version);
+        const match = theirs && mine.find((v) => v.lang === theirs.lang && ((theirs.source_sha && v.source_sha === theirs.source_sha) || v.short === theirs.short));
+        if (match) visible.push({ ...n, version: match.id });
+      }
+      return { notes: visible.map(noteOut) };
     }, true],
   ];
 

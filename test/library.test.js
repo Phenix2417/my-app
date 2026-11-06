@@ -138,3 +138,26 @@ test('the same book is kept once, recognised by its content rather than its name
   assert.equal(await count(), 2);
   srv.close(); fs.rmSync(dir2, { recursive: true, force: true });
 });
+
+test("notes in a person's own Bible reach only friends who have that Bible too", async () => {
+  const cat = await register('cat'), dan = await register('dan');
+  const me = async (t) => (await json('GET', '/api/me', t)).data.user;
+  const catId = (await me(cat)).id, danId = (await me(dan)).id;
+  await json('POST', '/api/friends/requests', cat, { username: 'dan' });
+  await json('POST', `/api/friends/${catId}/accept`, dan);
+  await json('PUT', `/api/friends/${danId}/sharing`, cat, { enabled: true });
+  const sha = 'a'.repeat(64);
+  const esv = (await json('POST', '/api/my-versions', cat, { short: 'ESV', name: 'English Standard Version', lang: 'en', source: sha })).data.version;
+  const note = (id, version) => ({ book: 'john', chapter: 1, version, start: { verse: 1, word: 0 }, end: { verse: 1, word: 3 }, color: 'yellow', quote: 'In the beginning was', body: id });
+  assert.equal((await json('PUT', '/api/notes/note-cat-web-1', cat, note('web note', 'web'))).status, 200);
+  assert.equal((await json('PUT', '/api/notes/note-cat-esv-1', cat, note('esv note', esv.id))).status, 200);
+
+  // Dan has no ESV: he sees the WEB note only (not the ESV note or its quoted text).
+  let seen = (await json('GET', '/api/friends/notes?book=john&chapter=1', dan)).data.notes;
+  assert.deepEqual(seen.map((n) => n.body), ['web note']);
+
+  // Dan imports the same ebook: the ESV note appears, in his copy.
+  const danEsv = (await json('POST', '/api/my-versions', dan, { short: 'ESV-2', name: 'ESV', lang: 'en', source: sha })).data.version;
+  seen = (await json('GET', '/api/friends/notes?book=john&chapter=1', dan)).data.notes;
+  assert.deepEqual(seen.map((n) => [n.body, n.version]).sort(), [['esv note', danEsv.id], ['web note', 'web']]);
+});
