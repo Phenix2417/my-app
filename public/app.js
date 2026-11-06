@@ -1076,6 +1076,19 @@ function attachReaderGestures(body) {
     cancel();
     const word = wEl ? { v: +wEl.dataset.v, w: +wEl.dataset.w } : null;
     press = { x: e.clientX, y: e.clientY, word, sliding: false, id: e.pointerId };
+    // A long press on a verse number or the grey arrow selects that whole verse (like a double tap there).
+    const mark = e.target.closest('.vnum, .alt-mark');
+    if (mark) {
+      press.timer = setTimeout(() => {
+        if (!press) return;
+        const v = +mark.dataset.v, ws = reader.words.filter((x) => x.v === v);
+        press.done = true; // its release does nothing more
+        if (!ws.length) return;
+        navigator.vibrate?.(12);
+        setSelection({ v, w: 0 }, { v, w: ws.at(-1).w });
+      }, LONG_PRESS_MS);
+      return;
+    }
     if (!word) return;
     press.timer = setTimeout(() => {
       if (!press) return;
@@ -1106,6 +1119,7 @@ function attachReaderGestures(body) {
     cancel();
     stopAutoScroll();
     if (p.sliding) { showToolbar(); return; }
+    if (p.done) return; // a long press on a verse number or arrow: the verse is already selected
     if (e.type === 'pointercancel') return;
     // Short tap. A second tap on the same word soon after is a double tap: straight to the dictionary.
     const now = Date.now();
