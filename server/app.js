@@ -304,7 +304,12 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
     }, true],
 
     /* ----- Library: the person's own books ----- */
-    ['GET', /^\/api\/library$/, ({ me }) => ({ books: stmt.myLibrary.all(me.id).map(libraryOut) }), true],
+    ['GET', /^\/api\/library$/, async ({ me }) => {
+      // Books added before fingerprints were recorded get theirs now (once), so an imported Bible can be matched to them.
+      const books = stmt.myLibrary.all(me.id);
+      if (library) for (const b of books) if (!b.sha256) { b.sha256 = await library.fingerprint(me.id, b.id).catch(() => null); if (b.sha256) stmt.setLibrarySha.run(b.sha256, b.id); }
+      return { books: books.map(libraryOut) };
+    }, true],
     // Before uploading, the app asks whether the person already has this exact file (by fingerprint), so it isn't sent again.
     ['GET', /^\/api\/library\/find$/, async ({ me, query }) => {
       const sha = String(query.get('sha') || ''), size = Number(query.get('size'));

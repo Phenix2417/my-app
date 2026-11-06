@@ -3673,8 +3673,10 @@ async function bibleVersionsOf(b) {
   let found = b.sha256 ? own.filter((v) => v.source === b.sha256) : [];
   if (!found.length && /bible|圣经|聖經|和合|新约|新約/i.test(b.title)) {
     const shorts = [...KNOWN_VERSIONS, ...KNOWN_CHINESE].filter(([re]) => re.test(b.title)).map(([, short]) => short);
+    // Versions not linked to an ebook yet come first; failing those, any with the same short name (the same translation).
     found = own.filter((v) => !v.source && shorts.includes(v.short));
     if (b.sha256) for (const v of found) { v.source = b.sha256; api('PUT', `/api/my-versions/${v.id}`, { source: b.sha256 }).catch(() => {}); }
+    if (!found.length) found = own.filter((v) => shorts.includes(v.short));
   }
   // In the ebook's own order: its translations are imported (and listed by the server) in the order the book prints them.
   return found.slice(0, 2);
