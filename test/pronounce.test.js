@@ -139,3 +139,16 @@ test('saved recordings report their source without fetching', async () => {
   await au('us', 'grace');
   assert.deepEqual(await au.savedSources('grace'), { uk: '', us: 'youdao' });
 });
+
+test('Free Dictionary replies give English definitions grouped by part of speech', async () => {
+  const { freeDictionaryDefinitions } = await import('../server/pronounce.js');
+  const reply = [{ meanings: [
+    { partOfSpeech: 'noun', definitions: [{ definition: 'Elegance of movement.', example: 'She danced with grace.' }, { definition: 'Favour  from God.' }] },
+    { partOfSpeech: 'verb', definitions: [{ definition: 'To adorn.' }] },
+  ] }, { meanings: [{ partOfSpeech: 'noun', definitions: [{ definition: 'Elegance of movement.' }, { definition: 'A short prayer before a meal.' }] }] }];
+  assert.deepEqual(freeDictionaryDefinitions(reply), [
+    { p: 'n.', defs: [{ d: 'Elegance of movement.', ex: 'She danced with grace.' }, { d: 'Favour from God.' }, { d: 'A short prayer before a meal.' }] },
+    { p: 'v.', defs: [{ d: 'To adorn.' }] },
+  ]);
+  assert.deepEqual(freeDictionaryDefinitions(null), []);
+});

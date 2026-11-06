@@ -74,7 +74,7 @@ export function seedTestUsers(db, users) {
   return created;
 }
 
-export function createApp(db, { publicDir, trustProxy = false, commentary = null, pronounce = null, phonetics = null, translate = null, bibleDict = null, library = null } = {}) {
+export function createApp(db, { publicDir, trustProxy = false, commentary = null, pronounce = null, phonetics = null, translate = null, bibleDict = null, library = null, freeDict = null } = {}) {
   const q = (sql) => db.prepare(sql);
   const stmt = {
     userByName: q('SELECT * FROM users WHERE username = ?'),
@@ -221,6 +221,12 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
 
   const routes = [
     ['GET', /^\/api\/health$/, () => ({ ok: true })],
+
+    // English definitions from the Free Dictionary API (Wiktionary). The app falls back to its built-in WordNet.
+    ['GET', /^\/api\/define\/([a-z-]{1,40})$/, async ({ params: [word] }) => {
+      if (!freeDict) throw new HttpError(503, 'Definitions are not set up on this server');
+      try { return { word, en: (await freeDict(word)).definitions || [] }; } catch { throw new HttpError(503, "Couldn't reach the dictionary service."); }
+    }, true],
 
     /* ----- Library: the person's own books ----- */
     ['GET', /^\/api\/library$/, ({ me }) => ({ books: stmt.myLibrary.all(me.id).map(libraryOut) }), true],

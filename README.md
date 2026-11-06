@@ -15,10 +15,15 @@ Read the Bible, highlight passages, write notes, and see the notes your friends 
   references. Tap **Edit list** to add or remove commentaries, and press and hold one to drag it into a new place;
   each person's list is saved to their account. Texts come from the Free Use Bible API (bible.helloao.org) and the
   信望愛 (FHL) site; the server fetches each chapter once and keeps a copy (in the Railway volume when one is attached).
-- **Dictionary / Translate** — select one word and tap **Dictionary** (or double-tap the word) for its pronunciation,
-  Chinese meaning and English definition. Select several words and the button becomes **Translate**: the whole
-  selection is translated into Chinese (Youdao), with a button per word for its dictionary entry; inflected words also show their base form. Built from ECDICT (MIT licence) for every
-  word used in the Bible text: `node scripts/build-dict.mjs ecdict.csv` regenerates `public/dict/`.
+- **Dictionary** — select one word and tap **Dictionary** (or double-tap the word) for its pronunciation,
+  Chinese meanings and English definitions. With several words selected, the selection is translated into Chinese
+  (Youdao), with a button per word for its dictionary entry; inflected words also show their base form.
+  - Chinese: Wiktionary's translations by meaning (CC BY-SA 4.0, via the wiktextract extract at kaikki.org) first,
+    then ECDICT (MIT licence). `curl -sL https://kaikki.org/dictionary/English/kaikki.org-dictionary-English.jsonl |
+    node scripts/build-wiktionary-zh.mjs` regenerates `public/wikt/`; `node scripts/build-dict.mjs ecdict.csv`
+    regenerates `public/dict/`. Both keep only words used in the Bible text.
+  - English: the Free Dictionary API (online, Wiktionary content) first, then Princeton WordNet 3.1 built in
+    (`node scripts/build-wordnet.mjs <wordnet-db package>` regenerates `public/wordnet/`), then ECDICT.
   Tap the phonetic or the **UK** / **US** speaker buttons to hear recorded British or American pronunciation
   (Youdao audio, fetched by the server once per word and kept in the data folder).
 - **Pronunciation sources** — phonetics and recordings come from Youdao first, then the Free Dictionary API

@@ -615,3 +615,12 @@ body.bars-hidden .b-size-panel { display: none; }
 .menu-check { display: grid; visibility: hidden; }
 .menu-item[aria-checked="true"] .menu-check { visibility: visible; }
 .menu-control { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 6px 8px 10px; }
+
+/* Dictionary: Wiktionary's Chinese by meaning, and English definitions with examples */
+.dict-zh-wikt p { margin: 0 0 4px; }
+.dict-pos { color: var(--primary); font-weight: 500; font-style: italic; }
+.dict-sense { color: var(--muted); font-size: 13px; }
+.dict-en p { margin: 0 0 4px; }
+.dict-en-group + .dict-en-group { margin-top: 4px; }
+.dict-ex { font-style: italic; opacity: .85; }
+.dict-via { font-size: 12px; margin: 0 0 2px; }

@@ -46,16 +46,38 @@ export function freeDictionaryPronunciations(reply) {
   return out;
 }
 
-// Looks a word up in the Free Dictionary API once (remembered), shared by the phonetics and audio services.
+// English definitions from a Free Dictionary API reply (Wiktionary content, CC BY-SA):
+// [{ p: 'n.', defs: [{ d, ex }] }], at most a few meanings per part of speech.
+const FD_POS = { noun: 'n.', verb: 'v.', adjective: 'adj.', adverb: 'adv.', pronoun: 'pron.', preposition: 'prep.', conjunction: 'conj.', interjection: 'int.', determiner: 'det.', article: 'art.', numeral: 'num.' };
+export function freeDictionaryDefinitions(reply) {
+  const out = [];
+  if (!Array.isArray(reply)) return out;
+  const clean = (t, max) => String(t || '').replace(/\s+/g, ' ').trim().slice(0, max);
+  for (const entry of reply) {
+    for (const m of entry?.meanings || []) {
+      const p = FD_POS[m?.partOfSpeech] || clean(m?.partOfSpeech, 20);
+      let group = out.find((g) => g.p === p);
+      if (!group) { group = { p, defs: [] }; out.push(group); }
+      for (const d of m?.definitions || []) {
+        const def = clean(d?.definition, 400);
+        if (def && group.defs.length < 4 && !group.defs.some((x) => x.d === def)) group.defs.push(d.example ? { d: def, ex: clean(d.example, 300) } : { d: def });
+      }
+    }
+  }
+  return out.filter((g) => g.defs.length);
+}
+
+// Looks a word up in the Free Dictionary API once (remembered), shared by the phonetics, audio and definitions.
 export function createFreeDictionary({ fetchImpl = globalThis.fetch, upstream = 'https://api.dictionaryapi.dev/api/v2/entries/en' } = {}) {
   const memory = new Map();
   return function lookUp(word) {
     if (!memory.has(word)) {
       const p = (async () => {
         const res = await fetchImpl(`${upstream}/${encodeURIComponent(word)}`, { signal: AbortSignal.timeout(10000) });
-        if (res.status === 404) return freeDictionaryPronunciations(null); // no entry
+        if (res.status === 404) return { ...freeDictionaryPronunciations(null), definitions: [] }; // no entry
         if (!res.ok) throw new Error('unavailable');
-        return freeDictionaryPronunciations(await res.json());
+        const reply = await res.json();
+        return { ...freeDictionaryPronunciations(reply), definitions: freeDictionaryDefinitions(reply) };
       })();
       memory.set(word, p);
       p.catch(() => memory.delete(word)); // try again later after a network problem

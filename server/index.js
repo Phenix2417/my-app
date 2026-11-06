@@ -34,6 +34,6 @@ const phonetics = createPhoneticsService({ cacheDir: path.join(dataDir, 'phoneti
 const translate = createTranslateService({ cacheDir: path.join(dataDir, 'translate-cache') });
 
 createServer(db, { publicDir: path.join(root, 'public'), trustProxy, commentary, pronounce, phonetics, translate, bibleDict: createBibleDictionary({ cacheDir: path.join(dataDir, 'bibledict-cache') }),
-  library: createLibraryStore({ dir: path.join(dataDir, 'library') }) }).listen(port, host, () => {
+  library: createLibraryStore({ dir: path.join(dataDir, 'library') }), freeDict }).listen(port, host, () => {
   console.log(`Bible Study running at http://localhost:${port}`);
 });

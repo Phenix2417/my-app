@@ -879,6 +879,76 @@ function showToolbar() {
 
 /* ----- Dictionary inside the selection bubble (ECDICT English–Chinese, words used in the Bible) ----- */
 const dictFiles = new Map();
+// Built-in data split by first letter: dict (ECDICT), wikt (Wiktionary's Chinese translations), wordnet (WordNet).
+const letterFiles = new Map();
+function letterFile(dir, letter) {
+  const key = `${dir}/${letter}`;
+  if (!letterFiles.has(key)) {
+    const p = fetch(`/${dir}/${letter}.json`).then((r) => (r.ok ? r.json() : {}));
+    letterFiles.set(key, p);
+    p.catch(() => letterFiles.delete(key));
+  }
+  return letterFiles.get(key);
+}
+const wiktFor = async (w) => (await letterFile('wikt', w[0]).catch(() => ({})))[w] || null;
+const wordnetFor = async (w) => (await letterFile('wordnet', w[0]).catch(() => ({})))[w] || null;
+// English definitions: the Free Dictionary (online, Wiktionary) first, then WordNet (built in), then ECDICT's line.
+const definitions = new Map();
+function englishFor(w, zhHint = '') {
+  // "be的过去式" (past tense of be): an inflected word with no definitions of its own uses its base word's.
+  const base = /^([a-z][a-z-]*)的/.exec(zhHint || '')?.[1];
+  if (base && base !== w) {
+    return englishFor(w).then(async (own) => own || (await englishFor(base).then((r) => (r ? { ...r, via: base } : null))));
+  }
+  if (!definitions.has(w)) {
+    const p = api('GET', `/api/define/${encodeURIComponent(w)}`).then((r) => (r.en?.length ? { src: 'fd', groups: r.en } : null)).catch(() => null)
+      .then(async (online) => {
+        if (online) return online;
+        const wn = await wordnetFor(w);
+        if (!wn) return null;
+        const groups = [];
+        for (const [pos, d, ex] of wn) {
+          let g = groups.find((x) => x.p === pos);
+          if (!g) groups.push(g = { p: pos, defs: [] });
+          if (g.defs.length < 3) g.defs.push(ex ? { d, ex } : { d });
+        }
+        return { src: 'wn', groups };
+      });
+    definitions.set(w, p);
+    p.then((r) => { if (!r) definitions.delete(w); }); // try again next time (e.g. back online)
+  }
+  return definitions.get(w);
+}
+// Chinese lines: Wiktionary's translations by meaning (grouped by part of speech), else ECDICT's.
+// Specialist meanings that only clutter a Bible reader's dictionary.
+const OFF_TOPIC = /^(computing|programming|chess|card games?|poker|sports?|baseball|cricket|golf|tennis|football|soccer|mathematics|physics|chemistry|electronics|slang|internet|video games?)\b|playing card|playing piece|\bchess\b/i;
+function chineseLines(rows) {
+  const byPos = [];
+  for (const [pos, sense, zh] of rows) {
+    if (OFF_TOPIC.test(sense)) continue;
+    let g = byPos.find((x) => x.pos === pos);
+    if (!g) byPos.push(g = { pos, items: [] });
+    if (g.items.length < 4 && !g.items.some(([z]) => z === zh)) g.items.push([zh, sense]); // each Chinese word once
+  }
+  return h('div', { class: 'dict-zh dict-zh-wikt', lang: 'zh-Hans' }, ...byPos.map((g) => h('p', {},
+    g.pos ? h('span', { class: 'dict-pos' }, g.pos + ' ') : null,
+    ...g.items.flatMap(([zh, sense], i) => [i ? '；' : '', zh, sense ? h('span', { class: 'dict-sense', lang: 'en' }, ` ${sense}`) : null]))));
+}
+function englishLines(res, fallback) {
+  const box = h('div', { class: 'dict-en' }, fallback ? '' : '…');
+  res.then((r) => {
+    // Leave out slang and informal meanings, and interjections when the word has others.
+    const casual = /^\((?:[^)]*\b)?(slang|informal|vulgar|stereotypically|colloquial|internet|derogatory|offensive)\b/i;
+    let groups = r?.groups.map((g) => ({ ...g, defs: g.defs.filter((x) => !casual.test(x.d)) })).filter((g) => g.defs.length) || [];
+    if (groups.length > 1) groups = groups.filter((g) => g.p !== 'int.');
+    if (r && !groups.length) r = null; else if (r) r = { ...r, groups };
+    if (!r) { if (fallback) box.textContent = fallback; else box.remove(); positionToolbar(); return; }
+    box.replaceChildren(r.via ? h('p', { class: 'dict-via' }, `From “${r.via}”`) : '', ...r.groups.slice(0, 3).map((g) => h('div', { class: 'dict-en-group' },
+      ...g.defs.slice(0, 3).map((x, i) => h('p', {}, i ? null : h('span', { class: 'dict-pos' }, g.p + ' '), x.d, x.ex ? h('span', { class: 'dict-ex' }, ` “${x.ex}”`) : null)))));
+    positionToolbar();
+  });
+  return box;
+}
 const dictKey = (w) => w.toLowerCase().replace(/[’']s$/, '').replace(/[^a-z-]/g, '').replace(/^-+|-+$/g, '');
 function dictFile(letter) {
   if (!dictFiles.has(letter)) {
@@ -1440,16 +1510,19 @@ function toggleDictionary(bar, btn) {
     body.replaceChildren(h('p', { class: 'dict-muted' }, 'Looking up…'));
     let e;
     try { e = await lookUp(w); } catch { body.replaceChildren(h('p', { class: 'dict-muted' }, "Couldn't load the dictionary. Check your connection.")); positionToolbar(); return; }
+    // Chinese: Wiktionary first, ECDICT when it has none. English: Free Dictionary, then WordNet, then ECDICT.
+    const zhRows = async (x) => wiktFor(x.word);
+    const rows = { [e?.word]: e ? await zhRows(e) : null, ...(e?.base ? { [e.base.word]: await zhRows(e.base) } : {}) };
     const block = (x, main) => [
       h('div', { class: 'dict-head' }, h('span', { class: 'dict-word' }, x.word)),
       // British and American phonetics; tapping either plays that recording.
       h('div', { class: 'dict-prons' }, pronButton(x.word, 'uk', x.p), pronButton(x.word, 'us', x.p)),
-      x.t ? h('p', { class: 'dict-zh', lang: 'zh-Hans' }, x.t) : null,
-      x.d && main ? h('p', { class: 'dict-en' }, x.d) : null,
+      rows[x.word]?.length ? chineseLines(rows[x.word]) : x.t ? h('p', { class: 'dict-zh', lang: 'zh-Hans' }, x.t) : null,
+      main ? englishLines(englishFor(x.word, x.t), x.d) : null,
     ];
     const bibleSlot = h('div', { class: 'bd-slot' });
     // Not in the English dictionary: still show the word (the Bible dictionary buttons attach to it).
-    const noEnglish = !e || (!e.t && !e.d && !e.base);
+    const noEnglish = !e || (!e.t && !e.d && !e.base && !rows[e.word]?.length);
     if (noEnglish) body.replaceChildren(h('div', { class: 'dict-head' }, h('span', { class: 'dict-word' }, w)),
       // Pronunciations are still looked up; the row is removed if no phonetic symbols are found.
       namePronRow(w),
@@ -1495,7 +1568,7 @@ function toggleDictionary(bar, btn) {
     positionToolbar();
   };
   const dictBox = h('div', { class: 'dict' }, trans, body,
-    h('p', { class: 'dict-credit' }, multi ? 'Translation: Youdao · Phonetics & audio: Youdao, Free Dictionary API · Dictionary: ECDICT · 圣经辞典: 信望爱' : 'ECDICT English–Chinese dictionary · Phonetics & audio: Youdao, Free Dictionary API · 圣经辞典: 信望爱'));
+    h('p', { class: 'dict-credit' }, multi ? 'Translation: Youdao · Chinese: Wiktionary (CC BY-SA), ECDICT · English: Free Dictionary (Wiktionary), WordNet · Phonetics & audio: Youdao, Free Dictionary API · 圣经辞典: 信望爱' : 'Chinese: Wiktionary (CC BY-SA), ECDICT · English: Free Dictionary (Wiktionary), WordNet · Phonetics & audio: Youdao, Free Dictionary API · 圣经辞典: 信望爱'));
   // An ↑ button appears once the panel is scrolled down, and takes it back to the top.
   const toTop = h('button', { class: 'to-top', type: 'button', hidden: true, 'aria-label': 'Back to top', title: 'Back to top',
     onclick: () => dictBox.scrollTo({ top: 0, behavior: 'smooth' }) }, svg(ICONS.arrowUp));
