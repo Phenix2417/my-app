@@ -4,7 +4,7 @@
 
 /* ----- Zip (EPUB container) ----- */
 export async function openZip(buf) {
-  const u8 = new Uint8Array(buf), dv = new DataView(buf);
+  const u8 = buf instanceof Uint8Array ? buf : new Uint8Array(buf), dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
   let eocd = -1;
   for (let i = u8.length - 22; i >= Math.max(0, u8.length - 65557); i--) if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
   if (eocd < 0) throw new Error('not a zip file');

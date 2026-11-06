@@ -2401,7 +2401,7 @@ async function addBibleFromEpub() {
     if (!f) return;
     close();
     const bytes = f.arrayBuffer(); // read once: used to check the Bible and to put the file on the shelf
-    checkBibleEpub(bytes, f.name, { name: f.name, type: f.type, size: f.size, bytes });
+    checkBibleEpub(bytes, f.name, { name: f.name, type: f.type, size: f.size, data: bytes });
   } });
   const close = openSheet(() => [
     h('h2', {}, 'Add a Bible'),
@@ -2519,7 +2519,7 @@ async function checkBibleEpub(bufPromise, fileName, file = null) {
           close();
           await loadVersions();
           setVersion(added[0].id);
-          if (file) addBooks([{ ...file, bytes: await file.bytes }]); // also keep the ebook on the shelf (unless it's already there)
+          if (file) addBooks([{ ...file, data: await file.data }]); // also keep the ebook on the shelf (unless it's already there)
         } catch (err) {
           // Don't leave half-saved versions behind.
           for (const v of added) await api('DELETE', `/api/my-versions/${v.id}`).catch(() => {});
@@ -2865,14 +2865,15 @@ async function addBooks(files) {
     if (file.size > 60 * 1024 * 1024) { toast(`${file.name} is larger than 60 MB.`); continue; }
     // Read the file once; everything below uses these bytes.
     let bytes;
-    try { bytes = file.bytes || await file.arrayBuffer(); } catch { toast(`${file.name} couldn't be read. Try choosing it again.`); continue; }
+    // (A real File has its own bytes() method, so the already-read copy goes under `data`.)
+    try { bytes = file instanceof Blob ? await file.arrayBuffer() : file.data; } catch { toast(`${file.name} couldn't be read. Try choosing it again.`); continue; }
     let title = file.name.replace(/\.[^.]+$/, '').replace(/[_]+/g, ' ').trim(), author = '', cover = null;
     if (format === 'epub') {
       try {
         const book = await openEpub(bytes);
         title = book.title || title; author = book.author || '';
-        if (book.coverPath) cover = await makeCover(await book.zip.read(book.coverPath));
-      } catch { toast(`${file.name} couldn't be opened as an EPUB book.`); continue; }
+        if (book.coverPath) cover = await makeCover(await book.zip.read(book.coverPath)).catch(() => null);
+      } catch (e) { toast(`${file.name} couldn't be opened as an EPUB book (${e.message}).`); continue; }
     }
     // Already on the shelf (the same file, whatever its name)? Then don't upload it again.
     try {
