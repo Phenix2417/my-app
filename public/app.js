@@ -32,8 +32,8 @@ const svg = (d) => {
   return s;
 };
 // One icon set for the whole app: Lucide (https://lucide.dev, ISC License), drawn on the same 24px grid with the
-// same line. The book icons share Lucide's open book: Read (plain), Dictionary (+ magnifier), Commentary
-// (+ speech bubble) and Edit commentary list (+ pen), combined the way Lucide combines its own icons.
+// same line. Read and Dictionary share Lucide's open book (Dictionary adds a magnifier); Commentary is pages of
+// text with a speech bubble, and Edit commentary list the same pages with a pen.
 // The same purpose always uses the same icon.
 const ICONS = {
   read: '<path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/>',
@@ -44,8 +44,8 @@ const ICONS = {
   account: '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
   personAdd: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" x2="19" y1="8" y2="14"/><line x1="22" x2="16" y1="11" y2="11"/>',
   friendsNotes: '<path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M15 18a3 3 0 1 0-6 0"/><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"/><circle cx="12" cy="13" r="2"/>',
-  commentaryBooks: '<path d="M12 21V7"/><path d="M22 6V4a1 1 0 0 0-1-1h-5a4 4 0 0 0-4 4 4 4 0 0 0-4-4H3a1 1 0 0 0-1 1v13a1 1 0 0 0 1 1h6a3 3 0 0 1 3 3 3 3 0 0 1 3-3h6a1 1 0 0 0 1-1v-1.3"/><path d="M15 8.5A1.5 1.5 0 0 1 16.5 7h4A1.5 1.5 0 0 1 22 8.5v3a1.5 1.5 0 0 1-1.5 1.5H18l-2.5 2v-2.1a1.5 1.5 0 0 1-.5-1.1z"/>',
-  editShelf: '<path d="M12 21V7"/><path d="M22 6V4a1 1 0 0 0-1-1h-5a4 4 0 0 0-4 4 4 4 0 0 0-4-4H3a1 1 0 0 0-1 1v13a1 1 0 0 0 1 1h6a3 3 0 0 1 3 3 3 3 0 0 1 3-3h6a1 1 0 0 0 1-1v-1.3"/><path d="M21.4 9.6a1 1 0 0 0-3-3l-4 4a2 2 0 0 0-.5.9l-.8 2.9a.5.5 0 0 0 .6.6l2.9-.8a2 2 0 0 0 .8-.5z"/>',
+  commentaryBooks: '<path d="M3.5 8v11a3 3 0 0 0 3 3H16"/><path d="M11.5 3H9a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2v-4.5"/><path d="M10.5 12h1.5M10.5 15.5h6"/><path d="M13.5 4.5A1.5 1.5 0 0 1 15 3h5.5A1.5 1.5 0 0 1 22 4.5v4a1.5 1.5 0 0 1-1.5 1.5H18l-2.5 2.5V10H15a1.5 1.5 0 0 1-1.5-1.5z"/><path d="M16.5 6.5h3"/>', // pages of text with a speech bubble
+  editShelf: '<path d="M3.5 8v11a3 3 0 0 0 3 3H16"/><path d="M12 3H9a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2v-5"/><path d="M10.5 15.5h6"/><path d="M21.4 6.6a1 1 0 0 0-3-3l-4.5 4.5a2 2 0 0 0-.5.9l-.8 2.9a.5.5 0 0 0 .6.6l2.9-.8a2 2 0 0 0 .8-.5z"/>', // the same pages with a pen
   copy: '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
   dictionary: '<path d="M12 21V7"/><circle cx="17" cy="10" r="3"/><path d="m19.2 12.2 2.8 2.8"/><path d="M22 6V4a1 1 0 0 0-1-1h-5a4 4 0 0 0-4 4 4 4 0 0 0-4-4H3a1 1 0 0 0-1 1v13a1 1 0 0 0 1 1h6a3 3 0 0 1 3 3 3 3 0 0 1 3-3h6a1 1 0 0 0 1-1v-1.3"/>',
   pencil: '<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/>',
