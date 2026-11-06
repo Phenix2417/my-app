@@ -266,6 +266,9 @@ body.bars-hidden .c-head { transform: translateY(-100%); }
 .commentary-page .chips { margin: 8px 0 4px; }
 .c-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y;
   padding: 60px 2px calc(110px + env(safe-area-inset-bottom, 0px)); }
+/* The Bible text's scroll area reaches the screen edges (text stays where it was), so the margin beside a verse
+   number or arrow can be tapped right from the edge. */
+.reader-page > .r-scroll { margin-inline: -16px; padding-inline: 18px; }
 .c-scroll:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
 .c-meta { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 12px; }
 .swipe-hint { color: var(--muted); font-size: 13px; }
@@ -679,7 +682,8 @@ body.bars-hidden .b-size-panel { display: none; }
 
 /* Two versions: a small marker in the verse-number column before the second version's text */
 .verse-alt { position: relative; }
-.verse-alt > .alt-mark { content: ""; position: absolute; left: -1.2em; top: calc((1.9em - .75em) / 2 - .1em); width: .75em; height: .75em;
+.verse-alt > .alt-mark { position: absolute; left: calc(-1.5em - 16px); top: 0; width: calc(1.5em + 16px); height: 1.9em; cursor: pointer; }
+.verse-alt > .alt-mark::before { content: ""; position: absolute; left: calc(16px + .3em); top: calc((1.9em - .75em) / 2 - .1em); width: .75em; height: .75em;
   background: var(--muted); -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 1.5v8.5h9' stroke-dasharray='0.1 2.6'/%3E%3Cpath d='M9.5 7l3 3-3 3'/%3E%3C/svg%3E") center / contain no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 1.5v8.5h9' stroke-dasharray='0.1 2.6'/%3E%3Cpath d='M9.5 7l3 3-3 3'/%3E%3C/svg%3E") center / contain no-repeat; }
 /* (a grey dotted arrow, down then right, pointing into the second version's text) */
 /* Bible Wiki (Wikipedia) entry in the dictionary panel */
@@ -792,6 +796,5 @@ body:has(.chat-screen) .bottom-nav { display: none; }
 .quote-alt { display: block; position: relative; margin-top: 6px; padding-left: 1.2em; }
 .quote-alt::before { content: ''; position: absolute; left: 0; top: .4em; width: .75em; height: .75em; background: currentColor; opacity: .55;
   -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 1.5v8.5h9' stroke-dasharray='0.1 2.6'/%3E%3Cpath d='M9.5 7l3 3-3 3'/%3E%3C/svg%3E") center / contain no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 1.5v8.5h9' stroke-dasharray='0.1 2.6'/%3E%3Cpath d='M9.5 7l3 3-3 3'/%3E%3C/svg%3E") center / contain no-repeat; }
-/* The arrow's tap area: a finger-sized box around it (the arrow itself is drawn as before). */
-.verse-alt > .alt-mark { cursor: pointer; }
-.verse-alt > .alt-mark::after { content: ""; position: absolute; inset: -.5em -.5em; }
+/* Tap areas: the margin beside the verse number's line and the arrow's line, from the screen edge to the text. */
+.vnum::after { content: ""; position: absolute; left: -16px; top: 0; width: calc(1.5 * var(--verse-size) + 16px); height: calc(var(--verse-size) * 1.9); }
