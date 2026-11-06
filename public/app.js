@@ -1136,7 +1136,9 @@ function toggleDictionary(bar, btn) {
       x.d && main ? h('p', { class: 'dict-en' }, x.d) : null,
     ];
     const bibleSlot = h('div', { class: 'bd-slot' });
-    if (!e || (!e.t && !e.d && !e.base)) body.replaceChildren(h('p', { class: 'dict-muted' }, `“${w}” isn't in the English dictionary.`), bibleSlot);
+    // Not in the English dictionary: still show the word (the Bible dictionary buttons attach to it).
+    if (!e || (!e.t && !e.d && !e.base)) body.replaceChildren(h('div', { class: 'dict-head' }, h('span', { class: 'dict-word' }, w)),
+      h('p', { class: 'dict-muted' }, 'Not in the English dictionary.'), bibleSlot);
     else body.replaceChildren(...[...block(e, !e.base), ...(e.base ? [h('div', { class: 'dict-base' }, `Base form: ${e.base.word}`), ...block(e.base, true)] : []), bibleSlot].filter(Boolean));
     positionToolbar();
     // Bible dictionary buttons, only if the word (or its base form) has topics. The text is fetched on tap.
