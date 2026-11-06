@@ -33,8 +33,11 @@ export function createTranslateService({ cacheDir, fetchImpl = globalThis.fetch,
     const file = cacheDir && path.join(cacheDir, `${crypto.createHash('sha1').update(text).digest('hex')}.json`);
     if (file) { try { return JSON.parse(await fs.promises.readFile(file, 'utf8')); } catch { /* not cached */ } }
     // A sentence-ending full stop makes Youdao translate rather than look the phrase up as a word.
+    // Youdao sometimes answers a different query for a sentence; the same text without its last full stop, or with a
+    // space after it, usually works.
     const attempts = [text];
     if (!/[.!?。]$/.test(text)) attempts.push(`${text}.`);
+    else attempts.push(text.replace(/[.!?。]+$/, ''), `${text} `);
     let last;
     for (const q of attempts) {
       last = await ask(q);

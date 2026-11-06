@@ -1579,6 +1579,79 @@ function wikiFor(word) {
 }
 // The Bible wiki entry: Chinese first (when Wikipedia has it), then English, each linking to the full article.
 // One language of the Bible wiki entry ('zh': 圣经wiki, 'en': Bible Wiki), linking to the full article.
+// Translating an entry that isn't in the interface language. Long text goes in pieces (the translation service takes up
+// to 600 characters), a few at a time, up to about 4,000 characters; each piece is remembered.
+const TRANSLATE_MAX = 4000;
+const translatedPieces = new Map();
+function translatePiece(piece) {
+  if (!translatedPieces.has(piece)) {
+    const p = api('POST', '/api/translate', { text: piece }).then((r) => r.text);
+    translatedPieces.set(piece, p);
+    p.catch(() => translatedPieces.delete(piece));
+  }
+  return translatedPieces.get(piece);
+}
+async function translateLong(text) {
+  let src = String(text).trim();
+  const cut = src.length > TRANSLATE_MAX;
+  if (cut) src = src.slice(0, TRANSLATE_MAX).replace(/\s+\S*$/, '');
+  // Paragraphs, then sentences, each piece at most ~550 characters.
+  const pieces = [];
+  for (const para of src.split('\n')) {
+    const parts = [];
+    let cur = '';
+    for (const sentence of para.match(/[^.!?。！？]+[.!?。！？]*[”"’)]*\s*/g) || [para]) {
+      if (cur && (cur + sentence).length > 550) { parts.push(cur); cur = ''; }
+      cur += sentence.length > 550 ? sentence.slice(0, 550) : sentence;
+    }
+    if (cur.trim()) parts.push(cur);
+    pieces.push(parts.length ? parts : ['']);
+  }
+  const flat = pieces.flat().filter((x) => x.trim());
+  const out = new Map();
+  let next = 0, failed = 0, lastErr = null;
+  await Promise.all(Array.from({ length: 2 }, async () => {
+    while (next < flat.length) {
+      const piece = flat[next++];
+      // A piece that can't be translated (after one more try) stays as it is.
+      let text = null;
+      for (let attempt = 0; attempt < 2 && text == null; attempt++) {
+        try { text = await translatePiece(piece.trim()); } catch (err) { lastErr = err; if (err instanceof OfflineError || err.status === 404) break; }
+      }
+      if (text == null) failed++;
+      out.set(piece, text ?? piece.trim());
+    }
+  }));
+  if (failed === flat.length && lastErr) throw lastErr;
+  const joiner = LANG === 'zh' ? '' : ' ';
+  return pieces.map((parts) => parts.filter((x) => x.trim()).map((x) => out.get(x)).join(joiner)).join('\n') + (cut ? '…' : '');
+}
+// A 翻译 / Translate button for an entry: shows the translation in place of the text; tapped again, the original.
+function translateButton(getText, textEl, moreBtn, showOriginal) {
+  let translated = false;
+  const btn = h('button', { class: 'bd-translate', type: 'button', onclick: async (e) => {
+    e.stopPropagation();
+    if (translated) {
+      translated = false; btn.textContent = tr('Translate'); showOriginal(); if (moreBtn) moreBtn.hidden = false;
+      positionToolbar(); return;
+    }
+    if (btn.classList.contains('loading')) return;
+    btn.classList.add('loading');
+    try {
+      const text = await translateLong(getText());
+      translated = true;
+      textEl.textContent = text;
+      if (moreBtn) moreBtn.hidden = true;
+      btn.textContent = tr('Original');
+    } catch (err) {
+      toast(err instanceof OfflineError ? 'Translation needs a connection.' : err.message);
+    }
+    btn.classList.remove('loading');
+    positionToolbar();
+  } }, 'Translate');
+  return btn;
+}
+
 function wikiSection(found, lang) {
   const zh = lang === 'zh', x = found[lang];
   const LIMIT = zh ? 150 : 300;
@@ -1592,7 +1665,10 @@ function wikiSection(found, lang) {
   return h('section', { class: 'bd wiki src-wiki', lang: zh ? 'zh-Hans' : 'en' },
     h('div', { class: 'bd-head' }, zh ? '圣经wiki' : 'Bible Wiki', h('span', { class: 'bd-src' }, ` · ${zh ? '维基百科' : found.source} (${found.license})`)),
     h('div', { class: 'bd-entry' },
-      h('div', { class: 'bd-term' + (zh ? '' : ' wiki-term-en') }, x.title), text,
+      h('div', { class: 'bd-term-row' }, h('div', { class: 'bd-term' + (zh ? '' : ' wiki-term-en') }, x.title),
+        (zh ? 'zh' : 'en') !== LANG ? translateButton(() => x.text, text, more, () => {
+          text.textContent = x.text.length > LIMIT ? shorten(x.text, LIMIT) : x.text; if (more) more.textContent = tr('More');
+        }) : null), text,
       h('div', { class: 'wiki-actions' }, more, h('a', { class: 'wiki-link', href: x.url, target: '_blank', rel: 'noopener noreferrer' }, zh ? '在维基百科阅读' : 'Read on Wikipedia'))));
 }
 // Easton's Bible Dictionary and the ISBE (built in on the server, public domain).
@@ -1655,7 +1731,11 @@ function encyclopediaSection(found, source, onXref) {
         more.textContent = tr(open ? 'Less' : 'More');
         positionToolbar();
       } }, 'More') : null;
-      return h('div', { class: 'bd-entry' }, h('div', { class: 'bd-term bd-term-en' }, entry.term.toLowerCase()), text, more);
+      // Easton and the ISBE are in English: in the Chinese interface, a 翻译 button.
+      const trBtn = LANG === 'zh' ? translateButton(() => plainOsis(full), text, more, () => {
+        text.replaceChildren(...osisLinks(long ? shortenOsis(full, LIMIT) : full, onXref)); if (more) more.textContent = tr('More');
+      }) : null;
+      return h('div', { class: 'bd-entry' }, h('div', { class: 'bd-term-row' }, h('div', { class: 'bd-term bd-term-en' }, entry.term.toLowerCase()), trBtn), text, more);
     }));
 }
 // Cut a long entry at a word boundary, without leaving an empty bullet line at the end.

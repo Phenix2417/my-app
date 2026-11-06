@@ -60,6 +60,9 @@ Read the Bible, highlight passages, write notes, and see the notes your friends 
   (CC BY-SA 4.0), in Chinese (simplified, when Wikipedia has one) and English, with a link to the full article.
   One request asks for Bible-specific titles at once ("Grace (Bible)", "Grace in Christianity", …); the bare word
   counts only if its opening is about the Bible. The server keeps a copy (`server/wiki.js`).
+- **翻译 / Translate** — an entry that isn't in the interface language (Easton and the ISBE in Chinese; Bible Wiki or 圣经wiki
+  when Wikipedia has only the other language) has a translate button beside its title. The text is translated in pieces
+  (Youdao, up to about 4,000 characters, a piece that can't be translated stays as it is); tapping again shows the original.
 - **Dictionary counts** — in the English text, a small raised number after a word says how many Bible dictionaries have it
   (圣经辞典/Bible Dictionary counts once, then Easton, ISBE and the Bible wiki). Each dictionary's button and entry heading
   have their own colour. The ISBE's studies of everyday words ("after", "again") count only when another dictionary has the

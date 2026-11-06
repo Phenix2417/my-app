@@ -690,3 +690,9 @@ body.bars-hidden .b-size-panel { display: none; }
 .bd-jump.src-isbe, .bd-jump.src-isbe:active, .src-isbe > .bd-head { color: var(--mark-isbe); border-color: var(--mark-isbe); }
 .bd-jump.src-wiki, .bd-jump.src-wiki:active, .src-wiki > .bd-head { color: var(--mark-wiki); border-color: var(--mark-wiki); }
 .dict-credit { -webkit-user-select: none; user-select: none; }
+/* 翻译 / Translate, beside an entry's title when the entry isn't in the interface language */
+.bd-term-row { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.bd-translate { border: 1px solid var(--divider); background: none; color: var(--primary); border-radius: 12px; padding: 1px 10px;
+  font: 500 13px/1.6 inherit; font-family: system-ui, sans-serif; cursor: pointer; }
+.bd-translate.loading { opacity: .6; cursor: progress; }
+.bd-translate.loading::after { content: " …"; }
