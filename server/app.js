@@ -190,7 +190,8 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
     ['GET', /^\/api\/commentaries$/, () => ({ commentaries: commentaryList() })],
     ['GET', /^\/api\/phonetics\/([a-z-]{1,40})$/, async ({ params: [word] }) => {
       if (!phonetics) throw new HttpError(503, 'Phonetics are not set up on this server');
-      try { return await phonetics(word); } catch (e) {
+      // Also say where any recordings already saved on the server came from (no fetching).
+      try { return { ...(await phonetics(word)), audio: pronounce?.savedSources ? await pronounce.savedSources(word) : { uk: '', us: '' } }; } catch (e) {
         if (e instanceof PronounceError) throw new HttpError(e.status, e.message);
         throw e;
       }
@@ -222,9 +223,9 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
     ['GET', /^\/api\/pronounce\/(uk|us)\/([a-z-]{1,40})$/, async ({ params: [accent, word] }) => {
       if (!pronounce) throw new HttpError(503, 'Pronunciation is not set up on this server');
       try {
-        const { buf, type } = await pronounce(accent, word);
+        const { buf, type, src } = await pronounce(accent, word);
         // no-store: phones stream the recording each time instead of keeping it (the server keeps the copy).
-        return { status: 200, body: buf, headers: { 'Content-Type': type, 'Cache-Control': 'no-store' } };
+        return { status: 200, body: buf, headers: { 'Content-Type': type, 'Cache-Control': 'no-store', 'X-Audio-Source': src || '' } };
       } catch (e) {
         if (e instanceof PronounceError) throw new HttpError(e.status, e.message);
         throw e;
@@ -379,7 +380,7 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
         'Content-Type': MIME[ext] || 'application/octet-stream',
         'Cache-Control': rel.startsWith('/bible/') ? 'public, max-age=604800' : 'no-cache',
         ...(ext === '.html' ? {
-          'Content-Security-Policy': "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'",
+          'Content-Security-Policy': "default-src 'self'; img-src 'self' data:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'",
         } : {}),
       });
     });

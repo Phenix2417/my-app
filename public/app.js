@@ -710,16 +710,27 @@ async function lookUp(word) {
 
 // Recorded pronunciations (fetched and kept by the server). One plays at a time.
 let wordAudio = null;
-function playWord(word, accent, btn) {
+// Fetch the recording (the reply says which source it came from), then play it from memory; nothing is stored.
+async function playWord(word, accent, btn) {
   wordAudio?.pause();
   document.querySelectorAll('.pron.playing').forEach((b) => b.classList.remove('playing'));
-  const a = new Audio(`/api/pronounce/${accent}/${encodeURIComponent(word)}`);
-  wordAudio = a;
   btn?.classList.add('playing');
-  const done = () => btn?.classList.remove('playing');
+  const fail = () => { btn?.classList.remove('playing'); toast(navigator.onLine === false ? 'Pronunciation needs a connection.' : `No ${accent === 'uk' ? 'British' : 'American'} recording for “${word}”.`); };
+  let blob, src;
+  try {
+    const res = await fetch(`/api/pronounce/${accent}/${encodeURIComponent(word)}`, { cache: 'no-store' });
+    if (!res.ok) return fail();
+    src = res.headers.get('X-Audio-Source') || '';
+    blob = await res.blob();
+  } catch { return fail(); }
+  if (btn) setAudioSource(btn.querySelector('.au-src'), src);
+  const url = URL.createObjectURL(blob);
+  const a = new Audio(url);
+  wordAudio = a;
+  const done = () => { btn?.classList.remove('playing'); URL.revokeObjectURL(url); };
   a.addEventListener('ended', done);
-  a.addEventListener('error', () => { done(); if (wordAudio === a) toast(navigator.onLine === false ? 'Pronunciation needs a connection.' : `No ${accent === 'uk' ? 'British' : 'American'} recording for “${word}”.`); });
-  a.play().catch(() => {}); // errors are reported by the 'error' event above
+  a.addEventListener('error', () => { done(); if (wordAudio === a) fail(); });
+  a.play().catch(() => done());
 }
 const phoneticsCache = new Map();
 function phoneticsFor(word) {
@@ -741,6 +752,16 @@ function namePronRow(word) {
 const PH_SOURCES = {
   freedict: ['F', 'Free Dictionary API (Wiktionary)'], mw: ['M', 'Merriam-Webster'], youdao: ['Y', 'Youdao'], wiktionary: ['W', 'Wiktionary'], 'ipa-dict': ['i', 'ipa-dict'], ecdict: ['E', 'ECDICT (offline dictionary)'],
 };
+// Where a recording came from: a badge after the speaker (shown once known).
+const AU_SOURCES = { youdao: ['Y', 'Youdao'], freedict: ['F', 'Free Dictionary API'] };
+function setAudioSource(badge, src) {
+  const s = AU_SOURCES[src];
+  if (!badge || !s) return;
+  badge.hidden = false;
+  badge.textContent = s[0];
+  badge.dataset.src = src;
+  badge.title = `Recording from ${s[1]}`;
+}
 function setPhSource(badge, src) {
   const s = PH_SOURCES[src];
   badge.hidden = !s;
@@ -754,10 +775,12 @@ function pronButton(word, accent, fallback) {
   const ipa = h('span', { class: 'ipa' + (fallback ? ' pending' : '') }, fallback ? `/${fallback}/` : '…');
   const badge = h('span', { class: 'ph-src', 'aria-hidden': 'true', hidden: true });
   if (fallback) setPhSource(badge, 'ecdict');
+  const auBadge = h('span', { class: 'ph-src au-src', 'aria-hidden': 'true', hidden: true });
   const btn = h('button', { class: 'pron', 'aria-label': `Play ${name} pronunciation of ${word}`, onclick: () => playWord(word, accent, btn) },
-    h('span', { class: 'accent' }, accent.toUpperCase()), badge, ipa, svg(ICONS.speaker));
+    h('span', { class: 'accent' }, accent.toUpperCase()), badge, ipa, svg(ICONS.speaker), auBadge);
   phoneticsFor(word).then((p) => {
     const v = p?.[accent];
+    setAudioSource(auBadge, p?.audio?.[accent]);
     if (v) { ipa.textContent = `/${v}/`; setPhSource(badge, p.src?.[accent] || 'youdao'); } else if (!fallback) { ipa.textContent = ''; setPhSource(badge, null); }
     ipa.classList.remove('pending');
     btn.setAttribute('aria-label', `Play ${name} pronunciation of ${word}${v ? `, /${v}/` : ''}`);
@@ -1232,7 +1255,7 @@ function toggleDictionary(bar, btn) {
     positionToolbar();
   };
   const dictBox = h('div', { class: 'dict' }, trans, body,
-    h('p', { class: 'dict-credit' }, multi ? 'Translation: Youdao · Phonetics & audio: Free Dictionary API, Youdao · Dictionary: ECDICT · 圣经辞典: 信望爱' : 'ECDICT English–Chinese dictionary · Phonetics & audio: Free Dictionary API, Youdao · 圣经辞典: 信望爱'));
+    h('p', { class: 'dict-credit' }, multi ? 'Translation: Youdao · Phonetics & audio: Youdao, Free Dictionary API · Dictionary: ECDICT · 圣经辞典: 信望爱' : 'ECDICT English–Chinese dictionary · Phonetics & audio: Youdao, Free Dictionary API · 圣经辞典: 信望爱'));
   // An ↑ button appears once the panel is scrolled down, and takes it back to the top.
   const toTop = h('button', { class: 'to-top', type: 'button', hidden: true, 'aria-label': 'Back to top', title: 'Back to top',
     onclick: () => dictBox.scrollTo({ top: 0, behavior: 'smooth' }) }, '↑');

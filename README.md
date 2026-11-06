@@ -21,9 +21,10 @@ Read the Bible, highlight passages, write notes, and see the notes your friends 
   word used in the Bible text: `node scripts/build-dict.mjs ecdict.csv` regenerates `public/dict/`.
   Tap the phonetic or the **UK** / **US** speaker buttons to hear recorded British or American pronunciation
   (Youdao audio, fetched by the server once per word and kept in the data folder).
-- **Pronunciation sources** — phonetics and recordings come from the Free Dictionary API (dictionaryapi.dev, built
-  from Wiktionary, CC BY-SA) first, used per accent only when it is labelled UK or US; Youdao fills the gaps. Each
-  phonetic shows a small source badge (F, Y, M, W, i, E).
+- **Pronunciation sources** — phonetics and recordings come from Youdao first, then the Free Dictionary API
+  (dictionaryapi.dev, built from Wiktionary, CC BY-SA; per accent only when labelled UK or US), then Merriam-Webster,
+  Wiktionary and the built-in list. Each phonetic shows a source badge (Y, F, M, W, i, E), and each recording a
+  round badge (Y, F) once it has been played or is already saved on the server.
 - **Merriam-Webster (optional)** — set the environment variable `MW_LEARNERS_KEY` to a free Merriam-Webster
   Learner's Dictionary API key (dictionaryapi.com, non-commercial, 1,000 lookups/day) and US phonetics come from
   Merriam-Webster first (badge **M**); UK phonetics stay with Youdao.

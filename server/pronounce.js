@@ -1,6 +1,6 @@
 // British and American pronunciations (phonetic symbols and recordings).
-// Main source: the Free Dictionary API (dictionaryapi.dev, built from Wiktionary, CC BY-SA), which has
-// UK/US recordings and IPA. Youdao (dict.youdao.com) fills the gaps. Only words in the app's dictionary or
+// Main source: Youdao (dict.youdao.com). Second: the Free Dictionary API (dictionaryapi.dev, built from
+// Wiktionary, CC BY-SA), which has UK/US recordings and IPA. Then Merriam-Webster, Wiktionary, built-in lists. Only words in the app's dictionary or
 // the Bible text are looked up, so this can't be used as a general proxy. Results are kept on disk.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -95,7 +95,7 @@ export function createPronounceService({
 } = {}) {
   let known = words;
   const inflight = new Map();
-  const dir = cacheDir && path.join(cacheDir, 'v2'); // v2: Free Dictionary recordings first
+  const dir = cacheDir && path.join(cacheDir, 'v3'); // v3: files named word.source.ext
 
   async function download(url) {
     const res = await fetchImpl(url, { signal: AbortSignal.timeout(15000) });
@@ -105,30 +105,42 @@ export function createPronounceService({
     return type && buf.length >= 500 ? { buf, type } : null;
   }
 
+  // The saved recording for this word and accent, if the server already has it: { file, src }.
+  async function cached(accent, word) {
+    if (!dir) return null;
+    let names;
+    try { names = await fs.promises.readdir(path.join(dir, accent)); } catch { return null; }
+    const name = names.find((n) => n.startsWith(`${word}.`) && n.split('.').length === 3);
+    return name ? { file: path.join(dir, accent, name), src: name.split('.')[1] } : null;
+  }
+
   async function load(accent, word) {
-    if (dir) {
-      for (const ext of ['mp3', 'wav', 'ogg']) {
-        try { const buf = await fs.promises.readFile(path.join(dir, accent, `${word}.${ext}`)); return { buf, type: audioType(buf) }; } catch { /* not cached */ }
-      }
-    }
+    const hit = await cached(accent, word);
+    if (hit) { try { const buf = await fs.promises.readFile(hit.file); return { buf, type: audioType(buf), src: hit.src }; } catch { /* re-fetch */ } }
     let found = null, reached = false;
-    // 1. Free Dictionary recording for this accent.
-    if (freeDict) {
-      try { const fd = await freeDict(word); reached = true; if (fd[`${accent}Audio`]) found = await download(fd[`${accent}Audio`]).catch(() => null); } catch { /* fall through */ }
-    }
-    // 2. Youdao.
-    if (!found) {
-      try { found = await download(`${upstream}?audio=${encodeURIComponent(word)}&type=${ACCENT_TYPE[accent]}`); reached = true; } catch { /* unreachable */ }
+    // 1. Youdao.
+    try {
+      const yd = await download(`${upstream}?audio=${encodeURIComponent(word)}&type=${ACCENT_TYPE[accent]}`);
+      reached = true;
+      if (yd) found = { ...yd, src: 'youdao' };
+    } catch { /* unreachable */ }
+    // 2. Free Dictionary recording for this accent.
+    if (!found && freeDict) {
+      try {
+        const fd = await freeDict(word); reached = true;
+        const got = fd[`${accent}Audio`] ? await download(fd[`${accent}Audio`]).catch(() => null) : null;
+        if (got) found = { ...got, src: 'freedict' };
+      } catch { /* fall through */ }
     }
     if (!found) throw new PronounceError(reached ? 404 : 503, reached ? 'No recording for this word.' : "Couldn't reach the pronunciation service.");
     if (dir) {
       const ext = { 'audio/mpeg': 'mp3', 'audio/wav': 'wav', 'audio/ogg': 'ogg' }[found.type];
-      try { await fs.promises.mkdir(path.join(dir, accent), { recursive: true }); await fs.promises.writeFile(path.join(dir, accent, `${word}.${ext}`), found.buf); } catch { /* best effort */ }
+      try { await fs.promises.mkdir(path.join(dir, accent), { recursive: true }); await fs.promises.writeFile(path.join(dir, accent, `${word}.${found.src}.${ext}`), found.buf); } catch { /* best effort */ }
     }
     return found;
   }
 
-  return async function getAudio(accent, rawWord) {
+  async function getAudio(accent, rawWord) {
     if (!ACCENT_TYPE[accent]) throw new PronounceError(404, 'Unknown accent');
     const word = String(rawWord).toLowerCase();
     known ??= loadWords(dictDir);
@@ -136,7 +148,10 @@ export function createPronounceService({
     const key = `${accent}/${word}`;
     if (!inflight.has(key)) inflight.set(key, load(accent, word).finally(() => inflight.delete(key)));
     return inflight.get(key);
-  };
+  }
+  // Which source the saved recordings came from, without fetching anything: { uk, us } ('' if not saved yet).
+  getAudio.savedSources = async (word) => ({ uk: (await cached('uk', word))?.src || '', us: (await cached('us', word))?.src || '' });
+  return getAudio;
 }
 
 // American IPA for a word from a Merriam-Webster Learner's API reply: the first entry for exactly this
@@ -192,33 +207,29 @@ export function createPhoneticsService({
   const clean = (s) => (typeof s === 'string' ? s.trim().replace(/^\/|\/$/g, '').slice(0, 80) : '');
 
   async function load(word) {
-    const file = cacheDir && path.join(cacheDir, `${word}.v3${mwKey ? '-mw' : ''}.json`); // v3: Free Dictionary first
+    const file = cacheDir && path.join(cacheDir, `${word}.v4${mwKey ? '-mw' : ''}.json`); // v4: Youdao first
     if (file) { try { return JSON.parse(await fs.promises.readFile(file, 'utf8')); } catch { /* not cached */ } }
-    // 1. Free Dictionary API.
     let value = { uk: '', us: '', src: { uk: '', us: '' } };
-    if (freeDict) {
+    const fill = (a, v, src) => { if (!value[a] && v) { value[a] = v; value.src[a] = src; } };
+    // 1. Youdao.
+    const yd = await fromYoudao(word).catch((e) => { if (!freeDict && !wiktionary) throw e; return null; });
+    for (const a of ['uk', 'us']) fill(a, yd?.[a], 'youdao');
+    // 2. Free Dictionary: its UK/US-labelled phonetics, then its unlabelled one.
+    if ((!value.uk || !value.us) && freeDict) {
       const fd = await freeDict(word).catch(() => null);
-      for (const a of ['uk', 'us']) if (fd?.[a]) { value[a] = fd[a]; value.src[a] = 'freedict'; }
+      for (const a of ['uk', 'us']) fill(a, fd?.[a], 'freedict');
+      for (const a of ['uk', 'us']) fill(a, fd?.general, 'freedict');
     }
-    // 2. Youdao for whatever is still missing.
-    let general = '';
-    if (freeDict) general = (await freeDict(word).catch(() => null))?.general || '';
-    if (!value.uk || !value.us) {
-      const yd = await fromYoudao(word).catch((e) => { if (!value.uk && !value.us && !freeDict) throw e; return null; });
-      for (const a of ['uk', 'us']) if (!value[a] && yd?.[a]) { value[a] = yd[a]; value.src[a] = 'youdao'; }
-    }
-    // Then the Free Dictionary's unlabelled phonetic, if an accent still has nothing.
-    for (const a of ['uk', 'us']) if (!value[a] && general) { value[a] = general; value.src[a] = 'freedict'; }
-    // 3. Merriam-Webster for the American phonetic, when a key is set.
-    if (mwKey) {
-      const mw = await fromMerriamWebster(word).catch(() => '');
-      if (mw) { value.us = mw; value.src.us = 'mw'; }
-    }
-    // 4. Nothing yet (common for Bible names): ask Wiktionary for this one word.
-    if (!value.uk && !value.us && wiktionary) {
+    // 3. Merriam-Webster for a missing American phonetic, when a key is set.
+    if (!value.us && mwKey) fill('us', await fromMerriamWebster(word).catch(() => ''), 'mw');
+    // 4. Wiktionary for this one word (common for Bible names).
+    if ((!value.uk || !value.us) && wiktionary) {
       const w = await fromWiktionary(word).catch(() => null);
-      if (w) value = { uk: w.uk || w.us, us: w.us || w.uk, src: { uk: 'wiktionary', us: 'wiktionary' } };
+      fill('uk', w?.uk || w?.us, 'wiktionary'); fill('us', w?.us || w?.uk, 'wiktionary');
     }
+    // 5. Built-in list (ipa-dict).
+    const local = loadNames()[word];
+    if (local) { fill('uk', local.uk || local.us, 'ipa-dict'); fill('us', local.us || local.uk, 'ipa-dict'); }
     if (file) { try { await fs.promises.mkdir(cacheDir, { recursive: true }); await fs.promises.writeFile(file, JSON.stringify(value)); } catch { /* best effort */ } }
     return value;
   }
@@ -259,13 +270,8 @@ export function createPhoneticsService({
     known ??= loadWords(dictDir);
     if (!/^[a-z][a-z-]{0,39}$/.test(word) || !known.has(word)) throw new PronounceError(404, 'Not a dictionary word');
     if (memory.has(word)) return memory.get(word);
-    const local = loadNames()[word];
-    let value;
-    if (local) value = { uk: local.uk || local.us || '', us: local.us || local.uk || '', src: { uk: 'ipa-dict', us: 'ipa-dict' } }; // no request needed
-    else {
-      if (!inflight.has(word)) inflight.set(word, load(word).finally(() => inflight.delete(word)));
-      value = await inflight.get(word);
-    }
+    if (!inflight.has(word)) inflight.set(word, load(word).finally(() => inflight.delete(word)));
+    const value = await inflight.get(word);
     memory.set(word, value);
     if (memory.size > 2000) memory.delete(memory.keys().next().value);
     return value;

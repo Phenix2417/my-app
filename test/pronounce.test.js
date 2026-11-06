@@ -57,14 +57,12 @@ test('British and American phonetics come from the dictionary service, once per 
   assert.deepEqual(await empty('x-ray'), { uk: '', us: '', src: { uk: '', us: '' } });
 });
 
-test('built-in phonetics for Bible names are used without asking the service', async () => {
+test('built-in phonetics for Bible names fill in after the online sources', async () => {
   const calls = [];
   const get = createPhoneticsService({ fetchImpl: async (u) => { calls.push(u); return Response.json({}); },
     words: new Set(['caiaphas', 'malchus']), names: { caiaphas: { uk: 'ˈkaɪ.ə.fəs' } }, wiktionary: false, freeDict: null });
   assert.deepEqual(await get('caiaphas'), { uk: 'ˈkaɪ.ə.fəs', us: 'ˈkaɪ.ə.fəs', src: { uk: 'ipa-dict', us: 'ipa-dict' } });
-  assert.equal(calls.length, 0);
   assert.deepEqual(await get('malchus'), { uk: '', us: '', src: { uk: '', us: '' } });
-  assert.equal(calls.length, 1, 'other words still ask the service');
 });
 
 test('reads IPA from Wiktionary wikitext, with UK/US labels', () => {
@@ -87,20 +85,20 @@ test('falls back to Wiktionary, once, when Youdao has nothing', async () => {
   assert.equal(calls.filter((u) => u.includes('wiktionary')).length, 1);
 });
 
-test('Merriam-Webster gives the US phonetic when a key is set', async () => {
+test('Merriam-Webster fills a missing US phonetic when a key is set', async () => {
   assert.equal(merriamWebsterIpa([{ meta: { id: 'graceful' }, hwi: { prs: [{ ipa: 'x' }] } }, { meta: { id: 'grace:1' }, hwi: { prs: [{ ipa: 'ˈgreɪs' }] } }], 'grace'), 'ˈgreɪs');
   assert.equal(merriamWebsterIpa(['gracious', 'grease'], 'grace'), '', 'suggestions mean no entry');
   const calls = [];
   const fetchImpl = async (u) => {
     calls.push(u);
     if (u.includes('dictionaryapi.com')) return Response.json([{ meta: { id: 'tomato' }, hwi: { prs: [{ ipa: 'təˈmeɪtoʊ-mw' }] } }]);
-    return Response.json({ ec: { word: [{ ukphone: 'təˈmɑːtəʊ', usphone: 'təˈmeɪtoʊ' }] } });
+    return Response.json({ ec: { word: [{ ukphone: 'təˈmɑːtəʊ' }] } });
   };
   const get = createPhoneticsService({ fetchImpl, words: new Set(['tomato']), wiktionary: false, mwKey: 'k', freeDict: null });
   assert.deepEqual(await get('tomato'), { uk: 'təˈmɑːtəʊ', us: 'təˈmeɪtoʊ-mw', src: { uk: 'youdao', us: 'mw' } });
   assert.ok(calls.some((u) => u.startsWith('https://www.dictionaryapi.com/api/v3/references/learners/json/tomato?key=k')));
   const noKey = createPhoneticsService({ fetchImpl, words: new Set(['tomato']), wiktionary: false, mwKey: '', freeDict: null });
-  assert.equal((await noKey('tomato')).src.us, 'youdao', 'without a key nothing changes');
+  assert.equal((await noKey('tomato')).src.us, '', 'without a key the US phonetic stays missing here');
 });
 
 test('Free Dictionary: clean IPA and recordings per accent; narrow forms and fragments skipped', () => {
@@ -113,22 +111,31 @@ test('Free Dictionary: clean IPA and recordings per accent; narrow forms and fra
   assert.deepEqual(freeDictionaryPronunciations({ title: 'No Definitions Found' }), { uk: '', us: '', general: '', ukAudio: '', usAudio: '' });
 });
 
-test('Free Dictionary comes first for phonetics and audio; Youdao fills gaps', async () => {
+test('Youdao comes first for phonetics and audio; the Free Dictionary fills gaps', async () => {
   const mp3 = Buffer.concat([Buffer.from('ID3'), Buffer.alloc(800, 2)]);
   const calls = [];
   const fetchImpl = async (u) => {
     calls.push(u);
-    if (u.startsWith('https://api.dictionaryapi.dev/api/v2/entries/en/tomato')) return Response.json([{ phonetics: [{ text: '[tʰə̥ˈmɑːtʰəʊ]', audio: 'https://api.dictionaryapi.dev/media/tomato-uk.mp3' }, { text: '/təˈmeɪtoʊ/', audio: 'https://api.dictionaryapi.dev/media/tomato-us.mp3' }] }]);
+    if (u.startsWith('https://api.dictionaryapi.dev/api/v2/entries/en/tomato')) return Response.json([{ phonetics: [{ text: '/təˈmɑːtəʊ-fd/', audio: 'https://api.dictionaryapi.dev/media/tomato-uk.mp3' }, { text: '/təˈmeɪtoʊ-fd/', audio: 'https://api.dictionaryapi.dev/media/tomato-us.mp3' }] }]);
     if (u.startsWith('https://api.dictionaryapi.dev/media/')) return new Response(mp3);
-    if (u.includes('jsonapi')) return Response.json({ ec: { word: [{ ukphone: 'təˈmɑːtəʊ', usphone: 'x' }] } });
+    if (u.includes('jsonapi')) return Response.json({ ec: { word: [{ ukphone: 'təˈmɑːtəʊ' }] } }); // Youdao: UK only
+    if (u.includes('dictvoice') && u.endsWith('type=1')) return new Response(mp3); // Youdao: UK recording only
     return new Response('nope', { status: 500 });
   };
   const freeDict = createFreeDictionary({ fetchImpl });
   const ph = createPhoneticsService({ fetchImpl, words: new Set(['tomato']), names: {}, wiktionary: false, mwKey: '', freeDict });
-  assert.deepEqual(await ph('tomato'), { uk: 'təˈmɑːtəʊ', us: 'təˈmeɪtoʊ', src: { uk: 'youdao', us: 'freedict' } });
+  assert.deepEqual(await ph('tomato'), { uk: 'təˈmɑːtəʊ', us: 'təˈmeɪtoʊ-fd', src: { uk: 'youdao', us: 'freedict' } });
   const au = createPronounceService({ fetchImpl, words: new Set(['tomato']), freeDict });
-  assert.equal((await au('us', 'tomato')).type, 'audio/mpeg');
-  assert.ok(calls.includes('https://api.dictionaryapi.dev/media/tomato-us.mp3'));
+  assert.equal((await au('uk', 'tomato')).src, 'youdao');
+  assert.equal((await au('us', 'tomato')).src, 'freedict');
   assert.equal(calls.filter((u) => u.includes('/entries/en/tomato')).length, 1, 'one shared lookup');
-  assert.ok(!calls.some((u) => u.includes('dictvoice')), 'no Youdao audio needed');
+});
+
+test('saved recordings report their source without fetching', async () => {
+  const mp3 = Buffer.concat([Buffer.from('ID3'), Buffer.alloc(800, 2)]);
+  const cacheDir = fs.mkdtempSync(path.join(os.tmpdir(), 'au-src-'));
+  const au = createPronounceService({ cacheDir, fetchImpl: async () => new Response(mp3), words: new Set(['grace']), freeDict: null });
+  assert.deepEqual(await au.savedSources('grace'), { uk: '', us: '' });
+  await au('us', 'grace');
+  assert.deepEqual(await au.savedSources('grace'), { uk: '', us: 'youdao' });
 });

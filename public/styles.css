@@ -437,3 +437,6 @@ body.bars-hidden .back-pill { bottom: calc(20px + env(safe-area-inset-bottom, 0p
 .ph-src[data-src="wiktionary"] { background: #3a6fb0; }
 .ph-src[data-src="ipa-dict"] { background: #6b5aa8; }
 .ph-src[data-src="ecdict"] { background: #6d7775; }
+
+/* Recording-source badge after the speaker: a ring rather than a filled square, so it reads differently */
+.au-src { border-radius: 50%; margin-left: -2px; }
