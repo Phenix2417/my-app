@@ -580,7 +580,7 @@ async function renderReader() {
       { id: 'show-friends', label: "Friends' notes", icon: ICONS.friendsNotes, toggle: { get: () => state.showFriends, set: setShowFriends } },
       { id: 'open-commentary', label: 'Commentary', icon: ICONS.commentaryBooks, action: () => openCommentaryPage(topVisibleVerse()) },
       { id: 'bible-version', label: 'Bible versions', icon: ICONS.versions, action: () => openVersionPicker() },
-      { id: 'word-marks', label: 'Colour Bible words', icon: ICONS.dictionary, toggle: { get: () => state.markWords, set: (on) => { state.markWords = on; store.set('markWords', on); markBibleWords(); } } },
+      { id: 'word-marks', label: 'Dictionary counts', icon: ICONS.dictionary, toggle: { get: () => state.markWords, set: (on) => { state.markWords = on; store.set('markWords', on); markBibleWords(); } } },
       { id: 'text-size', label: 'Text size', icon: ICONS.serifAa, popover: textSizeControl },
     ])),
     scroller);
@@ -624,8 +624,8 @@ async function renderReader() {
   refreshChapterFriendNotes().then(() => { if (reader.body === body) paint(); });
 }
 
-// Colour the words that have a Bible dictionary entry, and the names that have a Bible wiki article (each its own
-// colour, matching the buttons in the Dictionary panel). English text only; the Read ⋯ menu turns it off.
+// Mark the words that are in the Bible dictionaries (圣经辞典/Bible Dictionary, Easton, ISBE, Bible wiki) with a small
+// number: how many have them. English text only; the Read ⋯ menu turns it off.
 const wordMarks = { dict: new Map(), wiki: new Map(), lang: LANG }; // dict: word -> ['bd', 'easton', 'isbe']; wiki: name -> true/false
 async function markBibleWords() {
   document.body.classList.toggle('no-word-marks', !state.markWords);
@@ -645,18 +645,20 @@ async function markBibleWords() {
     if (/^[A-Z][a-z'-]+$/.test(n)) capOf.set(x, n);
     if (!starts && /^[A-Z][a-z'-]+$/.test(n) && !lower.has(dictKey(n))) nameOf.set(x, n);
   });
-  // Each dictionary has its own colour; a word in several gets a rainbow of their colours.
+  // A small number after the word: how many dictionaries have it (a dictionary in two languages counts once).
   const apply = () => {
     for (const x of words) {
-      const list = [...(wordMarks.dict.get(keyOf.get(x)) || []), ...(wordMarks.wiki.get(capOf.get(x)) === true ? ['wiki'] : [])];
-      x.el.classList.remove('wm-bd', 'wm-easton', 'wm-isbe', 'wm-wiki', 'wm-multi');
-      x.el.style.removeProperty('--wm-grad'); x.el.style.removeProperty('--wm-first');
-      if (list.length === 1) x.el.classList.add(`wm-${list[0]}`);
-      else if (list.length > 1) {
-        x.el.classList.add('wm-multi');
-        x.el.style.setProperty('--wm-grad', `linear-gradient(90deg, ${list.map((src) => `var(--mark-${src})`).join(', ')})`);
-        x.el.style.setProperty('--wm-first', `var(--mark-${list[0]})`);
-      }
+      const n = (wordMarks.dict.get(keyOf.get(x)) || []).length + (wordMarks.wiki.get(capOf.get(x)) === true ? 1 : 0);
+      // An empty marker right after the letters ("vision₃," not "vision,₃"); the number is drawn by CSS, so the
+      // word's text (copying, quotes, notes) doesn't change.
+      const old = x.el.querySelector('.dn');
+      if (old) { if (n && old.dataset.n === String(n)) continue; old.remove(); x.el.normalize(); }
+      if (!n) continue;
+      const text = x.el.firstChild;
+      if (!text || text.nodeType !== 3) continue;
+      const end = text.data.search(/[^\p{L}\p{N}'’-]*$/u);
+      const mark = h('span', { class: 'dn', dataset: { n } });
+      if (end > 0 && end < text.data.length) x.el.insertBefore(mark, text.splitText(end)); else x.el.append(mark);
     }
   };
   const ask = async (kind, list, url, field) => {

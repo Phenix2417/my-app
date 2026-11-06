@@ -60,11 +60,11 @@ Read the Bible, highlight passages, write notes, and see the notes your friends 
   (CC BY-SA 4.0), in Chinese (simplified, when Wikipedia has one) and English, with a link to the full article.
   One request asks for Bible-specific titles at once ("Grace (Bible)", "Grace in Christianity", …); the bare word
   counts only if its opening is about the Bible. The server keeps a copy (`server/wiki.js`).
-- **Coloured Bible words** — each dictionary has its own colour, used for its button, its entry heading and the words it
-  has in the English text: Bible Dictionary / 圣经辞典 green, Easton amber, ISBE blue, Bible wiki purple. A word in several
-  gets a rainbow of their colours (when it's highlighted or selected, the first one). The ISBE's studies of everyday words
-  ("after", "again") are coloured only when another dictionary has the word too. Names are checked with Wikipedia (one
-  request per chapter at most, then kept). Turn it off in Read ⋯ → Colour Bible words.
+- **Dictionary counts** — in the English text, a small number after a word says how many Bible dictionaries have it
+  (圣经辞典/Bible Dictionary counts once, then Easton, ISBE and the Bible wiki). Each dictionary's button and entry heading
+  have their own colour. The ISBE's studies of everyday words ("after", "again") count only when another dictionary has the
+  word too. Names are checked with Wikipedia (one request per chapter at most, then kept). Turn it off in Read ⋯ →
+  Dictionary counts.
 - **Grammar** — in the Translate panel, tap **Grammar** after the selected text: every word gets its part of speech in Chinese
   (colour-coded), each verb its tense and voice (e.g. 一般过去时 · 被动语态), plus subject/verb and prepositional and
   noun phrases. It runs on the phone with [compromise](https://github.com/spencermountain/compromise) 14.19.0 (MIT),

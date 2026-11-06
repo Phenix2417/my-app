@@ -40,7 +40,7 @@ const ZH = {
   'Tip: hold a word or tap a verse number to select. Swipe sideways to change chapter.': '提示：按住一个词或点经节号来选择文字，左右滑动换章。',
   "Couldn't load this chapter. Check your connection and try again.": '无法载入这一章，请检查网络连接后再试。',
   "Couldn't load this chapter.": '无法载入这一章。', 'Selection start': '选择起点', 'Selection end': '选择终点',
-  'Colour Bible words': '经文词语着色', 'Choose a book': '选择书卷', 'Choose book and chapter': '选择书卷和章',
+  'Dictionary counts': '词典数量标记', 'Choose a book': '选择书卷', 'Choose book and chapter': '选择书卷和章',
   'Read these verses': '阅读这几节经文', 'Back to where you started': '回到开始的位置', 'Back up to where you started': '向上回到开始的位置',
   'Back down to where you started': '向下回到开始的位置', 'Smaller text': '缩小字号', 'Larger text': '放大字号', 'Reading text size': '阅读字号',
   // Dictionary panel

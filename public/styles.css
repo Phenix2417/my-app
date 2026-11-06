@@ -91,20 +91,9 @@ h1 { font-size: 28px; font-weight: 500; margin: 18px 0 24px; }
 [data-c="blue"] { background: var(--hl-blue); }
 [data-c="pink"] { background: var(--hl-pink); }
 [data-c="purple"] { background: var(--hl-purple); }
-/* Words with a Bible dictionary entry, and names with a Bible wiki article (Read ⋯ → Colour Bible words). */
-.w.wm-bd { color: var(--mark-bd); }
-.w.wm-easton { color: var(--mark-easton); }
-.w.wm-isbe { color: var(--mark-isbe); }
-.w.wm-wiki { color: var(--mark-wiki); }
-/* In several dictionaries: a rainbow of their colours across the word. */
-.w.wm-multi { color: var(--wm-first); background-image: var(--wm-grad); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
-/* Highlighted or selected: the highlight needs the background, so the word takes its first dictionary's colour. */
-.w.wm-multi[data-c], .w.wm-multi.sel { -webkit-text-fill-color: currentColor; -webkit-background-clip: border-box; background-clip: border-box; }
-.w.wm-multi.sel { background-image: none; background-color: var(--sel); }
-.w.wm-multi[data-c] { background-image: none; }
-body.no-word-marks .w.wm-bd, body.no-word-marks .w.wm-easton, body.no-word-marks .w.wm-isbe, body.no-word-marks .w.wm-wiki,
-body.no-word-marks .w.wm-multi { color: inherit; -webkit-text-fill-color: currentColor; }
-body.no-word-marks .w.wm-multi:not([data-c]):not(.sel) { background-image: none; }
+/* How many Bible dictionaries have this word: a small number after it (Read ⋯ → Dictionary counts). */
+.w .dn::after { content: attr(data-n); font: 600 .5em/1 system-ui, sans-serif; color: var(--muted); vertical-align: sub; margin: 0 .05em 0 .1em; }
+body.no-word-marks .w .dn { display: none; }
 .w[data-f], .g[data-f] { text-decoration: underline 3px; text-underline-offset: 6px; text-decoration-skip-ink: none; }
 .w[data-f="yellow"], .g[data-f="yellow"] { text-decoration-color: #d9b44a; }
 .w[data-f="green"], .g[data-f="green"] { text-decoration-color: #5fbf80; }
