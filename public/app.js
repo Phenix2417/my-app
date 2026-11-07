@@ -3201,6 +3201,41 @@ function openNoteInReader(n) {
   goTo({ book: n.book, chapter: n.chapter }, n.start.verse);
 }
 
+// Video links in a message (YouTube, Vimeo, Bilibili) play inside the chat; links are tappable.
+const URL_RE = /https?:\/\/[^\s<>"'）】」]+/g;
+function videoOf(url) {
+  let u; try { u = new URL(url); } catch { return null; }
+  const host = u.hostname.replace(/^(www|m)\./, '');
+  let m;
+  if (host === 'youtu.be' && (m = u.pathname.match(/^\/([\w-]{11})/))) return { kind: 'youtube', id: m[1], start: u.searchParams.get('t') };
+  if (host === 'youtube.com' || host === 'music.youtube.com') {
+    if (u.searchParams.get('v')?.match(/^[\w-]{11}$/)) return { kind: 'youtube', id: u.searchParams.get('v'), start: u.searchParams.get('t') };
+    if ((m = u.pathname.match(/^\/(?:shorts|embed|live)\/([\w-]{11})/))) return { kind: 'youtube', id: m[1], start: u.searchParams.get('t') };
+  }
+  if (host === 'vimeo.com' && (m = u.pathname.match(/^\/(\d{5,12})/))) return { kind: 'vimeo', id: m[1] };
+  if ((host === 'bilibili.com' || host === 'b23.tv') && (m = u.pathname.match(/\/video\/(BV\w{10})/))) return { kind: 'bilibili', id: m[1] };
+  return null;
+}
+function videoEmbeds(text) {
+  const seen = new Set();
+  return [...String(text).matchAll(URL_RE)].map((x) => videoOf(x[0])).filter((v) => v && !seen.has(v.id) && seen.add(v.id)).slice(0, 3).map((v) => {
+    const secs = v.start ? parseInt(String(v.start).replace(/s$/, ''), 10) || 0 : 0;
+    const src = v.kind === 'youtube' ? `https://www.youtube-nocookie.com/embed/${v.id}?rel=0&playsinline=1${secs ? `&start=${secs}` : ''}`
+      : v.kind === 'vimeo' ? `https://player.vimeo.com/video/${v.id}` : `https://player.bilibili.com/player.html?bvid=${v.id}&autoplay=0`;
+    return h('div', { class: 'video-embed' }, h('iframe', { src, title: 'Video', loading: 'lazy', allowfullscreen: true, referrerpolicy: 'strict-origin-when-cross-origin',
+      allow: 'accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen' }));
+  });
+}
+function linkified(text) {
+  const out = []; let last = 0;
+  for (const m of String(text).matchAll(URL_RE)) {
+    out.push(text.slice(last, m.index), h('a', { href: m[0], target: '_blank', rel: 'noopener noreferrer', class: 'chat-link' }, m[0]));
+    last = m.index + m[0].length;
+  }
+  out.push(text.slice(last));
+  return out.filter((x) => x !== '');
+}
+
 // Open a conversation with a friend (prefill: a draft to start from).
 function openChat(u, prefill = '') { openChatPage({ kind: 'friend', id: u.id, name: dn(u), user: u }, prefill); }
 
@@ -3365,7 +3400,8 @@ async function renderChatPage() {
         kids.push(h('div', { class: 'chat-day' }, `${today ? (LANG === 'zh' ? '今天' : 'Today') : chatTime(m.createdAt)} ${t.toLocaleTimeString(LANG === 'zh' ? 'zh-CN' : undefined, { hour: '2-digit', minute: '2-digit', hour12: false })}`));
       }
       // A shared verse first, then any words with it (a shared note's text).
-      const content = [m.ref ? verseCard(m.ref) : null, m.body.trim() ? h('div', { class: 'bubble-text note-body' }, m.body) : null].filter(Boolean);
+      const content = [m.ref ? verseCard(m.ref) : null, m.body.trim() ? h('div', { class: 'bubble-text note-body' }, ...linkified(m.body)) : null,
+        ...videoEmbeds(m.body)].filter(Boolean);
       if (m.mine) kids.push(h('div', { class: 'chat-line mine' }, h('div', { class: 'chat-bubble' }, ...content)));
       else {
         const from = m.from || chat.user;

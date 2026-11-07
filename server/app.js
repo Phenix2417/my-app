@@ -842,7 +842,7 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
         'Content-Type': MIME[ext] || 'application/octet-stream',
         'Cache-Control': rel.startsWith('/bible/') ? 'public, max-age=604800' : 'no-cache',
         ...(ext === '.html' ? {
-          'Content-Security-Policy': "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'",
+          'Content-Security-Policy': "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; frame-src https://www.youtube-nocookie.com https://player.vimeo.com https://player.bilibili.com; base-uri 'none'; frame-ancestors 'none'",
         } : {}),
       });
     });
