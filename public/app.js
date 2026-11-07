@@ -3552,7 +3552,7 @@ async function renderChatPage() {
     } catch (e) { toast(e.message); }
   }
   // The menu for a message: a dark bar of buttons just above it (below it when there's no room), as in WeChat.
-  function messageMenu(bubble, m) {
+  function messageMenu(bubble, m, anchor = bubble) {
     closeMenu();
     const items = [
       { label: 'Copy', icon: ICONS.copy, run: async () => {
@@ -3573,7 +3573,7 @@ async function renderChatPage() {
     document.addEventListener('keydown', onKey);
     bubble.classList.add('held');
     document.body.append(pop);
-    const b = bubble.getBoundingClientRect(), w = pop.offsetWidth, ph = pop.offsetHeight;
+    const b = anchor.getBoundingClientRect(), w = pop.offsetWidth, ph = pop.offsetHeight;
     const top = list.getBoundingClientRect().top;
     const above = b.top - ph - 10 >= Math.max(top, 8);
     const x = Math.min(Math.max(b.left + b.width / 2 - w / 2, 8), innerWidth - w - 8);
@@ -3586,6 +3586,12 @@ async function renderChatPage() {
   // A tap anywhere on a message opens its menu, except on a link, a button or a player (those do their own thing);
   // a long press opens it anywhere, links and cards included. Right-click does the same with a mouse.
   function messageActions(bubble, m) {
+    // A press inside an embedded post or player never reaches the app (it belongs to the frame), so each one has
+    // a ⋯ button in its top-right corner for the same menu; the post or video itself still plays in place.
+    for (const box of bubble.querySelectorAll('.video-embed')) {
+      box.append(h('button', { class: 'embed-more', type: 'button', 'aria-label': 'More options', title: 'More options',
+        onclick: (e) => { e.stopPropagation(); messageMenu(bubble, m, e.currentTarget); } }, svg(ICONS.more)));
+    }
     const interactive = (t) => t.closest('a, button, iframe, input, video, audio');
     let suppressClick = false;
     bubble.addEventListener('click', (e) => {
