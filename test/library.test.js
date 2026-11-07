@@ -195,9 +195,26 @@ test('each file is stored once: chat files, forwards and shelf books share one c
   const up = (await json('POST', '/api/library?format=epub&title=T', a.token, null, epub)).book;
   assert.equal(ino(path.join(root, 'lib', String(a.user.id), `${up.id}.book`)), ino(chatPath(f1.id)));
   assert.equal(fs.readdirSync(path.join(root, 'blobs')).filter((d) => !d.startsWith('.')).length, 1);
+  // Files nothing uses: a chat file never sent (and a book's cover once the book is gone), a shelf file with no book.
+  const lonely = (await json('POST', '/api/chat-files?name=x.bin', a.token, null, Buffer.from('never sent'))).file;
+  const sent = (await json('POST', '/api/chat-files?name=y.bin', a.token, null, Buffer.from('sent once'))).file;
+  await json('POST', '/api/friends/requests', a.token, { username: 'blob_b' });
+  await json('POST', `/api/friends/${a.user.id}/accept`, b.token);
+  await json('POST', `/api/messages/${b.user.id}`, a.token, { file: { id: sent.id } });
+  fs.writeFileSync(path.join(root, 'lib', String(a.user.id), 'AAAAAAAAAAAAAAAA.book'), 'stray');
+  fs.mkdirSync(path.join(root, 'lib', String(a.user.id), 'versions', 'ugone123'), { recursive: true });
+  assert.equal(await srv.sweepOrphans(), 0); // within the hour's grace: nothing goes
+  const later = Date.now() + 2 * 3600000;
+  const removed = await srv.sweepOrphans(later);
+  assert.ok(removed >= 3, `removed ${removed}`);
+  assert.ok(!fs.existsSync(chatPath(lonely.id)) && fs.existsSync(chatPath(sent.id)));
+  assert.ok(!fs.existsSync(path.join(root, 'lib', String(a.user.id), 'AAAAAAAAAAAAAAAA.book')));
+  assert.ok(fs.existsSync(path.join(root, 'lib', String(a.user.id), `${up.id}.book`)));
+  assert.ok(!fs.existsSync(path.join(root, 'lib', String(a.user.id), 'versions', 'ugone123')));
+  assert.equal((await fetch(`${base}/api/chat-file/${sent.id}`)).status, 200);
   // The stored copy goes only when nothing links to it any more.
-  assert.equal(await blobs.sweep(), 0);
-  for (const id of [f1.id, f2.id]) fs.rmSync(chatPath(id));
+  assert.ok((await blobs.sweep()) >= 1); // the never-sent file's copy
+  for (const id of [f1.id, f2.id]) fs.rmSync(chatPath(id), { force: true }); // (never sent: the sweep took them already)
   await json('DELETE', `/api/library/${book.id}`, b.token);
   assert.equal(await blobs.sweep(), 0);
   await json('DELETE', `/api/library/${up.id}`, a.token);

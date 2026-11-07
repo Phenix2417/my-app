@@ -34,9 +34,6 @@ if (process.env.SEED_TEST_USERS !== '0') {
 // Each file is stored once: shelf books, covers and chat files are links to a single copy of each content.
 const blobs = createBlobStore({ dir: path.join(dataDir, 'blobs') });
 const libraryDir = path.join(dataDir, 'library'), chatDir = path.join(dataDir, 'chat-files');
-blobs.adoptExisting([libraryDir, chatDir], { skip: (p, isDir) => (isDir ? path.basename(p) === 'versions' : /(^\.upload-|\.part$|\.lnk$)/.test(path.basename(p))) })
-  .then(() => blobs.sweep()).catch((e) => console.warn('file store:', e.message));
-setInterval(() => blobs.sweep().catch(() => {}), 3600000).unref();
 
 const commentary = createCommentaryService({ cacheDir: path.join(dataDir, 'commentary-cache') });
 
@@ -45,10 +42,24 @@ const pronounce = createPronounceService({ cacheDir: path.join(dataDir, 'audio-c
 const phonetics = createPhoneticsService({ cacheDir: path.join(dataDir, 'phonetics-cache'), freeDict });
 const translate = createTranslateService({ cacheDir: path.join(dataDir, 'translate-cache') });
 
-createServer(db, { publicDir: path.join(root, 'public'), trustProxy, commentary, pronounce, phonetics, translate, bibleDict: createBibleDictionary({ cacheDir: path.join(dataDir, 'bibledict-cache') }),
+const server = createServer(db, { publicDir: path.join(root, 'public'), trustProxy, commentary, pronounce, phonetics, translate, bibleDict: createBibleDictionary({ cacheDir: path.join(dataDir, 'bibledict-cache') }),
   library: createLibraryStore({ dir: libraryDir, blobs }), freeDict,
   versions: createVersionService({ cacheDir: path.join(dataDir, 'bible-cache') }),
   wiki: createWikiService({ cacheDir: path.join(dataDir, 'wiki-cache') }), encyclopedias: createEncyclopedias(),
   chatFiles: createChatFileStore({ dir: chatDir, blobs }) }).listen(port, host, () => {
   console.log(`Bible Study running at http://localhost:${port}`);
 });
+
+// Clean-up, on start and every hour: chat files past 30 days, then every file nothing in the app uses any more,
+// then stored copies nothing links to. (First, once: files kept before single copies are merged.)
+async function tidyFiles() {
+  try {
+    await server.purgeChatFiles();
+    const unused = await server.sweepOrphans();
+    const freed = await blobs.sweep();
+    if (unused || freed) console.log(`Files tidied: ${unused} unused removed, ${freed} stored copies freed`);
+  } catch (e) { console.warn('file clean-up:', e.message); }
+}
+blobs.adoptExisting([libraryDir, chatDir], { skip: (p, isDir) => (isDir ? path.basename(p) === 'versions' : /(^\.upload-|\.part$|\.lnk$)/.test(path.basename(p))) })
+  .catch((e) => console.warn('file store:', e.message)).then(tidyFiles);
+setInterval(tidyFiles, 3600000).unref();

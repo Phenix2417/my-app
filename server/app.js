@@ -120,6 +120,11 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
     oldChatFiles: q('SELECT id FROM chat_files WHERE created_at < ? LIMIT 500'),
     deleteChatFile: q('DELETE FROM chat_files WHERE id = ?'),
     setChatFileMeta: q('UPDATE chat_files SET meta = ? WHERE id = ?'),
+    // Chat files no message carries (never sent, or every message with it deleted) and that aren't a sent book's cover.
+    unusedChatFiles: q(`SELECT id FROM chat_files cf WHERE created_at < ?
+      AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.file IS NOT NULL AND json_extract(m.file, '$.id') = cf.id)
+      AND NOT EXISTS (SELECT 1 FROM chat_group_messages g WHERE g.file IS NOT NULL AND json_extract(g.file, '$.id') = cf.id)
+      AND NOT EXISTS (SELECT 1 FROM chat_files b WHERE b.meta IS NOT NULL AND json_extract(b.meta, '$.cover') = cf.id) LIMIT 500`),
     chatBytes: q('SELECT COALESCE(SUM(size), 0) AS total FROM chat_files WHERE user_id = ?'),
     lastMessage: q(`SELECT * FROM messages WHERE (from_id = :me AND to_id = :other) OR (from_id = :other AND to_id = :me) ORDER BY id DESC LIMIT 1`),
     // Group chats
@@ -341,7 +346,23 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
       for (const { id } of old) { if (chatFiles) await chatFiles.remove(id).catch(() => {}); stmt.deleteChatFile.run(id); gone++; }
     }
   }
-  if (chatFiles) { purgeChatFiles().catch(() => {}); setInterval(() => purgeChatFiles().catch(() => {}), 3600000).unref(); }
+  // Delete every file nothing in the app uses any more: chat files no message carries, and files on disk with no
+  // record (a book or cover whose book was deleted, a removed Bible version, uploads left unfinished). A file gets an
+  // hour's grace, so one being sent or added right now isn't taken.
+  async function sweepOrphans(at = now()) {
+    let n = 0;
+    for (;;) {
+      const unused = stmt.unusedChatFiles.all(at - 3600000);
+      if (!unused.length) break;
+      for (const { id } of unused) { if (chatFiles) await chatFiles.remove(id).catch(() => {}); stmt.deleteChatFile.run(id); n++; }
+    }
+    if (chatFiles?.sweepOrphans) n += await chatFiles.sweepOrphans((id) => !!stmt.chatFile.get(id), at - 3600000);
+    if (library?.sweepOrphans) {
+      n += await library.sweepOrphans({ hasBook: (u, id) => !!stmt.libraryBook.get(id, Number(u)), hasVersion: (u, v) => !!stmt.userVersion.get(v, Number(u)) }, at - 3600000);
+    }
+    return n;
+  }
+  // (Run on start and every hour by the server: expired chat files, then unused files, then unlinked stored copies.)
   function cleanFile(file) {
     if (!file) return null;
     const f = /^[0-9a-f]{32}$/.test(file.id || '') && stmt.chatFile.get(file.id);
@@ -1164,10 +1185,10 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
       console.error(e);
       return send(res, 500, { error: 'Something went wrong' });
     }
-  }, { purgeChatFiles });
+  }, { purgeChatFiles, sweepOrphans });
 }
 
 export function createServer(db, opts) {
   const app = createApp(db, opts);
-  return Object.assign(http.createServer(app), { purgeChatFiles: app.purgeChatFiles });
+  return Object.assign(http.createServer(app), { purgeChatFiles: app.purgeChatFiles, sweepOrphans: app.sweepOrphans });
 }

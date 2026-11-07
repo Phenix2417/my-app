@@ -90,6 +90,32 @@ export function createLibraryStore({ dir, blobs = null }) {
       try { return (await fs.promises.readdir(path.join(userDir(userId), 'versions', versionId))).filter((f) => f.endsWith('.json')).map((f) => f.slice(0, -5)); } catch { return []; }
     },
     async removeVersion(userId, versionId) { await fs.promises.rm(path.join(userDir(userId), 'versions', versionId), { recursive: true, force: true }); },
+    // Files nothing uses any more: a book or cover whose book is gone, a Bible version that was removed, an upload
+    // left unfinished. Only files last linked or written before `before` (a newly kept file may not be recorded yet).
+    async sweepOrphans({ hasBook, hasVersion }, before) {
+      let n = 0;
+      const old = async (p) => { try { const st = await fs.promises.stat(p); return Math.max(st.ctimeMs, st.mtimeMs) < before; } catch { return false; } };
+      for (const u of await fs.promises.readdir(dir).catch(() => [])) {
+        if (!/^\d+$/.test(u)) continue;
+        const ud = path.join(dir, u);
+        for (const e of await fs.promises.readdir(ud, { withFileTypes: true }).catch(() => [])) {
+          const p = path.join(ud, e.name);
+          if (e.isDirectory()) {
+            if (e.name !== 'versions') continue;
+            for (const v of await fs.promises.readdir(p).catch(() => [])) {
+              if (!hasVersion(u, v) && await old(path.join(p, v))) { await fs.promises.rm(path.join(p, v), { recursive: true, force: true }); n++; }
+            }
+            await fs.promises.rmdir(p).catch(() => {}); // (only if empty)
+            continue;
+          }
+          const m = /^([\w-]{16})\.(book|cover)$/.exec(e.name);
+          const unused = m ? !hasBook(u, m[1]) : /^\.upload-|\.lnk$/.test(e.name);
+          if (unused && await old(p)) { await fs.promises.rm(p, { force: true }); n++; }
+        }
+        await fs.promises.rmdir(ud).catch(() => {}); // a person with nothing left
+      }
+      return n;
+    },
     // Fingerprint of a book already kept (for books uploaded before fingerprints were recorded).
     async fingerprint(userId, id) {
       const h = crypto.createHash('sha256');

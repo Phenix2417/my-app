@@ -166,6 +166,9 @@ export function openDb(file) {
   for (const t of ['messages', 'chat_group_messages']) {
     if (!db.prepare(`PRAGMA table_info(${t})`).all().some((c) => c.name === 'file')) db.exec(`ALTER TABLE ${t} ADD COLUMN file TEXT`);
   }
+  // Which messages carry which file (to find files no message uses any more).
+  db.exec("CREATE INDEX IF NOT EXISTS messages_file ON messages (json_extract(file, '$.id')) WHERE file IS NOT NULL");
+  db.exec("CREATE INDEX IF NOT EXISTS chat_group_messages_file ON chat_group_messages (json_extract(file, '$.id')) WHERE file IS NOT NULL");
   if (!db.prepare('PRAGMA table_info(user_versions)').all().some((c) => c.name === 'year')) db.exec('ALTER TABLE user_versions ADD COLUMN year INTEGER');
   if (!db.prepare('PRAGMA table_info(user_versions)').all().some((c) => c.name === 'source_sha')) db.exec('ALTER TABLE user_versions ADD COLUMN source_sha TEXT');
   // A note made while reading two versions side by side: the second version and its words, kept apart from the first's.

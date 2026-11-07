@@ -71,6 +71,19 @@ export function createChatFileStore({ dir, blobs = null }) {
       if (blobs) await blobs.adopt(fileOf(id), sha256); // the same file sent before (or on a shelf) is kept once
       return { id, size, head, sha256 };
     },
+    // Files on disk with no record (and sends left unfinished), last linked or written before `before`.
+    async sweepOrphans(isKnown, before) {
+      let n = 0;
+      for (const sub of await fs.promises.readdir(dir).catch(() => [])) {
+        for (const name of await fs.promises.readdir(path.join(dir, sub)).catch(() => [])) {
+          const p = path.join(dir, sub, name);
+          const unused = /^[0-9a-f]{32}$/.test(name) ? !isKnown(name) : /\.(part|lnk)$/.test(name);
+          try { const st = await fs.promises.stat(p); if (unused && Math.max(st.ctimeMs, st.mtimeMs) < before) { await fs.promises.rm(p, { force: true }); n++; } } catch { /* gone */ }
+        }
+        await fs.promises.rmdir(path.join(dir, sub)).catch(() => {});
+      }
+      return n;
+    },
     async remove(id) { await fs.promises.rm(fileOf(id), { force: true }); },
     async read(id) {
       try { const st = await fs.promises.stat(fileOf(id)); return { file: fileOf(id), size: st.size }; } catch { return null; }
