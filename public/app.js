@@ -3163,7 +3163,7 @@ async function renderNotes() {
 
   const draw = (failed) => {
     banner.replaceChildren(failed ? h('p', { class: 'error' }, "Couldn't refresh. Showing saved notes.") : '');
-    const open = (n) => () => { setVersion(n.version || 'web', { quiet: true }); goTo({ book: n.book, chapter: n.chapter }, n.start.verse); };
+    const open = (n) => () => openNoteInReader(n);
     if (state.notesTab === 'mine') {
       const notes = Object.values(state.mine.notes).sort((a, b) => b.updatedAt - a.updatedAt);
       list.replaceChildren(...(notes.length ? notes.map((n) => noteCard(n, { onClick: open(n), menu: [
@@ -3175,7 +3175,7 @@ async function renderNotes() {
         : [h('p', { class: 'empty' }, 'No notes yet. In Read, hold a word to start a highlight.')]));
     } else {
       const notes = state.friendsFeed;
-      list.replaceChildren(...(notes.length ? notes.map((n) => noteCard(n, { friend: true, onClick: n.versionLabel ? () => friendNoteChoice(n) : open(n) }))
+      list.replaceChildren(...(notes.length ? notes.map((n) => noteCard(n, { friend: true, onClick: n.versionLabel || n.alt?.label ? () => friendNoteChoice(n) : open(n) }))
         : [h('p', { class: 'empty' }, "Nothing here yet. Friends' notes appear once they turn on “Can see my notes” for you.")]));
     }
   };
@@ -3187,6 +3187,15 @@ async function renderNotes() {
 }
 
 /* ---------------- Friends tab ---------------- */
+// Open a note in the reader with the note's own translations, in its order (one, or two side by side), at its verse.
+function openNoteInReader(n) {
+  const has = (id) => (state.versions || FALLBACK_VERSIONS).some((v) => v.id === id);
+  const main = n.version || 'web', second = n.alt?.version && has(n.alt.version) ? n.alt.version : null;
+  if (has(main)) { state.version = main; store.set('version', main); }
+  state.parallel = second && second !== main ? second : null; store.set('parallel', state.parallel);
+  goTo({ book: n.book, chapter: n.chapter }, n.start.verse);
+}
+
 // Open a conversation with a friend (prefill: a draft to start from).
 function openChat(u, prefill = '') { openChatPage({ kind: 'friend', id: u.id, name: dn(u), user: u }, prefill); }
 
