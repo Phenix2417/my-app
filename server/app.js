@@ -461,7 +461,7 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
       if (same) return { status: 200, body: { book: libraryOut(same), duplicate: true } };
       const meta = f.meta ? JSON.parse(f.meta) : {};
       const id = crypto.randomBytes(12).toString('base64url');
-      const title = cleanText(meta.title || body.title, 200) || f.name.replace(/\.[^.]+$/, '') || 'Untitled', author = cleanText(meta.author || body.author, 120);
+      const title = cleanText(body.title || meta.title, 200) || f.name.replace(/\.[^.]+$/, '') || 'Untitled', author = cleanText(meta.author || body.author, 120);
       await library.keepShared(disk.file, me.id, id);
       stmt.addLibraryBook.run({ id, user_id: me.id, title, author, format, size: disk.size, sha256: sha, now: now() });
       const cover = meta.cover && stmt.chatFile.get(meta.cover), coverDisk = cover && cover.size <= MAX_COVER_BYTES && await chatFiles.read(cover.id);

@@ -1,5 +1,6 @@
 // Bible Study — single-page app. No build step, no dependencies.
 import { openEpub, openText, parseBibleEpub, ANCHOR_PREFIX } from './epub.js';
+import { cleanBookName, cleanBookTitle, isBookName } from './booknames.js';
 import { videoOf, embedUrl, LINK_RE as VIDEO_LINK_RE, CARD_SITES, siteOf } from './video.js';
 import { t as tr, LANG, setLang, CONTENT_CLASS, ZH_BOOKS } from './i18n.js';
 
@@ -3482,7 +3483,7 @@ function looksLikeBible(book) {
 const isBibleFile = (f) => isEpubFile(f) && (f.book?.bible ?? BIBLE_TITLE.test(f.book?.title || f.name || ''));
 async function chatBookDetails(bytes) {
   const book = await openEpub(bytes);
-  const out = { title: book.title || '', author: book.author || '', bible: looksLikeBible(book) };
+  const out = { title: cleanBookTitle(book.title || ''), author: book.author || '', bible: looksLikeBible(book) };
   const cover = book.coverPath ? await coverOf(book) : null;
   if (cover) { try { out.cover = (await uploadChatFile(cover, { name: 'cover.jpg' }).promise).id; } catch { /* no cover then */ } }
   return out;
@@ -3490,7 +3491,7 @@ async function chatBookDetails(bytes) {
 // Put a book sent in chat on my shelf: the server keeps it as the same file (nothing is downloaded or sent again).
 async function addChatFileToShelf(f, { quiet = false } = {}) {
   try {
-    const { book, duplicate } = await api('POST', '/api/library/from-chat', { file: f.id, title: f.book?.title || '', author: f.book?.author || '' });
+    const { book, duplicate } = await api('POST', '/api/library/from-chat', { file: f.id, title: cleanBookTitle(f.book?.title || '') || cleanBookTitle(f.name.replace(/\.[^.]+$/, '')), author: f.book?.author || '' });
     if (!quiet) toast(duplicate ? `“${book.title}” is already on your shelf` : `Added “${book.title}”`);
     if (state.tab === 'books') renderLibrary();
   } catch (e) { toast(e instanceof OfflineError ? "You're offline. Try again when connected." : e.message); }
@@ -3517,7 +3518,7 @@ async function previewChatFile(f) {
   const box = h('div', { class: 'file-preview', role: 'dialog', 'aria-label': f.name },
     h('div', { class: 'fp-top' },
       h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Close', title: 'Close', onclick: () => close() }, svg(ICONS.back)),
-      h('div', { class: 'fp-title file-name' }, f.book?.title || f.name), menu),
+      h('div', { class: 'fp-title file-name' }, cleanBookTitle(f.book?.title || '') || (isBookName(f.name) ? cleanBookName(f.name) : f.name)), menu),
     body, foot);
   const onKey = (e) => { if (e.key === 'Escape' && !document.querySelector('.scrim, .more-menu')) close(); }; // (a sheet or menu on top closes first)
   function close() { closeMenu(); for (const c of cleanups) { try { c(); } catch { /* gone */ } } box.remove(); document.removeEventListener('keydown', onKey); }
@@ -3654,13 +3655,13 @@ function chatFileView(f) {
     return h('a', { class: 'chat-file chat-book', href: url, onclick: (e) => { e.preventDefault(); previewChatFile(f); } },
       f.book?.cover ? h('img', { class: 'chat-book-cover', src: chatFileUrl({ id: f.book.cover }), alt: '', loading: 'lazy' })
         : h('span', { class: 'chat-book-cover blank' }, svg(ICONS.books)),
-      h('span', { class: 'chat-file-main' }, h('span', { class: 'file-name book-title' }, f.book?.title || f.name.replace(/\.epub$/i, '')),
+      h('span', { class: 'chat-file-main' }, h('span', { class: 'file-name book-title' }, cleanBookTitle(f.book?.title || '') || cleanBookName(f.name).replace(/\.epub$/i, '')),
         f.book?.author ? h('span', { class: 'chat-book-author dname' }, f.book.author) : null,
         h('span', { class: 'chat-file-size' }, `EPUB · ${fileSize(f.size)}`)));
   }
   return h('a', { class: 'chat-file', href: url, onclick: (e) => { e.preventDefault(); previewChatFile(f); } },
     h('span', { class: 'chat-file-icon' }, svg(ICONS.file)),
-    h('span', { class: 'chat-file-main' }, h('span', { class: 'file-name' }, f.name), h('span', { class: 'chat-file-size' }, fileSize(f.size))));
+    h('span', { class: 'chat-file-main' }, h('span', { class: 'file-name' }, isBookName(f.name) ? cleanBookName(f.name) : f.name), h('span', { class: 'chat-file-size' }, fileSize(f.size))));
 }
 // Record up to a minute of video (with sound) or voice, then send it or record again.
 function recordSheet(mode, onSend) {
@@ -4032,6 +4033,8 @@ async function renderChatPage() {
     if (!file.size) return toast(`${file.name}: ${tr('empty file')}`);
     const bar = h('span', { class: 'upload-bar' });
     let extra = {};
+    // A book's file name keeps just its title, author and year (no download-site tags, ISBNs, publishers…).
+    if (isBookName(file.name)) file = new File([file], cleanBookName(file.name), { type: file.type });
     // (Read once: a phone may not let a file from the cloud be read twice.)
     if (isEpubFile(file)) {
       try { const bytes = await file.arrayBuffer(); file = new File([bytes], file.name, { type: 'application/epub+zip' }); extra = await chatBookDetails(bytes); }
@@ -4515,11 +4518,11 @@ async function addBooks(files) {
     let bytes;
     // (A real File has its own bytes() method, so the already-read copy goes under `data`.)
     try { bytes = file instanceof Blob ? await file.arrayBuffer() : file.data; } catch { toast(`${file.name} couldn't be read. Try choosing it again.`); continue; }
-    let title = file.name.replace(/\.[^.]+$/, '').replace(/[_]+/g, ' ').trim(), author = '', cover = null;
+    let title = cleanBookTitle(file.name.replace(/\.[^.]+$/, '')) || file.name, author = '', cover = null;
     if (format === 'epub') {
       try {
         const book = await openEpub(bytes);
-        title = book.title || title; author = book.author || '';
+        title = cleanBookTitle(book.title || '') || title; author = book.author || '';
         if (book.coverPath) cover = await coverOf(book);
       } catch (e) { toast(`${file.name} couldn't be opened as an EPUB book (${e.message}).`); continue; }
     }
