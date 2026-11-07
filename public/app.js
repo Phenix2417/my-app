@@ -1,5 +1,6 @@
 // Bible Study — single-page app. No build step, no dependencies.
 import { openEpub, openText, parseBibleEpub, ANCHOR_PREFIX } from './epub.js';
+import { videoOf, embedUrl, LINK_RE as VIDEO_LINK_RE } from './video.js';
 import { t as tr, LANG, setLang, CONTENT_CLASS, ZH_BOOKS } from './i18n.js';
 
 const COLORS = ['yellow', 'green', 'blue', 'pink', 'purple'];
@@ -3201,36 +3202,32 @@ function openNoteInReader(n) {
   goTo({ book: n.book, chapter: n.chapter }, n.start.verse);
 }
 
-// Video links in a message (YouTube, Vimeo, Bilibili) play inside the chat; links are tappable.
-const URL_RE = /https?:\/\/[^\s<>"'）】」]+/g;
-function videoOf(url) {
-  let u; try { u = new URL(url); } catch { return null; }
-  const host = u.hostname.replace(/^(www|m)\./, '');
-  let m;
-  if (host === 'youtu.be' && (m = u.pathname.match(/^\/([\w-]{11})/))) return { kind: 'youtube', id: m[1], start: u.searchParams.get('t') };
-  if (host === 'youtube.com' || host === 'music.youtube.com') {
-    if (u.searchParams.get('v')?.match(/^[\w-]{11}$/)) return { kind: 'youtube', id: u.searchParams.get('v'), start: u.searchParams.get('t') };
-    if ((m = u.pathname.match(/^\/(?:shorts|embed|live)\/([\w-]{11})/))) return { kind: 'youtube', id: m[1], start: u.searchParams.get('t') };
-  }
-  if (host === 'vimeo.com' && (m = u.pathname.match(/^\/(\d{5,12})/))) return { kind: 'vimeo', id: m[1] };
-  if ((host === 'bilibili.com' || host === 'b23.tv') && (m = u.pathname.match(/\/video\/(BV\w{10})/))) return { kind: 'bilibili', id: m[1] };
-  return null;
-}
+// Video links in a message (YouTube, Vimeo, Bilibili — any of their web, mobile or app link forms) play inside the chat.
+const URL_RE = VIDEO_LINK_RE;
 function videoEmbeds(text) {
-  const seen = new Set();
-  return [...String(text).matchAll(URL_RE)].map((x) => videoOf(x[0])).filter((v) => v && !seen.has(v.id) && seen.add(v.id)).slice(0, 3).map((v) => {
-    const secs = v.start ? parseInt(String(v.start).replace(/s$/, ''), 10) || 0 : 0;
-    const src = v.kind === 'youtube' ? `https://www.youtube-nocookie.com/embed/${v.id}?rel=0&playsinline=1${secs ? `&start=${secs}` : ''}`
-      : v.kind === 'vimeo' ? `https://player.vimeo.com/video/${v.id}` : `https://player.bilibili.com/player.html?bvid=${v.id}&autoplay=0`;
-    return h('div', { class: 'video-embed' }, h('iframe', { src, title: 'Video', loading: 'lazy', allowfullscreen: true, referrerpolicy: 'strict-origin-when-cross-origin',
-      allow: 'accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen' }));
-  });
+  const seen = new Set(), out = [];
+  for (const x of String(text).matchAll(URL_RE)) {
+    const v = videoOf(x[0]);
+    if (!v || seen.has(v.id) || out.length >= 3) continue;
+    seen.add(v.id);
+    const frame = (src) => h('iframe', { src, title: 'Video', loading: 'lazy', allowfullscreen: true, referrerpolicy: 'strict-origin-when-cross-origin',
+      allow: 'accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen' });
+    const box = h('div', { class: 'video-embed' + (v.kind === 'youtube' && /\/shorts\//.test(x[0]) ? ' tall' : '') });
+    if (v.kind === 'bilibili-short') {
+      // The app's short link: ask the server where it leads, then show that video.
+      api('GET', `/api/video-link?b23=${encodeURIComponent(v.id)}`).then(({ url }) => { const r = videoOf(url); if (r) box.append(frame(embedUrl(r))); else box.remove(); }).catch(() => box.remove());
+    } else box.append(frame(embedUrl(v)));
+    out.push(box);
+  }
+  return out;
 }
 function linkified(text) {
   const out = []; let last = 0;
-  for (const m of String(text).matchAll(URL_RE)) {
-    out.push(text.slice(last, m.index), h('a', { href: m[0], target: '_blank', rel: 'noopener noreferrer', class: 'chat-link' }, m[0]));
-    last = m.index + m[0].length;
+  for (const m of String(text).matchAll(/(?:https?:\/\/|\bwww\.|\b(?:youtu\.be|b23\.tv|vimeo\.com|youtube\.com|bilibili\.com)\/)[^\s<>"'\u3000-\u303f\u3400-\u9fff\uff00-\uffef]+/gi)) {
+    const link = m[0].replace(/[.,;:!?)\]]+$/, ''); // trailing punctuation isn't part of the link
+    const href = /^https?:/i.test(link) ? link : `https://${link}`;
+    out.push(text.slice(last, m.index), h('a', { href, target: '_blank', rel: 'noopener noreferrer', class: 'chat-link' }, link));
+    last = m.index + link.length;
   }
   out.push(text.slice(last));
   return out.filter((x) => x !== '');

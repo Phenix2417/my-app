@@ -311,6 +311,7 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
     return g;
   }
   const groupOut = (g) => ({ id: g.id, name: g.name, members: stmt.members.all(g.id).map((u) => userOut(u.id, u.username, u.display_name)) });
+  const videoLinks = new Map(); // b23.tv code -> bilibili.com address
   function acceptedFriend(me, id) {
     const other = stmt.userById.get(Number(id));
     const f = other && stmt.friendship.get(Math.min(me, other.id), Math.max(me, other.id));
@@ -684,6 +685,19 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
       return { status: 201, body: { message: { id: Number(r.lastInsertRowid), mine: true, body: text, createdAt: at, ...(ref ? { ref } : {}) } } };
     }, true],
 
+    // A Bilibili app short link (b23.tv/xxxx) → where it leads (only b23.tv; only the address, nothing else fetched).
+    ['GET', /^\/api\/video-link$/, async ({ query }) => {
+      const code = String(query.get('b23') || '');
+      if (!/^[\w-]{4,20}$/.test(code)) throw new HttpError(400, 'Invalid link');
+      if (videoLinks.has(code)) return { url: videoLinks.get(code) };
+      let res;
+      try { res = await fetch(`https://b23.tv/${code}`, { redirect: 'manual', signal: AbortSignal.timeout(8000) }); } catch { throw new HttpError(503, "Couldn't open that link."); }
+      const to = res.headers.get('location');
+      if (!to || !/^https:\/\/(www\.|m\.)?bilibili\.com\//.test(to)) throw new HttpError(404, 'Not a video link');
+      const url = to.split('?')[0] + (new URL(to).searchParams.get('p') ? `?p=${new URL(to).searchParams.get('p')}` : '');
+      videoLinks.set(code, url); if (videoLinks.size > 2000) videoLinks.delete(videoLinks.keys().next().value);
+      return { url };
+    }, true],
     // All conversations, newest first: friends (private chats) and groups, with the last message and unread count.
     ['GET', /^\/api\/chats$/, ({ me }) => {
       const f = friendsPayload(me.id);
