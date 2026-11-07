@@ -3586,11 +3586,10 @@ async function renderChatPage() {
   // A tap anywhere on a message opens its menu, except on a link, a button or a player (those do their own thing);
   // a long press opens it anywhere, links and cards included. Right-click does the same with a mouse.
   function messageActions(bubble, m) {
-    // A press inside an embedded post or player never reaches the app (it belongs to the frame), so a message with
-    // one has a ⋯ button in its top-right corner for the same menu; the post or video itself still plays in place.
-    if (bubble.querySelector('.video-embed')) {
-      bubble.classList.add('has-more');
-      bubble.append(h('button', { class: 'bubble-more', type: 'button', 'aria-label': 'More options', title: 'More options',
+    // A press inside an embedded post or player never reaches the app (it belongs to the frame), so each one has
+    // a ⋯ button in its top-right corner for the same menu; the post or video itself still plays in place.
+    for (const box of bubble.querySelectorAll('.video-embed')) {
+      box.append(h('button', { class: 'embed-more', type: 'button', 'aria-label': 'More options', title: 'More options',
         onclick: (e) => { e.stopPropagation(); messageMenu(bubble, m, e.currentTarget); } }, svg(ICONS.more)));
     }
     const interactive = (t) => t.closest('a, button, iframe, input, video, audio');
