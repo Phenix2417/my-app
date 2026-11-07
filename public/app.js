@@ -3496,7 +3496,8 @@ function chatFileView(f) {
         playingVoice = audio; audio.currentTime = 0; audio.play().catch(() => toast("Couldn't play this voice message."));
       } }, icon, len);
     const show = (on) => { icon.replaceChildren(svg(on ? ICONS.pause : ICONS.play)); btn.classList.toggle('playing', on); };
-    audio.onplay = () => show(true);
+    // (The chat's mini player follows it while it's out of sight.)
+    audio.onplay = () => { show(true); btn.dispatchEvent(new CustomEvent('chatmedia', { bubbles: true, detail: audio })); };
     audio.onpause = audio.onended = () => show(false);
     audio.ontimeupdate = () => { if (audio.duration && isFinite(audio.duration)) len.textContent = clock(audio.duration - audio.currentTime); };
     audio.onended = () => { show(false); len.textContent = f.duration ? clock(f.duration) : ''; };
@@ -3605,16 +3606,18 @@ async function renderChatPage() {
         h('div', { class: 'chat-attach-text' }, attached.text)),
       h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Remove', title: 'Remove', onclick: () => { attached = null; showAttach(); } }, svg(ICONS.close)));
   };
-  // While a video in the chat is playing and scrolled partly or wholly out of sight, a small player stays at the
-  // bottom of the messages: play/pause, a progress bar to drag, the time, a button back to the video, and ×.
+  // While a video or a voice message / audio file in the chat is playing and scrolled partly or wholly out of sight,
+  // a small player stays at the bottom of the messages: play/pause, a progress bar to drag, the time, a button back
+  // to it in the chat, and ×. `video` is the playing media; `anchor` is where it is in the chat.
   const mini = (() => {
-    let video = null, seeking = false;
+    let video = null, anchor = null, seeking = false;
     const playBtn = h('button', { class: 'icon-btn mini-play', type: 'button', 'aria-label': 'Play', title: 'Play', onclick: () => { if (!video) return; if (video.paused) video.play().catch(() => {}); else video.pause(); } }, svg(ICONS.play));
     const time = h('span', { class: 'mini-time' }, '0:00 / 0:00');
     const seek = h('input', { class: 'mini-seek', type: 'range', min: 0, max: 1000, value: 0, step: 1, 'aria-label': 'Progress' });
+    const showBtn = h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Show in chat', title: 'Show in chat', onclick: () => anchor?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }) }, svg(ICONS.video));
     const el = h('div', { class: 'mini-player', hidden: true },
       playBtn, h('div', { class: 'mini-mid' }, seek, time),
-      h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Show video', title: 'Show video', onclick: () => video?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }) }, svg(ICONS.video)),
+      showBtn,
       h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Close', title: 'Close', onclick: () => { video?.pause(); set(null); } }, svg(ICONS.close)));
     const dur = () => (video && isFinite(video.duration) ? video.duration : 0);
     const paint = () => {
@@ -3626,15 +3629,17 @@ async function renderChatPage() {
     };
     // Shown only while the video isn't fully in view (and is still in the chat).
     const check = () => {
-      if (video && !video.isConnected) return set(null);
+      if (anchor && !anchor.isConnected) return set(null);
       if (!video) { el.hidden = true; return; }
-      const v = video.getBoundingClientRect(), l = list.getBoundingClientRect();
+      const v = anchor.getBoundingClientRect(), l = list.getBoundingClientRect();
       const out = v.top < l.top || v.bottom > l.bottom - (el.hidden ? 0 : el.offsetHeight);
       if (el.hidden === out) { el.hidden = !out; paint(); }
     };
     const events = ['play', 'pause', 'timeupdate', 'durationchange', 'loadedmetadata'];
-    function set(v) {
+    function set(v, at = v) {
       if (video === v) return;
+      anchor = v ? at : null;
+      showBtn.replaceChildren(svg(v instanceof HTMLVideoElement ? ICONS.video : ICONS.mic));
       if (video) for (const e of events) video.removeEventListener(e, paint);
       video?.removeEventListener('ended', onEnded);
       video = v;
@@ -3646,6 +3651,7 @@ async function renderChatPage() {
     seek.addEventListener('change', () => { if (video && dur()) video.currentTime = (seek.value / 1000) * dur(); seeking = false; });
     // The last chat video to start playing is the one the player follows.
     list.addEventListener('play', (e) => { if (e.target.matches?.('.chat-video')) set(e.target); }, true);
+    list.addEventListener('chatmedia', (e) => set(e.detail, e.target));
     list.addEventListener('scroll', () => check(), { passive: true });
     addEventListener('resize', check);
     return { el, check };
