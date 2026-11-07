@@ -3605,6 +3605,52 @@ async function renderChatPage() {
         h('div', { class: 'chat-attach-text' }, attached.text)),
       h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Remove', title: 'Remove', onclick: () => { attached = null; showAttach(); } }, svg(ICONS.close)));
   };
+  // While a video in the chat is playing and scrolled partly or wholly out of sight, a small player stays at the
+  // bottom of the messages: play/pause, a progress bar to drag, the time, a button back to the video, and ×.
+  const mini = (() => {
+    let video = null, seeking = false;
+    const playBtn = h('button', { class: 'icon-btn mini-play', type: 'button', 'aria-label': 'Play', title: 'Play', onclick: () => { if (!video) return; if (video.paused) video.play().catch(() => {}); else video.pause(); } }, svg(ICONS.play));
+    const time = h('span', { class: 'mini-time' }, '0:00 / 0:00');
+    const seek = h('input', { class: 'mini-seek', type: 'range', min: 0, max: 1000, value: 0, step: 1, 'aria-label': 'Progress' });
+    const el = h('div', { class: 'mini-player', hidden: true },
+      playBtn, h('div', { class: 'mini-mid' }, seek, time),
+      h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Show video', title: 'Show video', onclick: () => video?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }) }, svg(ICONS.video)),
+      h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Close', title: 'Close', onclick: () => { video?.pause(); set(null); } }, svg(ICONS.close)));
+    const dur = () => (video && isFinite(video.duration) ? video.duration : 0);
+    const paint = () => {
+      if (!video) return;
+      playBtn.replaceChildren(svg(video.paused ? ICONS.play : ICONS.pause));
+      playBtn.setAttribute('aria-label', tr(video.paused ? 'Play' : 'Pause'));
+      if (!seeking) seek.value = dur() ? Math.round((video.currentTime / dur()) * 1000) : 0;
+      time.textContent = `${clock(video.currentTime)} / ${clock(dur())}`;
+    };
+    // Shown only while the video isn't fully in view (and is still in the chat).
+    const check = () => {
+      if (video && !video.isConnected) return set(null);
+      if (!video) { el.hidden = true; return; }
+      const v = video.getBoundingClientRect(), l = list.getBoundingClientRect();
+      const out = v.top < l.top || v.bottom > l.bottom - (el.hidden ? 0 : el.offsetHeight);
+      if (el.hidden === out) { el.hidden = !out; paint(); }
+    };
+    const events = ['play', 'pause', 'timeupdate', 'durationchange', 'loadedmetadata'];
+    function set(v) {
+      if (video === v) return;
+      if (video) for (const e of events) video.removeEventListener(e, paint);
+      video?.removeEventListener('ended', onEnded);
+      video = v;
+      if (video) { for (const e of events) video.addEventListener(e, paint); video.addEventListener('ended', onEnded); }
+      el.hidden = true; check();
+    }
+    const onEnded = () => set(null);
+    seek.addEventListener('input', () => { seeking = true; if (dur()) time.textContent = `${clock((seek.value / 1000) * dur())} / ${clock(dur())}`; });
+    seek.addEventListener('change', () => { if (video && dur()) video.currentTime = (seek.value / 1000) * dur(); seeking = false; });
+    // The last chat video to start playing is the one the player follows.
+    list.addEventListener('play', (e) => { if (e.target.matches?.('.chat-video')) set(e.target); }, true);
+    list.addEventListener('scroll', () => check(), { passive: true });
+    addEventListener('resize', check);
+    return { el, check };
+  })();
+  list.append(mini.el);
   let shown = [];
   const sigOf = (m) => `${m.id}:${m.editedAt || ''}:${m.deleted ? 1 : 0}`;
   // New messages are added below the ones shown (so a video or voice message that's playing keeps playing);
@@ -3643,8 +3689,8 @@ async function renderChatPage() {
       }
       prev = m;
     }
-    if (grows) list.append(...kids);
-    else list.replaceChildren(...(kids.length ? kids : [h('p', { class: 'empty-inline' }, 'No messages yet.')]));
+    if (grows) mini.el.before(...kids);
+    else { list.replaceChildren(...(kids.length ? kids : [h('p', { class: 'empty-inline' }, 'No messages yet.')]), mini.el); mini.check(); }
     if (atBottom || !shown.length || list.dataset.first !== '1') { list.scrollTop = list.scrollHeight; list.dataset.first = '1'; }
   };
   const path = chat.kind === 'group' ? `/api/groups/${chat.id}/messages` : `/api/messages/${chat.id}`;

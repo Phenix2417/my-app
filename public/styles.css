@@ -908,3 +908,12 @@ span.verse-card-text { display: block; }
 .note-pick-quote { font-family: "Noto Serif", Georgia, serif; font-size: 15px; line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .note-pick-body { font-size: 14px; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .chat-file.expired { opacity: .7; cursor: default; }
+/* The small player for a chat video scrolled out of sight. */
+.mini-player { position: sticky; bottom: 0; z-index: 5; flex: none; display: flex; align-items: center; gap: 4px; margin: 0 4px; padding: 4px 6px;
+  border-radius: 14px; background: rgba(30,30,32,.92); color: #fff; box-shadow: 0 4px 16px rgba(0,0,0,.25); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+.mini-player[hidden] { display: none; }
+.mini-player .icon-btn { color: #fff; background: none; }
+.mini-play .line-icon { fill: currentColor; }
+.mini-mid { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.mini-seek { width: 100%; margin: 0; accent-color: #fff; height: 18px; }
+.mini-time { font-size: 11px; font-variant-numeric: tabular-nums; opacity: .8; }
