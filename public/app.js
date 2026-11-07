@@ -3208,11 +3208,6 @@ function openNoteInReader(n) {
 // Video and post links in a message (YouTube, Vimeo, Bilibili, X, Instagram, TikTok, 抖音, Facebook, 微博 — any of their web, mobile
 // or app link forms) show inside the chat.
 const URL_RE = VIDEO_LINK_RE;
-const autoplayUrl = (src) => (/[?&]autoplay=0/.test(src) ? src.replace(/([?&])autoplay=0/, '$1autoplay=1')
-  : src.replace(/^([^#]*?)(\?[^#]*)?(#.*)?$/, (m, a, q, hash) => `${a}${q ? `${q}&` : '?'}autoplay=1${hash || ''}`));
-document.addEventListener('pointerdown', (e) => {
-  for (const b of document.querySelectorAll('.video-embed.live')) if (!b.contains(e.target)) b.classList.remove('live');
-}, true);
 function videoEmbeds(text) {
   const seen = new Set(), out = [];
   for (const x of String(text).matchAll(URL_RE)) {
@@ -3220,7 +3215,7 @@ function videoEmbeds(text) {
     if (!v || seen.has(v.id) || out.length >= 3) continue;
     seen.add(v.id);
     const frame = (src) => h('iframe', { src, title: 'Video', loading: 'lazy', allowfullscreen: true, referrerpolicy: 'strict-origin-when-cross-origin',
-      allow: 'autoplay; accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen' });
+      allow: 'accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen' });
     // Shape by platform: wide players; tall for Shorts, TikTok and 抖音; posts (X, Instagram) as cards.
     const shape = (r, link) => (['tiktok', 'douyin'].includes(r.kind) || r.reel || (r.kind === 'youtube' && /\/shorts\//.test(link)) ? ' tall'
       : r.kind === 'x' ? ' post' : r.kind === 'instagram' ? ' post insta' : r.kind === 'facebook-post' ? ' post fb' : '');
@@ -3228,18 +3223,7 @@ function videoEmbeds(text) {
     const show = (r, link) => {
       if (r.kind === 'weibo') { box.className = 'weibo-card'; weiboCard(box, r, link); }
       else if (r.kind === 'card') { box.className = 'weibo-card'; linkCard(box, r); }
-      else {
-        // A cover over the player, so the app sees a long press on it (a touch inside a frame never reaches the app, and the
-        // phone would show its own text menu). A tap lifts the cover and starts a video playing; touching anywhere
-        // else puts the cover back.
-        box.className = 'video-embed' + shape(r, link);
-        const f = frame(embedUrl(r));
-        const shield = h('div', { class: 'embed-shield', onclick: () => {
-          box.classList.add('live');
-          if (!box.dataset.started && !['x', 'instagram', 'facebook-post'].includes(r.kind)) { box.dataset.started = '1'; f.src = autoplayUrl(f.src); }
-        } });
-        box.append(f, shield);
-      }
+      else { box.className = 'video-embed' + shape(r, link); box.append(frame(embedUrl(r))); }
     };
     if (v.kind === 'short') {
       // An app's short link: ask the server where it leads, then show that post.
@@ -3602,7 +3586,7 @@ async function renderChatPage() {
   // A tap anywhere on a message opens its menu, except on a link, a button or a player (those do their own thing);
   // a long press opens it anywhere, links and cards included. Right-click does the same with a mouse.
   function messageActions(bubble, m) {
-    const interactive = (t) => t.closest('a, button, iframe, input, video, audio, .embed-shield');
+    const interactive = (t) => t.closest('a, button, iframe, input, video, audio');
     let suppressClick = false;
     bubble.addEventListener('click', (e) => {
       if (suppressClick) { suppressClick = false; e.preventDefault(); e.stopPropagation(); return; }
