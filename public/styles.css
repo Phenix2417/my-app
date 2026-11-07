@@ -191,7 +191,7 @@ body.no-word-marks .w .dn { display: none; }
 .auth .filled-btn { width: 100%; padding: 14px; font-size: 17px; margin-top: 6px; }
 .auth .switch-mode { display: block; margin: 16px auto 0; }
 
-.toast { position: fixed; z-index: 40; left: 50%; transform: translateX(-50%); bottom: calc(170px + env(safe-area-inset-bottom));
+.toast { position: fixed; z-index: 40; left: 50%; transform: translateX(-50%); bottom: calc(170px + var(--dock-h, 0px) + env(safe-area-inset-bottom));
   background: var(--on-bg); color: var(--bg); padding: 12px 18px; border-radius: 10px; font-size: 15px; animation: fade .2s; max-width: calc(100vw - 32px); }
 
 .person-name { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 14px; }
@@ -962,5 +962,8 @@ span.verse-card-text { display: block; }
 .chat-bubble.media .file-expiry { padding: 2px 4px 0; color: var(--muted); opacity: 1; text-align: right; }
 .chat-line:not(.mine) .chat-bubble.media .file-expiry { text-align: left; }
 .pdf-page-img { width: 100%; height: auto; display: block; background: #fff; }
-.shelf-uploads { display: flex; flex-direction: column; gap: 6px; margin: 0 0 10px; }
-.sheet-progress { margin: 12px 0 4px; }
+/* Files being sent outside chat sit where chat's do: at the bottom, just above the tabs (as above chat's box). */
+.uploads-dock { position: fixed; z-index: 11; left: 50%; transform: translateX(-50%); width: min(648px, calc(100% - 32px));
+  bottom: calc(84px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; }
+.uploads-dock .chat-upload { box-shadow: 0 2px 10px rgba(0,0,0,.18); }
+.sheet-uploads { margin: 8px 0 0; }

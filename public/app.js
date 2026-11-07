@@ -3075,10 +3075,12 @@ async function checkBibleEpub(bufPromise, fileName, file = null, repair = null, 
         const j = trackUpload('shelf', `${chosen.map((x) => x.shortIn.value || x.short).join(' + ')} · ${tr(repair ? 'Repair' : 'Bible')}`);
         const stopped = () => { if (j.cancelled) throw Object.assign(new Error(tr('Stopped')), { cancelled: true }); };
         // Progress over everything being saved: each version's books, then the ebook going on the shelf.
-        const bar = h('span', { class: 'upload-bar' }), track = h('div', { class: 'upload-track sheet-progress' }, bar);
+        // (The same row as on the shelf and in chat: name, progress, ✕.)
+        const track = h('div', { class: 'chat-uploads sheet-uploads' });
+        track.append(j.view());
         const totalBooks = chosen.reduce((n, part) => n + Object.keys(part.data).filter((id) => !repair?.missing || repair.missing.includes(id)).length, 0) || 1;
         const shelfShare = file ? 0.2 : 0; let savedBooks = 0;
-        const setBar = (p) => { bar.style.width = `${Math.round(Math.min(1, p) * 100)}%`; j.setProgress(p); };
+        const setBar = (p) => j.setProgress(p);
         btn.closest('.sheet-actions')?.before(track, keepOpen);
         try {
           for (const part of chosen) {
@@ -3930,19 +3932,32 @@ async function keepAwakeWhileUploading() {
 }
 addEventListener('beforeunload', (e) => { if (chatUploads.length) { e.preventDefault(); e.returnValue = ''; } });
 // A file being sent, shown (name, progress bar, ✕) wherever its `key` is open: a chat ('friend:3'), or 'shelf'.
+// j.view(): another copy of its row (e.g. inside the screen that started it), kept in step with the first.
 function trackUpload(key, name) {
-  const j = { key, name, cancelled: false, abort: null, bar: h('span', { class: 'upload-bar' }) };
-  j.row = h('div', { class: 'chat-upload' },
-    h('span', { class: 'chat-upload-main' }, h('span', { class: 'file-name' }, name), h('span', { class: 'upload-track' }, j.bar)),
-    h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Cancel', title: 'Cancel', onclick: () => { j.cancelled = true; j.abort?.(); j.remove(); } }, svg(ICONS.close)));
-  j.setProgress = (p) => { j.bar.style.width = `${Math.round(Math.max(0, Math.min(1, p)) * 100)}%`; };
-  j.remove = () => { const i = chatUploads.indexOf(j); if (i >= 0) chatUploads.splice(i, 1); j.row.remove(); keepAwakeWhileUploading(); };
+  const j = { key, name, cancelled: false, abort: null, bars: [], rows: [], progress: 0 };
+  j.view = () => {
+    const bar = h('span', { class: 'upload-bar', style: `width:${Math.round(j.progress * 100)}%` });
+    const row = h('div', { class: 'chat-upload' },
+      h('span', { class: 'chat-upload-main' }, h('span', { class: 'file-name' }, name), h('span', { class: 'upload-track' }, bar)),
+      h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Cancel', title: 'Cancel', onclick: () => { j.cancelled = true; j.abort?.(); j.remove(); } }, svg(ICONS.close)));
+    j.bars.push(bar); j.rows.push(row);
+    return row;
+  };
+  j.row = j.view();
+  j.setProgress = (p) => { j.progress = Math.max(0, Math.min(1, p)); for (const b of j.bars) b.style.width = `${Math.round(j.progress * 100)}%`; };
+  j.remove = () => { const i = chatUploads.indexOf(j); if (i >= 0) chatUploads.splice(i, 1); j.rows.forEach((r) => r.remove()); keepAwakeWhileUploading(); liftToasts(); };
   chatUploads.push(j); drawUploads(); keepAwakeWhileUploading();
   return j;
 }
 function drawUploads() {
   const v = uploadsView;
   if (v?.el.isConnected) v.el.replaceChildren(...chatUploads.filter((j) => j.key === v.key).map((j) => j.row));
+  liftToasts();
+}
+// Messages appear above the rows of files being sent at the bottom of the screen, not over them.
+function liftToasts() {
+  const dock = document.querySelector('.uploads-dock');
+  document.documentElement.style.setProperty('--dock-h', `${dock?.isConnected ? dock.offsetHeight : 0}px`);
 }
 async function uploadToChat(chat, file, duration = null) {
   if (file.size > MAX_CHAT_FILE) return toast(`${file.name}: ${tr('too large (100 MB at most)')}`);
@@ -4698,7 +4713,7 @@ async function renderLibrary() {
   const input = h('input', { type: 'file', accept: BOOK_ACCEPT, multiple: true, hidden: true, onchange: () => { addBooks([...input.files]); input.value = ''; } });
   const pick = () => input.click();
   // Books being added (they carry on, and are shown again here, if you leave the shelf).
-  const uploads = h('div', { class: 'chat-uploads shelf-uploads' });
+  const uploads = h('div', { class: 'chat-uploads uploads-dock' });
   uploadsView = { key: 'shelf', el: uploads, onSent: () => {} };
   mount(h('main', { class: 'screen library-page' },
     h('div', { class: 'title-row' }, h('h1', {}, 'Shelf'), moreMenu([{ id: 'side-add-book', label: 'Add a book', icon: ICONS.addBook, action: pick }])),
@@ -4791,7 +4806,6 @@ async function addOneBook(file, j, onProgress) {
       const { book: same } = sha ? await api('GET', `/api/library/find?sha=${sha}&size=${bytes.byteLength}`) : { book: null };
       if (same) { toast(`“${same.title}” is already on your shelf`); return; }
     } catch { /* couldn't check: the server still spots a duplicate on upload */ }
-    toast(`Adding “${title}”…`);
     try {
       const q = new URLSearchParams({ format, title, author });
       const job = xhrUpload(`/api/library?${q}`, bytes, { onProgress: (p) => { j.setProgress(p); onProgress?.(p); } });
@@ -5244,6 +5258,7 @@ let navEl;
 function mount(screen) {
   closeMenu();
   $app.replaceChildren(screen, navEl);
+  liftToasts();
 }
 function buildNav() {
   const item = (tab, label) => h('button', { 'aria-current': state.tab === tab || (tab === 'read' && state.tab === 'commentary') || (tab === 'books' && state.tab === 'book') || (tab === 'friends' && state.tab === 'chat') ? 'page' : null, dataset: { tab },
