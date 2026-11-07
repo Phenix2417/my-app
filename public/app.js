@@ -385,6 +385,25 @@ function toast(msg) {
   toastTimer = setTimeout(() => t.remove(), 2800);
 }
 
+// A notice sliding down from the top, on whatever page is open: an upload finished. A tap does `onTap` (e.g. opens
+// where the file went); it goes after a few seconds, or when swiped up. Several stack.
+function notifyTop({ title, body = '', icon = ICONS.check, onTap = null }) {
+  let box = document.querySelector('.top-notes');
+  if (!box) { box = h('div', { class: 'top-notes', 'aria-live': 'polite' }); document.body.append(box); }
+  const note = h('div', { class: 'top-note', role: 'status' },
+    h('span', { class: 'top-note-icon' }, svg(icon)),
+    h('span', { class: 'top-note-main' }, h('span', { class: 'top-note-title file-name' }, title), body ? h('span', { class: 'top-note-body' }, body) : null));
+  const hide = () => { if (!note.isConnected) return; note.classList.add('out'); setTimeout(() => note.remove(), 250); };
+  let y0 = null, moved = false;
+  note.addEventListener('pointerdown', (e) => { y0 = e.clientY; moved = false; });
+  note.addEventListener('pointermove', (e) => { if (y0 != null && y0 - e.clientY > 6) { moved = true; note.style.transform = `translateY(${Math.min(0, e.clientY - y0)}px)`; } });
+  note.addEventListener('pointerup', (e) => { if (y0 != null && y0 - e.clientY > 30) hide(); else note.style.transform = ''; y0 = null; });
+  note.addEventListener('click', () => { if (moved) return; hide(); onTap?.(); });
+  box.prepend(note);
+  while (box.children.length > 3) box.lastElementChild.remove();
+  setTimeout(hide, 5000);
+}
+
 const openSheets = new Map(); // label -> close(); a sheet is never stacked on a copy of itself
 // Slide a sheet down to close it: from its top bar at any time, or from anywhere once it's scrolled to the top.
 function enableSwipeToClose(sheet, scrim, close) {
@@ -3113,7 +3132,11 @@ async function checkBibleEpub(bufPromise, fileName, file = null, repair = null, 
           close();
           await loadVersions();
           if (repair) { chapterCacheClear(repair.id); toast(`${repair.short} repaired`); if (state.tab === 'read') renderReader(); }
-          else if (!stillOpen) toast(LANG === 'zh' ? `已添加圣经：${added.map((v) => v.short).join(' + ')}` : `Added ${added.map((v) => v.short).join(' + ')} to your Bibles`);
+          if (!repair) {
+            const open = () => { state.version = added[0].id; store.set('version', state.version); state.parallel = added[1]?.id || null; store.set('parallel', state.parallel); goTo(state.pos); };
+            notifyTop({ title: added.map((v) => v.short).join(' + '), body: LANG === 'zh' ? '已添加到我的圣经' : 'Added to your Bibles', icon: ICONS.versions, onTap: open });
+          }
+          if (repair || !stillOpen) { /* (closed: you've moved on, so it isn't opened over what you're doing) */ }
           else if (onAdded) onAdded(added);
           else {
             // Open what was just added: its first two translations side by side, in the book's order.
@@ -3981,7 +4004,8 @@ async function uploadToChat(chat, file, duration = null) {
     const m = await sendToChat(chat, { file: { id: f.id } });
     if (m) {
       if (uploadsView?.key === j.key && uploadsView.el.isConnected) uploadsView.onSent(m);
-      else toast(LANG === 'zh' ? `“${j.name}”已发送给${chat.name}` : `Sent “${j.name}” to ${chat.name}`);
+      notifyTop({ title: j.name, body: LANG === 'zh' ? `已发送给${chat.name}` : `Sent to ${chat.name}`, icon: ICONS.send,
+        onTap: () => { if (!(state.tab === 'chat' && state.chat && chatKeyOf(state.chat) === j.key)) openChatPage(chat); } });
     }
   } catch (e) { if (!e.cancelled && !j.cancelled) toast(`${j.name}: ${e.message}`); }
   finally { uploadDone(); remove(); }
@@ -4796,7 +4820,8 @@ async function addOneBook(file, j, onProgress) {
         const same = (await localBooks()).find((x) => sha && x.sha256 === sha);
         if (same) { toast(`“${same.title}” is already on your shelf`); return; }
         await addLocalBook({ title, author, format, size: bytes.byteLength, sha256: sha, data: bytes, cover });
-        toast(`${tr('Added')} “${title}” — ${tr('over 100 MB, so it stays on this phone only')}`);
+        notifyTop({ title, body: `${LANG === 'zh' ? '已加入书架' : 'Added to your shelf'} · ${tr('over 100 MB, so it stays on this phone only')}`, icon: ICONS.phone,
+          onTap: () => { if (state.tab !== 'books') { state.tab = 'books'; render(); } } });
       } catch (e) { toast(`${title}: ${tr("couldn't be kept on this phone")} (${e.message})`); }
       return;
     }
@@ -4814,7 +4839,8 @@ async function addOneBook(file, j, onProgress) {
       const { book, duplicate } = await job.promise;
       if (duplicate) { toast(`“${book.title}” is already on your shelf`); return; } // same file, whatever its name
       if (cover) await authFetch(`/api/library/${book.id}/cover`, { method: 'PUT', body: cover }).catch((e) => console.warn('cover not saved', e));
-      toast(`Added “${book.title}”`);
+      notifyTop({ title: book.title, body: LANG === 'zh' ? '已加入书架' : 'Added to your shelf', icon: ICONS.books,
+        onTap: () => { if (state.tab !== 'books') { state.tab = 'books'; render(); } } });
     } catch (e) { if (!e.cancelled) toast(e instanceof OfflineError ? "You're offline. Try again when you're connected." : `${title}: ${e.message}`); }
   }
 }
