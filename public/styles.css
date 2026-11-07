@@ -927,7 +927,9 @@ span.verse-card-text { display: block; }
 /* A chat file, full screen (preview before saving). */
 .file-preview { position: fixed; inset: 0; z-index: 26; /* (under menus, sheets and messages, which open over it) */ display: flex; flex-direction: column; background: var(--bg); color: var(--on-bg); }
 .fp-top { display: flex; align-items: center; gap: 6px; padding: calc(6px + env(safe-area-inset-top)) 8px 6px; border-bottom: 1px solid var(--divider); }
-.fp-title { flex: 1; min-width: 0; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fp-heading { flex: 1; min-width: 0; }
+.fp-expiry { font-size: 12px; color: var(--muted); }
+.fp-title { min-width: 0; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .fp-body { flex: 1; min-height: 0; position: relative; display: flex; flex-direction: column; }
 .fp-body.dark { background: #000; align-items: center; justify-content: center; }
 .fp-body.grey { background: var(--surface-2); }
@@ -955,3 +957,7 @@ span.verse-card-text { display: block; }
 .lib-local { position: absolute; right: 4px; bottom: 4px; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center;
   background: rgba(0,0,0,.6); color: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.35); }
 .lib-local .line-icon { width: 14px; height: 14px; }
+/* Under a file sent in chat: how many days it can still be downloaded. */
+.file-expiry { font-size: 12px; opacity: .75; margin-top: -2px; }
+.chat-bubble.media .file-expiry { padding: 2px 4px 0; color: var(--muted); opacity: 1; text-align: right; }
+.chat-line:not(.mine) .chat-bubble.media .file-expiry { text-align: left; }

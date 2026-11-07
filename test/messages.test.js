@@ -61,6 +61,7 @@ test('files sent in chat: uploaded, recognised by their bytes, served in parts, 
   const webm = Buffer.concat([Buffer.from([0x1a, 0x45, 0xdf, 0xa3]), Buffer.alloc(996, 7)]);
   const voice = (await upload(webm, { name: 'voice.webm', type: 'audio/webm', duration: '12.34' })).data.file;
   assert.deepEqual([voice.kind, voice.type, voice.size, voice.duration], ['audio', 'audio/webm', 1000, 12.3]);
+  assert.ok(Math.abs(voice.expiresAt - (Date.now() + 30 * 86400000)) < 60000); // kept for 30 days
   const page = (await upload(Buffer.from('<html><script>alert(1)</script>'), { name: 'x.html', type: 'text/html' })).data.file;
   assert.deepEqual([page.kind, page.type], ['file', 'application/octet-stream']);
   let r = await fetch(`${b2}/api/chat-file/${page.id}`);

@@ -327,7 +327,9 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
     ...(m.file && !m.deleted_at ? { file: fileState(JSON.parse(m.file)) } : {}),
     ...(m.username !== undefined && m.from_id !== me ? { from: m.username ? userOut(m.from_id, m.username, m.display_name) : null } : {}) });
   // A file sent with a message: one uploaded to chat (by anyone: forwarding sends the same file on). Its id is its key.
+  // (expiresAt: when it's deleted, CHAT_FILE_DAYS after it was sent.)
   const fileOut = (f) => ({ id: f.id, name: f.name, type: f.type, kind: f.kind, size: f.size, ...(f.duration ? { duration: f.duration } : {}),
+    expiresAt: f.created_at + CHAT_FILE_DAYS * 86400000,
     ...(f.meta ? { book: JSON.parse(f.meta) } : {}) });
   // A book's details for its card: title, author, and its cover (a picture this person sent to chat).
   // bible: whether it holds a Bible (so the app offers to add it as a Bible version).
