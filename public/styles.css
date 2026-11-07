@@ -924,3 +924,29 @@ span.verse-card-text { display: block; }
 .chat-book .chat-file-main { gap: 3px; padding-top: 2px; }
 .chat-book .book-title { font-weight: 600; -webkit-line-clamp: 3; }
 .chat-book-author { font-size: 13px; opacity: .85; }
+/* A chat file, full screen (preview before saving). */
+.file-preview { position: fixed; inset: 0; z-index: 70; display: flex; flex-direction: column; background: var(--bg); color: var(--on-bg); }
+.fp-top { display: flex; align-items: center; gap: 6px; padding: calc(6px + env(safe-area-inset-top)) 8px 6px; border-bottom: 1px solid var(--divider); }
+.fp-title { flex: 1; min-width: 0; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fp-body { flex: 1; min-height: 0; position: relative; display: flex; flex-direction: column; }
+.fp-body.dark { background: #000; align-items: center; justify-content: center; }
+.fp-body.grey { background: var(--surface-2); }
+.fp-img, .fp-video { max-width: 100%; max-height: 100%; object-fit: contain; }
+.fp-video { width: 100%; }
+.fp-info { margin: auto; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 24px; text-align: center; max-width: 420px; }
+.chat-file-icon.big { width: 72px; height: 72px; border-radius: 16px; }
+.chat-file-icon.big .line-icon { width: 36px; height: 36px; }
+.fp-name { font-weight: 600; overflow-wrap: anywhere; }
+.fp-meta, .fp-note { color: var(--muted); font-size: 14px; margin: 0; }
+.fp-audio { width: min(360px, 90vw); margin-top: 8px; }
+.fp-scroll { flex: 1; overflow-y: auto; padding: 8px 20px 24px; }
+.fp-book { max-width: 720px; margin: 0 auto; }
+.fp-book img { max-width: 100%; height: auto; }
+.fp-foot { display: flex; align-items: center; gap: 4px; padding: 4px 8px calc(6px + env(safe-area-inset-bottom)); border-top: 1px solid var(--divider); }
+.fp-foot[hidden] { display: none; }
+.fp-where { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; justify-content: center; }
+.fp-next .line-icon { transform: scaleX(-1); }
+.fp-pdf { flex: 1; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.fp-page { width: min(100%, 900px); background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.2); flex: none; }
+.fp-page canvas { width: 100%; height: 100%; display: block; }
+.fp-count { position: absolute; right: 12px; bottom: 12px; background: rgba(0,0,0,.55); color: #fff; font-size: 12px; padding: 3px 8px; border-radius: 10px; font-variant-numeric: tabular-nums; }

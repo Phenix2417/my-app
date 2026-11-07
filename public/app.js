@@ -3498,6 +3498,108 @@ function addChatBible(f) {
   const buf = fetch(chatFileUrl(f)).then((r) => { if (!r.ok) throw new Error(tr('This file has expired')); return r.arrayBuffer(); });
   checkBibleEpub(buf, f.book?.title || f.name, () => addChatFileToShelf(f, { quiet: true }));
 }
+// Save a chat file to the phone.
+function saveChatFile(f) { const a = h('a', { href: chatFileUrl(f), download: f.name }); document.body.append(a); a.click(); a.remove(); }
+// A chat file, full screen, to see what's in it before saving or adding it (as in WeChat): a picture, a video or sound
+// to play, an ebook or text to page through, a PDF's pages, or, for other files, what the file is.
+async function previewChatFile(f) {
+  const url = chatFileUrl(f), cleanups = [];
+  const body = h('div', { class: 'fp-body' });
+  const foot = h('div', { class: 'fp-foot', hidden: true });
+  const menu = moreMenu([
+    isBibleFile(f) ? { id: 'fp-bible', label: 'Add as Bible', icon: ICONS.versions, action: () => { close(); addChatBible(f); } } : null,
+    isBookFile(f) ? { id: 'fp-shelf', label: 'Add to shelf', icon: ICONS.addBook, action: () => addChatFileToShelf(f) } : null,
+    { id: 'fp-save', label: 'Save', icon: ICONS.arrowDown, action: () => saveChatFile(f) },
+  ].filter(Boolean), { lang: false });
+  const box = h('div', { class: 'file-preview', role: 'dialog', 'aria-label': f.name },
+    h('div', { class: 'fp-top' },
+      h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Close', title: 'Close', onclick: () => close() }, svg(ICONS.back)),
+      h('div', { class: 'fp-title file-name' }, f.book?.title || f.name), menu),
+    body, foot);
+  const onKey = (e) => { if (e.key === 'Escape' && !document.querySelector('.scrim, .more-menu')) close(); }; // (a sheet or menu on top closes first)
+  function close() { closeMenu(); for (const c of cleanups) { try { c(); } catch { /* gone */ } } box.remove(); document.removeEventListener('keydown', onKey); }
+  document.addEventListener('keydown', onKey);
+  document.body.append(box);
+  const fail = (msg) => body.replaceChildren(h('div', { class: 'fp-info' }, h('span', { class: 'chat-file-icon big' }, svg(ICONS.file)),
+    h('div', { class: 'fp-name file-name' }, f.name), h('div', { class: 'fp-meta' }, fileSize(f.size)), h('p', { class: 'fp-note' }, msg),
+    h('button', { class: 'filled-btn', type: 'button', onclick: () => saveChatFile(f) }, 'Save')));
+  if (f.expired) return fail(tr('Expired (files are kept for 30 days)'));
+  if (f.kind === 'image') { body.classList.add('dark'); return body.append(h('img', { class: 'fp-img', src: url, alt: f.name })); }
+  if (f.kind === 'video') { body.classList.add('dark'); return body.append(h('video', { class: 'fp-video', src: url, controls: true, autoplay: true, playsinline: true })); }
+  if (f.kind === 'audio') {
+    const audio = h('audio', { class: 'fp-audio', src: url, controls: true, autoplay: true });
+    cleanups.push(() => audio.pause());
+    return body.append(h('div', { class: 'fp-info' }, h('span', { class: 'chat-file-icon big' }, svg(ICONS.mic)), h('div', { class: 'fp-name file-name' }, f.name), audio));
+  }
+  const isPdf = f.type === 'application/pdf' || /\.pdf$/i.test(f.name), isText = /\.(txt|md|text)$/i.test(f.name);
+  if (!isEpubFile(f) && !isPdf && !isText) return fail(tr("This kind of file can't be shown here. Save it to open it with another app."));
+  body.append(h('p', { class: 'empty-inline' }, 'Opening…'));
+  let buf;
+  try { const res = await fetch(url); if (!res.ok) throw new Error(); buf = await res.arrayBuffer(); }
+  catch { return box.isConnected && fail(tr("Couldn't load this file. Check your connection and try again.")); }
+  if (!box.isConnected) return;
+  if (isPdf) return previewPdf(buf, body, cleanups).catch(() => fail(tr("This PDF couldn't be shown.")));
+  // An ebook or text: page by page, with its contents.
+  let book;
+  try { book = isEpubFile(f) ? await openEpub(buf) : openText(buf, f.name.replace(/\.[^.]+$/, '')); } catch { return fail(tr("This book couldn't be opened.")); }
+  cleanups.push(() => { for (const u of book.blobs?.values?.() || []) URL.revokeObjectURL(u); });
+  const page = h('div', { class: 'book-body fp-book', style: `--verse-size:${state.fontSize}px` });
+  const scroller = h('div', { class: 'fp-scroll' }, page);
+  const where = h('button', { class: 'text-btn fp-where', type: 'button', onclick: () => contents() });
+  const prev = h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Previous', title: 'Previous', onclick: () => show(at - 1) }, svg(ICONS.back));
+  const next = h('button', { class: 'icon-btn fp-next', type: 'button', 'aria-label': 'Next', title: 'Next', onclick: () => show(at + 1) }, svg(ICONS.back));
+  let at = 0;
+  async function show(i) {
+    at = Math.max(0, Math.min(book.chapters.length - 1, i));
+    try { page.replaceChildren(await book.render(at)); } catch { page.replaceChildren(h('p', { class: 'error' }, "Couldn't show this part of the book.")); }
+    scroller.scrollTop = 0;
+    where.textContent = `${book.chapterTitle(at) || chapterLabel(at)} · ${at + 1}/${book.chapters.length}`;
+    prev.disabled = at === 0; next.disabled = at === book.chapters.length - 1;
+  }
+  function contents() {
+    const entries = book.toc.length ? book.toc : book.chapters.map((_, i) => ({ label: book.chapterTitle(i) || chapterLabel(i), chapter: i, depth: 0 }));
+    openSheet((closeSheet) => [h('h2', {}, 'Contents'), h('div', { class: 'toc-list' }, ...entries.filter((t) => t.chapter >= 0).map((t) => h('button', { class: 'toc-item', type: 'button',
+      style: `padding-left:${16 + Math.min(t.depth || 0, 4) * 18}px`, onclick: () => { closeSheet(); show(t.chapter); } }, t.label)))], { label: 'Contents' });
+  }
+  body.replaceChildren(scroller);
+  foot.replaceChildren(prev, where, next); foot.hidden = false;
+  await show(0);
+}
+const chapterLabel = (i) => (LANG === 'zh' ? `第 ${i + 1} 章` : `Chapter ${i + 1}`);
+// A PDF's pages, drawn as they scroll into view (Mozilla's PDF.js, loaded only when a PDF is shown).
+async function previewPdf(buf, body, cleanups) {
+  const pdfjs = await import('/vendor/pdfjs/pdf.min.mjs');
+  pdfjs.GlobalWorkerOptions.workerSrc = '/vendor/pdfjs/pdf.worker.min.mjs';
+  const doc = await pdfjs.getDocument({ data: new Uint8Array(buf), cMapUrl: '/vendor/pdfjs/cmaps/', cMapPacked: true,
+    standardFontDataUrl: '/vendor/pdfjs/standard_fonts/', isEvalSupported: false }).promise;
+  cleanups.push(() => doc.destroy());
+  const pages = h('div', { class: 'fp-pdf' });
+  const count = h('div', { class: 'fp-count' }, `1 / ${doc.numPages}`);
+  body.classList.add('grey');
+  body.replaceChildren(pages, count);
+  const first = await doc.getPage(1), base = first.getViewport({ scale: 1 });
+  const slots = [];
+  for (let n = 1; n <= doc.numPages; n++) {
+    const slot = h('div', { class: 'fp-page', dataset: { n: String(n) }, style: `aspect-ratio:${base.width}/${base.height}` });
+    slots.push(slot); pages.append(slot);
+  }
+  const drawn = new Set();
+  const draw = async (slot) => {
+    const n = Number(slot.dataset.n);
+    if (drawn.has(n)) return; drawn.add(n);
+    const p = await doc.getPage(n), vp1 = p.getViewport({ scale: 1 });
+    slot.style.aspectRatio = `${vp1.width}/${vp1.height}`;
+    const scale = (slot.clientWidth * Math.min(devicePixelRatio || 1, 2.5)) / vp1.width, vp = p.getViewport({ scale });
+    const canvas = h('canvas', { width: Math.floor(vp.width), height: Math.floor(vp.height) });
+    await p.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+    slot.replaceChildren(canvas);
+  };
+  const io = new IntersectionObserver((list) => {
+    for (const e of list) if (e.isIntersecting) { draw(e.target).catch(() => {}); count.textContent = `${e.target.dataset.n} / ${doc.numPages}`; }
+  }, { root: pages, rootMargin: '600px 0px' });
+  slots.forEach((s) => io.observe(s));
+  cleanups.push(() => io.disconnect());
+}
 // A picture, full screen; a tap closes it.
 function viewImage(src, alt) {
   const close = () => { box.remove(); document.removeEventListener('keydown', onKey); };
@@ -3515,7 +3617,7 @@ function chatFileView(f) {
   if (f.expired) return h('div', { class: 'chat-file expired' }, h('span', { class: 'chat-file-icon' }, svg(f.kind === 'image' ? ICONS.image : f.kind === 'video' ? ICONS.video : f.kind === 'audio' ? ICONS.mic : ICONS.file)),
     h('span', { class: 'chat-file-main' }, f.kind === 'file' ? h('span', { class: 'file-name' }, f.name) : h('span', {}, f.kind === 'image' ? 'Photo' : f.kind === 'video' ? 'Video' : 'Voice message'),
       h('span', { class: 'chat-file-size' }, 'Expired (files are kept for 30 days)')));
-  if (f.kind === 'image') return h('img', { class: 'chat-img', src: url, alt: f.name, loading: 'lazy', onclick: () => viewImage(url, f.name) });
+  if (f.kind === 'image') return h('img', { class: 'chat-img', src: url, alt: f.name, loading: 'lazy', onclick: () => previewChatFile(f) });
   if (f.kind === 'video') return h('video', { class: 'chat-video', src: `${url}#t=0.1`, controls: true, playsinline: true, preload: 'metadata' });
   if (f.kind === 'audio') {
     const audio = new Audio(); audio.preload = 'none'; audio.src = url;
@@ -3537,14 +3639,14 @@ function chatFileView(f) {
   }
   // A book: its cover, title and author.
   if (isEpubFile(f)) {
-    return h('a', { class: 'chat-file chat-book', href: url, download: f.name },
+    return h('a', { class: 'chat-file chat-book', href: url, onclick: (e) => { e.preventDefault(); previewChatFile(f); } },
       f.book?.cover ? h('img', { class: 'chat-book-cover', src: chatFileUrl({ id: f.book.cover }), alt: '', loading: 'lazy' })
         : h('span', { class: 'chat-book-cover blank' }, svg(ICONS.books)),
       h('span', { class: 'chat-file-main' }, h('span', { class: 'file-name book-title' }, f.book?.title || f.name.replace(/\.epub$/i, '')),
         f.book?.author ? h('span', { class: 'chat-book-author dname' }, f.book.author) : null,
         h('span', { class: 'chat-file-size' }, `EPUB · ${fileSize(f.size)}`)));
   }
-  return h('a', { class: 'chat-file', href: url, download: f.name },
+  return h('a', { class: 'chat-file', href: url, onclick: (e) => { e.preventDefault(); previewChatFile(f); } },
     h('span', { class: 'chat-file-icon' }, svg(ICONS.file)),
     h('span', { class: 'chat-file-main' }, h('span', { class: 'file-name' }, f.name), h('span', { class: 'chat-file-size' }, fileSize(f.size))));
 }
@@ -3825,9 +3927,7 @@ async function renderChatPage() {
     const items = [
       m.file && !m.file.expired && isBibleFile(m.file) ? { label: 'Add as Bible', icon: ICONS.versions, run: () => addChatBible(m.file) } : null,
       m.file && !m.file.expired && isBookFile(m.file) ? { label: 'Add to shelf', icon: ICONS.addBook, run: () => addChatFileToShelf(m.file) } : null,
-      m.file && !m.file.expired && m.file.kind !== 'audio' ? { label: 'Save', icon: ICONS.arrowDown, run: () => {
-        const a = h('a', { href: chatFileUrl(m.file), download: m.file.name }); document.body.append(a); a.click(); a.remove();
-      } } : null,
+      m.file && !m.file.expired && m.file.kind !== 'audio' ? { label: 'Save', icon: ICONS.arrowDown, run: () => saveChatFile(m.file) } : null,
       m.file && !m.ref && !splitQuote(m.body).rest.trim() ? null : { label: 'Copy', icon: ICONS.copy, run: async () => {
         try { await navigator.clipboard.writeText(plainText(m)); toast('Copied'); } catch { toast("Couldn't copy"); }
       } },
