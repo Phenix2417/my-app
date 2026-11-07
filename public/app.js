@@ -3738,6 +3738,58 @@ function recordSheet(mode, onSend) {
   openDevice();
 }
 
+/* Files being sent in chat. They're kept here, not on the chat page, so they carry on when you leave the chat
+   (two at a time); the open chat shows its own, and a file that finishes while you're elsewhere says so. */
+const chatUploads = []; // { key, name, bar, row, cancelled, abort }
+let uploadsView = null; // the open chat page: { key, el, onSent(message) }
+const chatKeyOf = (chat) => `${chat.kind}:${chat.id}`;
+let uploadSlots = 2; const uploadWaiting = [];
+const uploadTurn = () => (uploadSlots > 0 ? (uploadSlots--, Promise.resolve()) : new Promise((r) => uploadWaiting.push(r)));
+const uploadDone = () => { const next = uploadWaiting.shift(); if (next) next(); else uploadSlots++; };
+let uploadWake = null;
+async function keepAwakeWhileUploading() {
+  // The screen stays on while files are being sent (a phone may pause a page whose screen has gone off).
+  if (chatUploads.length && !uploadWake) uploadWake = await navigator.wakeLock?.request('screen').catch(() => null) || null;
+  if (!chatUploads.length && uploadWake) { uploadWake.release().catch(() => {}); uploadWake = null; }
+}
+addEventListener('beforeunload', (e) => { if (chatUploads.length) { e.preventDefault(); e.returnValue = ''; } });
+function drawUploads() {
+  const v = uploadsView;
+  if (v?.el.isConnected) v.el.replaceChildren(...chatUploads.filter((j) => j.key === v.key).map((j) => j.row));
+}
+async function uploadToChat(chat, file, duration = null) {
+  if (file.size > MAX_CHAT_FILE) return toast(`${file.name}: ${tr('too large (100 MB at most)')}`);
+  if (!file.size) return toast(`${file.name}: ${tr('empty file')}`);
+  // A book's file name keeps just its title, author and year (no download-site tags, ISBNs, file codes…).
+  if (isBookName(file.name)) file = new File([file], cleanBookName(file.name), { type: file.type });
+  const j = { key: chatKeyOf(chat), name: file.name, cancelled: false, abort: null, bar: h('span', { class: 'upload-bar' }) };
+  j.row = h('div', { class: 'chat-upload' },
+    h('span', { class: 'chat-upload-main' }, h('span', { class: 'file-name' }, file.name), h('span', { class: 'upload-track' }, j.bar)),
+    h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Cancel', title: 'Cancel', onclick: () => { j.cancelled = true; j.abort?.(); remove(); } }, svg(ICONS.close)));
+  const remove = () => { const i = chatUploads.indexOf(j); if (i >= 0) chatUploads.splice(i, 1); j.row.remove(); keepAwakeWhileUploading(); };
+  chatUploads.push(j); drawUploads(); keepAwakeWhileUploading();
+  await uploadTurn();
+  try {
+    if (j.cancelled) return;
+    let extra = {};
+    // (Read once: a phone may not let a file from the cloud be read twice.)
+    if (isEpubFile(file)) {
+      try { const bytes = await file.arrayBuffer(); file = new File([bytes], file.name, { type: 'application/epub+zip' }); extra = await chatBookDetails(bytes); }
+      catch { /* sent as a plain file */ }
+    }
+    if (j.cancelled) return;
+    const job = uploadChatFile(file, { name: file.name, duration, extra, onProgress: (p) => { j.bar.style.width = `${Math.round(p * 100)}%`; } });
+    j.abort = job.abort;
+    const f = await job.promise;
+    const m = await sendToChat(chat, { file: { id: f.id } });
+    if (m) {
+      if (uploadsView?.key === j.key && uploadsView.el.isConnected) uploadsView.onSent(m);
+      else toast(LANG === 'zh' ? `“${j.name}”已发送给${chat.name}` : `Sent “${j.name}” to ${chat.name}`);
+    }
+  } catch (e) { if (!e.cancelled && !j.cancelled) toast(`${j.name}: ${e.message}`); }
+  finally { uploadDone(); remove(); }
+}
+
 // One conversation: header, messages (with date separators and, in groups, who wrote each), and a box to write.
 let chatPoll = null;
 async function renderChatPage() {
@@ -4026,35 +4078,16 @@ async function renderChatPage() {
     sendBtn.disabled = false;
   };
   const sendBtn = h('button', { class: 'chat-send', type: 'button', 'aria-label': 'Send', title: 'Send', onclick: send }, svg(ICONS.send));
-  // Files being sent: each with its progress and a cancel button.
+  // Files being sent to this chat (they carry on, and are shown again, if you leave the chat and come back).
   const uploads = h('div', { class: 'chat-uploads' });
-  async function sendFile(file, duration = null) {
-    if (file.size > MAX_CHAT_FILE) return toast(`${file.name}: ${tr('too large (100 MB at most)')}`);
-    if (!file.size) return toast(`${file.name}: ${tr('empty file')}`);
-    const bar = h('span', { class: 'upload-bar' });
-    let extra = {};
-    // A book's file name keeps just its title, author and year (no download-site tags, ISBNs, publishers…).
-    if (isBookName(file.name)) file = new File([file], cleanBookName(file.name), { type: file.type });
-    // (Read once: a phone may not let a file from the cloud be read twice.)
-    if (isEpubFile(file)) {
-      try { const bytes = await file.arrayBuffer(); file = new File([bytes], file.name, { type: 'application/epub+zip' }); extra = await chatBookDetails(bytes); }
-      catch { /* sent as a plain file */ }
-    }
-    const job = uploadChatFile(file, { name: file.name, duration, extra, onProgress: (p) => { bar.style.width = `${Math.round(p * 100)}%`; } });
-    const row = h('div', { class: 'chat-upload' },
-      h('span', { class: 'chat-upload-main' }, h('span', { class: 'file-name' }, file.name), h('span', { class: 'upload-track' }, bar)),
-      h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Cancel', title: 'Cancel', onclick: () => job.abort() }, svg(ICONS.close)));
-    uploads.append(row);
-    try {
-      const f = await job.promise;
-      const m = await sendToChat(chat, { file: { id: f.id } });
-      if (m && state.chat === chat) { draw([...shown, m]); list.scrollTop = list.scrollHeight; }
-    } catch (e) { if (!e.cancelled) toast(`${file.name}: ${e.message}`); }
-    row.remove();
-  }
+  uploadsView = { key: chatKeyOf(chat), el: uploads, onSent: (m) => {
+    if (shown.some((x) => x.id === m.id)) return;
+    draw([...shown, m]); list.scrollTop = list.scrollHeight;
+  } };
+  const sendFile = (file, duration = null) => uploadToChat(chat, file, duration);
   const pickFiles = (accept) => {
     const inp = h('input', { type: 'file', multiple: true, hidden: true, ...(accept ? { accept } : {}) });
-    inp.addEventListener('change', async () => { const files = [...inp.files]; inp.remove(); for (const f of files) await sendFile(f); });
+    inp.addEventListener('change', () => { const files = [...inp.files]; inp.remove(); for (const f of files) sendFile(f); });
     document.body.append(inp); inp.click();
   };
   // Choose one of my notes to share here.
@@ -4116,6 +4149,7 @@ async function renderChatPage() {
     uploads,
     h('div', { class: 'chat-bar' }, plusBtn, input, sendBtn),
     plusPanel));
+  drawUploads();
   showAttach();
   if (attached) input.focus();
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && matchMedia('(pointer: fine)').matches) { e.preventDefault(); send(); } });
