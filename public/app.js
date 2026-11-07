@@ -832,9 +832,9 @@ function pageNotes() {
     const shadows = (list) => list.filter((n) => inChapter(n) && n.alt?.start && n.alt?.end).flatMap((n) => {
       const alt = n.alt;
       if ((n.version || 'web') === state.version && alt.version === reader.altVersion) {
-        return [{ ...n, body: '', start: { ...alt.start, verse: alt.start.verse + 0.5 }, end: { ...alt.end, verse: alt.end.verse + 0.5 }, _orig: n }];
+        return [{ ...n, body: '', _shadow: true, start: { ...alt.start, verse: alt.start.verse + 0.5 }, end: { ...alt.end, verse: alt.end.verse + 0.5 }, _orig: n }];
       }
-      if ((n.version || 'web') === reader.altVersion && alt.version === state.version) return [{ ...n, body: '', start: alt.start, end: alt.end, _orig: n }];
+      if ((n.version || 'web') === reader.altVersion && alt.version === state.version) return [{ ...n, body: '', _shadow: true, start: alt.start, end: alt.end, _orig: n }];
       return [];
     });
     const allMine = Object.values(state.mine.notes), allFriends = state.showFriends ? state.friendNotes : [];
@@ -881,8 +881,12 @@ function paint() {
     end.el.after(h('button', { class: `mark ${cls}`, 'aria-label': label, title: label,
       onclick: (e) => { e.stopPropagation(); showNotesAt({ v: n.end.verse, w: n.end.word }); } }, text));
   };
-  for (const n of mine) if (n.body) addMark(n, 'mine', 'Your note', svg(ICONS.pencil)); // same pencil as Edit note
-  for (const n of friends) addMark(n, `f-${n.color}`, `Note from ${dn(n.author)}`, firstChar(dn(n.author)));
+  // One mark per note: a note on both versions is placed twice (its words in each), but only its own place gets a mark.
+  const marked = new Set();
+  const once = (n) => { const id = (n._orig || n).id; if (marked.has(id)) return false; marked.add(id); return true; };
+  const ownFirst = (list) => [...list].sort((a, b) => (a._shadow ? 1 : 0) - (b._shadow ? 1 : 0));
+  for (const n of ownFirst(mine)) if (n.body && once(n)) addMark(n, 'mine', 'Your note', svg(ICONS.pencil)); // same pencil as Edit note
+  for (const n of ownFirst(friends)) if (once(n)) addMark(n, `f-${n.color}`, `Note from ${dn(n.author)}`, firstChar(dn(n.author)));
   positionHandles();
 }
 function setAttr(el, name, val) { if (val) el.setAttribute(name, val); else el.removeAttribute(name); }
