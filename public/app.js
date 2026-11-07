@@ -3476,15 +3476,13 @@ async function chatBookDetails(bytes) {
   if (cover) { try { out.cover = (await uploadChatFile(cover, { name: 'cover.jpg' }).promise).id; } catch { /* no cover then */ } }
   return out;
 }
-// Put a book sent in chat on my shelf.
+// Put a book sent in chat on my shelf: the server keeps it as the same file (nothing is downloaded or sent again).
 async function addChatFileToShelf(f) {
-  toast(`Adding “${f.book?.title || f.name}”…`);
   try {
-    const res = await fetch(chatFileUrl(f));
-    if (!res.ok) throw new Error(res.status === 404 ? tr('This file has expired') : `(${res.status})`);
-    const data = await res.arrayBuffer();
-    await addBooks([{ name: f.name, type: isEpubFile(f) ? 'application/epub+zip' : f.type, size: data.byteLength, data }]);
-  } catch (e) { toast(e instanceof TypeError ? "You're offline. Try again when connected." : `${f.name}: ${e.message}`); }
+    const { book, duplicate } = await api('POST', '/api/library/from-chat', { file: f.id, title: f.book?.title || '', author: f.book?.author || '' });
+    toast(duplicate ? `“${book.title}” is already on your shelf` : `Added “${book.title}”`);
+    if (state.tab === 'books') renderLibrary();
+  } catch (e) { toast(e instanceof OfflineError ? "You're offline. Try again when connected." : e.message); }
 }
 // A picture, full screen; a tap closes it.
 function viewImage(src, alt) {

@@ -10,6 +10,7 @@ import { createWikiService } from './wiki.js';
 import { createEncyclopedias } from './encyclopedia.js';
 import { createLibraryStore } from './library.js';
 import { createChatFileStore } from './chatfiles.js';
+import { createBlobStore } from './blobs.js';
 import { createVersionService } from './versions.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -30,6 +31,13 @@ if (process.env.SEED_TEST_USERS !== '0') {
   if (created.length) console.log(`Created test accounts: ${created.join(', ')}`);
 }
 
+// Each file is stored once: shelf books, covers and chat files are links to a single copy of each content.
+const blobs = createBlobStore({ dir: path.join(dataDir, 'blobs') });
+const libraryDir = path.join(dataDir, 'library'), chatDir = path.join(dataDir, 'chat-files');
+blobs.adoptExisting([libraryDir, chatDir], { skip: (p, isDir) => (isDir ? path.basename(p) === 'versions' : /(^\.upload-|\.part$|\.lnk$)/.test(path.basename(p))) })
+  .then(() => blobs.sweep()).catch((e) => console.warn('file store:', e.message));
+setInterval(() => blobs.sweep().catch(() => {}), 3600000).unref();
+
 const commentary = createCommentaryService({ cacheDir: path.join(dataDir, 'commentary-cache') });
 
 const freeDict = createFreeDictionary();
@@ -38,9 +46,9 @@ const phonetics = createPhoneticsService({ cacheDir: path.join(dataDir, 'phoneti
 const translate = createTranslateService({ cacheDir: path.join(dataDir, 'translate-cache') });
 
 createServer(db, { publicDir: path.join(root, 'public'), trustProxy, commentary, pronounce, phonetics, translate, bibleDict: createBibleDictionary({ cacheDir: path.join(dataDir, 'bibledict-cache') }),
-  library: createLibraryStore({ dir: path.join(dataDir, 'library') }), freeDict,
+  library: createLibraryStore({ dir: libraryDir, blobs }), freeDict,
   versions: createVersionService({ cacheDir: path.join(dataDir, 'bible-cache') }),
   wiki: createWikiService({ cacheDir: path.join(dataDir, 'wiki-cache') }), encyclopedias: createEncyclopedias(),
-  chatFiles: createChatFileStore({ dir: path.join(dataDir, 'chat-files') }) }).listen(port, host, () => {
+  chatFiles: createChatFileStore({ dir: chatDir, blobs }) }).listen(port, host, () => {
   console.log(`Bible Study running at http://localhost:${port}`);
 });

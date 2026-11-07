@@ -115,7 +115,7 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
     deleteMessage: q("UPDATE messages SET deleted_at = ?, body = '', ref = NULL, file = NULL WHERE id = ?"),
     deleteGroupMessage: q("UPDATE chat_group_messages SET deleted_at = ?, body = '', ref = NULL, file = NULL WHERE id = ?"),
     addMessage: q('INSERT INTO messages (from_id, to_id, body, created_at, ref, file) VALUES (?, ?, ?, ?, ?, ?)'),
-    addChatFile: q('INSERT INTO chat_files (id, user_id, name, type, kind, size, duration, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'),
+    addChatFile: q('INSERT INTO chat_files (id, user_id, name, type, kind, size, duration, created_at, sha256) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'),
     chatFile: q('SELECT * FROM chat_files WHERE id = ?'),
     oldChatFiles: q('SELECT id FROM chat_files WHERE created_at < ? LIMIT 500'),
     deleteChatFile: q('DELETE FROM chat_files WHERE id = ?'),
@@ -330,6 +330,7 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
     return meta.title || meta.cover ? JSON.stringify(meta) : null;
   }
   // A message's file, marked expired once it's been deleted (a month after it was sent).
+  const fingerprintFile = async (file) => { const h = crypto.createHash('sha256'); for await (const c of fs.createReadStream(file)) h.update(c); return h.digest('hex'); };
   const fileState = (f) => { const row = stmt.chatFile.get(f.id); return row ? fileOut(row) : { ...f, expired: true }; };
   // Delete chat files more than CHAT_FILE_DAYS old: on start, then every hour.
   async function purgeChatFiles(at = now()) {
@@ -416,15 +417,39 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
       if (same) { await library.discard(up.tmp); return { status: 200, body: { book: libraryOut(same), duplicate: true } }; }
       const id = crypto.randomBytes(12).toString('base64url');
       const title = cleanText(query.get('title'), 200) || 'Untitled', author = cleanText(query.get('author'), 120);
-      await library.keep(up.tmp, me.id, id);
+      await library.keep(up.tmp, me.id, id, { sha: up.sha256 });
       stmt.addLibraryBook.run({ id, user_id: me.id, title, author, format, size: up.size, sha256: up.sha256, now: now() });
       return { status: 201, body: { book: libraryOut(stmt.libraryBook.get(id, me.id)) } };
     }, true, { raw: true }],
+    // A book sent in chat, put on my shelf: the server links the same stored file (and its cover); nothing is uploaded again.
+    ['POST', /^\/api\/library\/from-chat$/, async ({ me, body }) => {
+      needLibrary();
+      const f = /^[0-9a-f]{32}$/.test(body.file || '') && stmt.chatFile.get(body.file);
+      const disk = f && f.created_at >= now() - CHAT_FILE_DAYS * 86400000 && chatFiles && await chatFiles.read(f.id);
+      if (!disk) throw new HttpError(404, 'This file has expired');
+      const head = Buffer.alloc(4096), fd = await fs.promises.open(disk.file);
+      const { bytesRead } = await fd.read(head, 0, 4096, 0); await fd.close();
+      const format = sniffFormat(head.subarray(0, bytesRead), /\.epub$/i.test(f.name) ? 'epub' : null);
+      if (!format) throw new HttpError(415, 'Only EPUB, PDF and text files can be added.');
+      if (disk.size > MAX_BOOK_BYTES) throw new HttpError(413, 'That file is too large.');
+      if (stmt.libraryBytes.get(me.id).total + disk.size > MAX_LIBRARY_BYTES) throw new HttpError(413, 'Your library is full. Delete a book to make room.');
+      const sha = f.sha256 || await fingerprintFile(disk.file);
+      const same = await findSameBook(me.id, sha, disk.size);
+      if (same) return { status: 200, body: { book: libraryOut(same), duplicate: true } };
+      const meta = f.meta ? JSON.parse(f.meta) : {};
+      const id = crypto.randomBytes(12).toString('base64url');
+      const title = cleanText(meta.title || body.title, 200) || f.name.replace(/\.[^.]+$/, '') || 'Untitled', author = cleanText(meta.author || body.author, 120);
+      await library.keepShared(disk.file, me.id, id);
+      stmt.addLibraryBook.run({ id, user_id: me.id, title, author, format, size: disk.size, sha256: sha, now: now() });
+      const cover = meta.cover && stmt.chatFile.get(meta.cover), coverDisk = cover && cover.size <= MAX_COVER_BYTES && await chatFiles.read(cover.id);
+      if (coverDisk) { await library.keepShared(coverDisk.file, me.id, id, { cover: true }); stmt.setLibraryCover.run(id, me.id); }
+      return { status: 201, body: { book: libraryOut(stmt.libraryBook.get(id, me.id)) } };
+    }, true],
     ['PUT', /^\/api\/library\/([\w-]{16})\/cover$/, async ({ me, params: [id], req }) => {
       needLibrary(); myBook(me, id);
       const up = await library.receive(req, me.id, MAX_COVER_BYTES).catch(libraryErr);
       if (!sniffImage(up.head)) { await library.discard(up.tmp); throw new HttpError(415, 'The cover must be a JPEG or PNG image.'); }
-      await library.keep(up.tmp, me.id, id, { cover: true });
+      await library.keep(up.tmp, me.id, id, { cover: true, sha: up.sha256 });
       stmt.setLibraryCover.run(id, me.id);
       return { ok: true };
     }, true, { raw: true }],
@@ -895,7 +920,7 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
       const name = cleanText(query.get('name'), 120).replace(/[\\/\u0000-\u001f]/g, '_') || 'file';
       const d = Number(query.get('duration'));
       const duration = (kind === 'audio' || kind === 'video') && d > 0 && d < 86400 ? Math.round(d * 10) / 10 : null;
-      stmt.addChatFile.run(up.id, me.id, name, type, kind, up.size, duration, now());
+      stmt.addChatFile.run(up.id, me.id, name, type, kind, up.size, duration, now(), up.sha256);
       if (type === 'application/epub+zip') stmt.setChatFileMeta.run(bookMeta(me.id, { title: query.get('title'), author: query.get('author'), cover: query.get('cover') }), up.id);
       return { status: 201, body: { file: fileOut(stmt.chatFile.get(up.id)) } };
     }, true, { raw: true }],

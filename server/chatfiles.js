@@ -42,20 +42,22 @@ export function sniffChatFile(head, declared = '') {
   return { kind: 'file', type: 'application/octet-stream' };
 }
 
-export function createChatFileStore({ dir }) {
+export function createChatFileStore({ dir, blobs = null }) {
   const fileOf = (id) => path.join(dir, id.slice(0, 2), id);
   return {
-    // Stream an upload to disk, refusing it past `limit` bytes. Returns { id, size, head }.
+    // Stream an upload to disk, refusing it past `limit` bytes. Returns { id, size, head, sha256 }.
     async receive(req, limit) {
       const id = crypto.randomBytes(16).toString('hex');
       await fs.promises.mkdir(path.dirname(fileOf(id)), { recursive: true });
       const tmp = `${fileOf(id)}.part`;
       let size = 0, head = Buffer.alloc(0);
+      const hash = crypto.createHash('sha256');
       const counter = new Transform({
         transform(chunk, _enc, cb) {
           size += chunk.length;
           if (size > limit) return cb(new ChatFileError(413, 'That file is too large.'));
           if (head.length < 4096) head = Buffer.concat([head, chunk.subarray(0, 4096 - head.length)]);
+          hash.update(chunk);
           cb(null, chunk);
         },
       });
@@ -65,7 +67,9 @@ export function createChatFileStore({ dir }) {
       }
       if (!size) { await fs.promises.rm(tmp, { force: true }); throw new ChatFileError(400, 'That file is empty.'); }
       await fs.promises.rename(tmp, fileOf(id));
-      return { id, size, head };
+      const sha256 = hash.digest('hex');
+      if (blobs) await blobs.adopt(fileOf(id), sha256); // the same file sent before (or on a shelf) is kept once
+      return { id, size, head, sha256 };
     },
     async remove(id) { await fs.promises.rm(fileOf(id), { force: true }); },
     async read(id) {

@@ -30,7 +30,7 @@ export function sniffImage(head) {
   return null;
 }
 
-export function createLibraryStore({ dir }) {
+export function createLibraryStore({ dir, blobs = null }) {
   const userDir = (userId) => path.join(dir, String(Number(userId)));
   const fileOf = (userId, id) => path.join(userDir(userId), `${id}.book`);
   const coverOf = (userId, id) => path.join(userDir(userId), `${id}.cover`);
@@ -59,7 +59,18 @@ export function createLibraryStore({ dir }) {
 
   return {
     receive,
-    async keep(tmp, userId, id, { cover = false } = {}) { await fs.promises.rename(tmp, cover ? coverOf(userId, id) : fileOf(userId, id)); },
+    // sha: the file's SHA-256, so an identical file anywhere on the server is kept only once.
+    async keep(tmp, userId, id, { cover = false, sha = null } = {}) {
+      const to = cover ? coverOf(userId, id) : fileOf(userId, id);
+      await fs.promises.rename(tmp, to);
+      if (blobs && sha) await blobs.adopt(to, sha);
+    },
+    // Put a file already on the server (e.g. sent in chat) on a shelf: the same stored copy, not a new one.
+    async keepShared(from, userId, id, { cover = false } = {}) {
+      await fs.promises.mkdir(userDir(userId), { recursive: true });
+      const to = cover ? coverOf(userId, id) : fileOf(userId, id);
+      if (blobs) await blobs.share(from, to); else await fs.promises.copyFile(from, to);
+    },
     async discard(tmp) { await fs.promises.rm(tmp, { force: true }); },
     async remove(userId, id) {
       await fs.promises.rm(fileOf(userId, id), { force: true });

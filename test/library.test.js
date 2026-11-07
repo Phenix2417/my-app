@@ -162,3 +162,45 @@ test("notes in a person's own Bible reach friends, in their copy when they have 
   seen = (await json('GET', '/api/friends/notes?book=john&chapter=1', dan)).data.notes;
   assert.deepEqual(seen.map((n) => [n.body, n.version]).sort(), [['esv note', danEsv.id], ['web note', 'web']]);
 });
+
+test('each file is stored once: chat files, forwards and shelf books share one copy', async () => {
+  const fs = await import('node:fs'), os = await import('node:os'), path = await import('node:path');
+  const { openDb } = await import('../server/db.js');
+  const { createServer } = await import('../server/app.js');
+  const { createChatFileStore } = await import('../server/chatfiles.js');
+  const { createLibraryStore } = await import('../server/library.js');
+  const { createBlobStore } = await import('../server/blobs.js');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'blobs-'));
+  const blobs = createBlobStore({ dir: path.join(root, 'blobs') });
+  const db = openDb(':memory:');
+  const srv = createServer(db, { chatFiles: createChatFileStore({ dir: path.join(root, 'chat'), blobs }), library: createLibraryStore({ dir: path.join(root, 'lib'), blobs }) });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${srv.address().port}`;
+  const json = async (method, p, token, body, raw) => (await fetch(base + p, { method, headers: { ...(raw ? {} : { 'Content-Type': 'application/json' }), ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: raw || (body && JSON.stringify(body)) })).json();
+  const a = await json('POST', '/api/register', null, { username: 'blob_a', password: 'password1' });
+  const b = await json('POST', '/api/register', null, { username: 'blob_b', password: 'password1' });
+  const epub = Buffer.concat([Buffer.from('PK\u0003\u0004'), Buffer.alloc(26), Buffer.from('mimetypeapplication/epub+zip'), Buffer.alloc(5000, 1)]);
+  // The same book sent twice in chat, by two people: one copy on disk.
+  const f1 = (await json('POST', '/api/chat-files?name=a.epub', a.token, null, epub)).file;
+  const f2 = (await json('POST', '/api/chat-files?name=b.epub', b.token, null, epub)).file;
+  const chatPath = (id) => path.join(root, 'chat', id.slice(0, 2), id);
+  const ino = (p) => fs.statSync(p).ino;
+  assert.equal(ino(chatPath(f1.id)), ino(chatPath(f2.id)));
+  // Put on a shelf from chat: the same copy again, and only once per shelf.
+  const { book } = await json('POST', '/api/library/from-chat', b.token, { file: f1.id });
+  assert.equal(book.format, 'epub');
+  assert.equal(ino(path.join(root, 'lib', String(b.user.id), `${book.id}.book`)), ino(chatPath(f1.id)));
+  assert.equal((await json('POST', '/api/library/from-chat', b.token, { file: f2.id })).duplicate, true);
+  // Uploaded to a shelf directly: still the same copy.
+  const up = (await json('POST', '/api/library?format=epub&title=T', a.token, null, epub)).book;
+  assert.equal(ino(path.join(root, 'lib', String(a.user.id), `${up.id}.book`)), ino(chatPath(f1.id)));
+  assert.equal(fs.readdirSync(path.join(root, 'blobs')).filter((d) => !d.startsWith('.')).length, 1);
+  // The stored copy goes only when nothing links to it any more.
+  assert.equal(await blobs.sweep(), 0);
+  for (const id of [f1.id, f2.id]) fs.rmSync(chatPath(id));
+  await json('DELETE', `/api/library/${book.id}`, b.token);
+  assert.equal(await blobs.sweep(), 0);
+  await json('DELETE', `/api/library/${up.id}`, a.token);
+  assert.equal(await blobs.sweep(), 1);
+  srv.close();
+});

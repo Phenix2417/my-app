@@ -161,6 +161,8 @@ export function openDb(file) {
     kind TEXT NOT NULL, size INTEGER NOT NULL, duration REAL, created_at INTEGER NOT NULL)`);
   // A book's title, author and cover (another chat file), shown on its card: { title, author, cover }.
   if (!db.prepare('PRAGMA table_info(chat_files)').all().some((c) => c.name === 'meta')) db.exec('ALTER TABLE chat_files ADD COLUMN meta TEXT');
+  // Its content's SHA-256 (the same file is stored once, whoever sends it or puts it on a shelf).
+  if (!db.prepare('PRAGMA table_info(chat_files)').all().some((c) => c.name === 'sha256')) db.exec('ALTER TABLE chat_files ADD COLUMN sha256 TEXT');
   for (const t of ['messages', 'chat_group_messages']) {
     if (!db.prepare(`PRAGMA table_info(${t})`).all().some((c) => c.name === 'file')) db.exec(`ALTER TABLE ${t} ADD COLUMN file TEXT`);
   }
