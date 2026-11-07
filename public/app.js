@@ -686,7 +686,7 @@ async function renderReader() {
   enableChapterSwipe(scroller, body, goChapter);
   if (!store.get('seenReadTip', false)) { // the instructions used to sit above the text; show them once instead
     store.set('seenReadTip', true);
-    setTimeout(() => toast('Tip: hold a word or tap a verse number to select. Swipe sideways to change chapter.'), 600);
+    setTimeout(() => toast('Tip: hold a word or tap a verse number to select. Swipe sideways or tap either side to change chapter.'), 600);
   }
   mount(screen);
   reader.mode = 'bible';
@@ -924,12 +924,20 @@ function paint() {
 }
 function setAttr(el, name, val) { if (val) el.setAttribute(name, val); else el.removeAttribute(name); }
 
-// Sideways swipe on the Bible text changes chapter. Ignored while text is selected or being selected.
+// Which side of the page a tap is on: -1 near the left edge, 1 near the right, 0 elsewhere (the outer fifth, at most 100px).
+function sideOfTap(el, x) {
+  const r = el.getBoundingClientRect(), zone = Math.min(r.width * 0.2, 100);
+  return x < r.left + zone ? -1 : x > r.right - zone ? 1 : 0;
+}
+// Sideways swipe on the Bible text (or a book's) changes chapter, and so does a tap near either side of the page —
+// left for the one before, right for the next. Ignored while text is selected or being selected. A side tap waits a
+// moment, so a double tap there (selecting a verse by its number) isn't taken for turning the page.
 function enableChapterSwipe(el, content, onSwipe) {
-  let g = null;
+  let g = null, pendingTurn = null;
   el.addEventListener('pointerdown', (e) => {
+    clearTimeout(pendingTurn); pendingTurn = null;
     if ((e.pointerType === 'mouse' && e.button !== 0) || state.selection || e.target.closest('button, .handle')) return;
-    g = { x: e.clientX, y: e.clientY, id: e.pointerId, dx: 0, horiz: null };
+    g = { x: e.clientX, y: e.clientY, id: e.pointerId, dx: 0, horiz: null, t: Date.now() };
   });
   el.addEventListener('pointermove', (e) => {
     if (!g || e.pointerId !== g.id) return;
@@ -941,13 +949,18 @@ function enableChapterSwipe(el, content, onSwipe) {
     content.style.transition = 'none';
     content.style.transform = `translateX(${dx * 0.5}px)`;
   });
-  const end = () => {
+  const end = (e) => {
     if (!g) return;
-    const { dx, horiz } = g;
+    const { dx, horiz, x, y, t } = g;
     g = null;
     content.style.transition = 'transform .18s ease';
     content.style.transform = '';
-    if (horiz && Math.abs(dx) > 80) onSwipe(dx < 0 ? 1 : -1);
+    if (horiz && Math.abs(dx) > 80) { onSwipe(dx < 0 ? 1 : -1); return; }
+    // A tap (short, hardly moved) near a side, not on a link, picture or button.
+    if (e.type !== 'pointerup' || horiz || Date.now() - t > 350 || Math.hypot(e.clientX - x, e.clientY - y) > 10 || state.selection) return;
+    if (e.target.closest('a, button, input, textarea, img, .bk-link, .handle')) return;
+    const side = sideOfTap(el, e.clientX);
+    if (side) pendingTurn = setTimeout(() => { pendingTurn = null; if (!state.selection) onSwipe(side); }, 260);
   };
   el.addEventListener('pointerup', end);
   el.addEventListener('pointercancel', end);
@@ -5371,6 +5384,7 @@ async function renderBookReader() {
   }, { passive: true });
   scroller.addEventListener('click', (e) => {
     if (body.contains(e.target) || e.target.closest('button, a, .bk-link')) return; // taps on the text are handled with the selection
+    if (sideOfTap(scroller, e.clientX)) return; // a tap near a side turns the page instead
     const show = document.body.classList.contains('bars-hidden');
     setBars(show);
     if (!show) { sizePanel.hidden = true; sizeBtn.setAttribute('aria-expanded', 'false'); }

@@ -37,7 +37,7 @@ const ZH = {
   "Couldn't find where this was quoted.": '找不到引用的位置。',
   // Read
   'This is the last chapter of the Bible.': '这是圣经的最后一章。', 'This is the first chapter of the Bible.': '这是圣经的第一章。',
-  'Tip: hold a word or tap a verse number to select. Swipe sideways to change chapter.': '提示：按住一个词或点经节号来选择文字，左右滑动换章。',
+  'Tip: hold a word or tap a verse number to select. Swipe sideways or tap either side to change chapter.': '提示：按住一个词或点经节号来选择文字，左右滑动或点屏幕两侧换章。',
   "Couldn't load this chapter. Check your connection and try again.": '无法载入这一章，请检查网络连接后再试。',
   "Couldn't load this chapter.": '无法载入这一章。', 'Selection start': '选择起点', 'Selection end': '选择终点',
   'Dictionary counts': '词典数量标记', Translate: '翻译', Original: '原文', 'Try again': '重试', 'Open as ebook': '作为电子书打开', 'Open as Bible': '作为圣经打开', 'Change cover': '更换封面', 'Pictures in the book': '书中的图片', 'Pages of the book': '书的页面', 'A photo from your phone': '手机里的照片', 'No pictures in this book.': '这本书里没有图片。', 'No pages to use.': '没有可用的页面。', Page: '页', 'Cover changed': '封面已更换', "That picture couldn't be used.": '这张图片无法使用。', Messages: '消息', Chat: '聊天', 'Search friends or groups': '搜索好友或群组', All: '全部', Private: '私聊', Groups: '群聊', Group: '群',
