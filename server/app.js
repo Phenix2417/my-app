@@ -311,7 +311,8 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
     return g;
   }
   const groupOut = (g) => ({ id: g.id, name: g.name, members: stmt.members.all(g.id).map((u) => userOut(u.id, u.username, u.display_name)) });
-  const videoLinks = new Map(); // b23.tv code -> bilibili.com address
+  const videoLinks = new Map(); // short link -> where it leads
+  const weiboCards = new Map(); // 微博 post id -> card
   function acceptedFriend(me, id) {
     const other = stmt.userById.get(Number(id));
     const f = other && stmt.friendship.get(Math.min(me, other.id), Math.max(me, other.id));
@@ -688,8 +689,8 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
     // An app's short link (b23.tv, vm./vt.tiktok.com, tiktok.com/t/, v.douyin.com, fb.watch, facebook.com/share/v|r) → where it leads. Only those hosts are
     // asked, only their redirects are followed (to the same sites), and only the address is returned.
     ['GET', /^\/api\/video-link$/, async ({ query }) => {
-      const SHORT = /^https:\/\/(b23\.tv|vm\.tiktok\.com|vt\.tiktok\.com|www\.tiktok\.com\/t|v\.douyin\.com|fb\.watch|www\.facebook\.com\/share\/[vr])\/[\w-]{4,30}\/?$/;
-      const DEST = /^https:\/\/([\w-]+\.)*(bilibili\.com|b23\.tv|tiktok\.com|douyin\.com|iesdouyin\.com|facebook\.com)\//;
+      const SHORT = /^https:\/\/(b23\.tv|vm\.tiktok\.com|vt\.tiktok\.com|www\.tiktok\.com\/t|v\.douyin\.com|fb\.watch|www\.facebook\.com\/share\/[vr]|t\.cn)\/[\w-]{4,30}\/?$/;
+      const DEST = /^https:\/\/([\w-]+\.)*(bilibili\.com|b23\.tv|tiktok\.com|douyin\.com|iesdouyin\.com|facebook\.com|weibo\.com|weibo\.cn)\//;
       let url = String(query.get('url') || (query.get('b23') ? `https://b23.tv/${query.get('b23')}` : ''));
       if (!SHORT.test(url)) throw new HttpError(400, 'Invalid link');
       if (videoLinks.has(url)) return { url: videoLinks.get(url) };
@@ -710,6 +711,45 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
       videoLinks.set(start, clean); if (videoLinks.size > 2000) videoLinks.delete(videoLinks.keys().next().value);
       return { url: clean };
     }, true],
+    // A 微博 post as a card: author, text, a picture or video cover (pictures come through /api/weibo-image). From
+    // m.weibo.cn's public post data; Weibo can't be shown in a frame. Kept for a while.
+    ['GET', /^\/api\/weibo\/(\w{6,20}|1034:\d{6,25})$/, async ({ params: [id] }) => {
+      if (weiboCards.has(id)) return weiboCards.get(id);
+      const headers = { 'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148', Referer: 'https://m.weibo.cn/', 'X-Requested-With': 'XMLHttpRequest', Accept: 'application/json' };
+      const get = async (url) => { try { const r = await fetch(url, { headers, signal: AbortSignal.timeout(8000) }); return r.ok ? await r.json() : null; } catch { return null; } };
+      const img = (u) => (/^https?:\/\/[\w.-]+\.sinaimg\.cn\//.test(u || '') ? `/api/weibo-image?url=${encodeURIComponent(u.replace(/^http:/, 'https:'))}` : null);
+      let card = null;
+      if (/^1034:/.test(id)) {
+        const d = await get(`https://h5.video.weibo.com/api/component?page=${encodeURIComponent(`/show/${id}`)}`);
+        const v = d?.data?.Component_Play_Playinfo;
+        if (v) card = { author: v.author || '', text: String(v.title || v.text || '').replace(/<[^>]+>/g, '').trim().slice(0, 500), picture: img(v.cover_image && (v.cover_image.startsWith('//') ? `https:${v.cover_image}` : v.cover_image)), video: true, url: `https://weibo.com/tv/show/${id}` };
+      } else {
+        const d = await get(`https://m.weibo.cn/statuses/show?id=${id}`);
+        const p = d?.ok === 1 ? d.data : null;
+        if (p) {
+          const text = String(p.text || '').replace(/<br\s*\/?>/g, '\n').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').trim();
+          const video = p.page_info?.type === 'video';
+          card = { author: p.user?.screen_name || '', avatar: img(p.user?.profile_image_url), text: text.slice(0, 500),
+            picture: img(video ? p.page_info?.page_pic?.url : p.pics?.[0]?.large?.url || p.pics?.[0]?.url), pictures: (p.pics || []).length, video,
+            url: `https://m.weibo.cn/status/${p.bid || p.id || id}` };
+        }
+      }
+      if (!card) throw new HttpError(404, 'Weibo post not available');
+      weiboCards.set(id, card); if (weiboCards.size > 1000) weiboCards.delete(weiboCards.keys().next().value);
+      return card;
+    }, true],
+    // A 微博 picture (sinaimg.cn only), passed through with the Referer Weibo's image servers need.
+    ['GET', /^\/api\/weibo-image$/, async ({ query }) => {
+      const url = String(query.get('url') || '');
+      if (!/^https:\/\/[\w.-]+\.sinaimg\.cn\/[\w./%-]+$/.test(url)) throw new HttpError(400, 'Invalid picture');
+      let res;
+      try { res = await fetch(url, { headers: { Referer: 'https://weibo.com/' }, signal: AbortSignal.timeout(10000) }); } catch { throw new HttpError(503, "Couldn't load the picture."); }
+      const type = res.headers.get('content-type') || '';
+      if (!res.ok || !/^image\/(jpeg|png|gif|webp)/.test(type)) throw new HttpError(404, 'No picture');
+      const body = Buffer.from(await res.arrayBuffer());
+      if (body.length > 8 * 1024 * 1024) throw new HttpError(413, 'Picture too large');
+      return { status: 200, body, headers: { 'Content-Type': type, 'Cache-Control': 'private, max-age=86400' } };
+    }, false], // loaded by <img>, which sends no sign-in; only sinaimg.cn pictures are passed through
     // All conversations, newest first: friends (private chats) and groups, with the last message and unread count.
     ['GET', /^\/api\/chats$/, ({ me }) => {
       const f = friendsPayload(me.id);

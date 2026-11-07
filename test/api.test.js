@@ -239,3 +239,21 @@ test('app short links are followed only to the video sites', async () => {
     assert.equal((await get('https://example.com/abc123')).status, 400); // not a short-link host
   } finally { globalThis.fetch = real; }
 });
+
+test('微博 posts come back as cards, with pictures passed through from sinaimg.cn only', async () => {
+  const u = (await api('POST', '/api/register', { body: { username: 'weibo_user', password: 'password1' } })).data;
+  const real = globalThis.fetch;
+  globalThis.fetch = (url, opts) => {
+    if (String(url).startsWith('https://m.weibo.cn/statuses/show?id=NrXyZ12ab')) return Promise.resolve(Response.json({ ok: 1, data: { bid: 'NrXyZ12ab', text: '今天读了诗篇23篇<br/>很受激励 &amp; 感恩', user: { screen_name: '某弟兄', profile_image_url: 'https://tvax1.sinaimg.cn/crop/a.jpg' }, pics: [{ large: { url: 'https://wx1.sinaimg.cn/large/b.jpg' } }, {}] } }));
+    if (String(url).startsWith('https://wx1.sinaimg.cn/')) return Promise.resolve(new Response(new Uint8Array([0xff, 0xd8, 0xff]), { headers: { 'content-type': 'image/jpeg' } }));
+    return real(url, opts);
+  };
+  try {
+    const c = (await api('GET', '/api/weibo/NrXyZ12ab', { token: u.token })).data;
+    assert.deepEqual([c.author, c.text, c.pictures, c.url], ['某弟兄', '今天读了诗篇23篇\n很受激励 & 感恩', 2, 'https://m.weibo.cn/status/NrXyZ12ab']);
+    assert.match(c.picture, /^\/api\/weibo-image\?url=https%3A%2F%2Fwx1\.sinaimg\.cn/);
+    const pic = await real(base + c.picture);
+    assert.deepEqual([pic.status, pic.headers.get('content-type')], [200, 'image/jpeg']);
+    assert.equal((await real(`${base}/api/weibo-image?url=${encodeURIComponent('https://evil.example/a.jpg')}`)).status, 400);
+  } finally { globalThis.fetch = real; }
+});

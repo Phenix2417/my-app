@@ -83,3 +83,12 @@ test('Facebook: watch, page videos, video.php, reels, live, mobile and web hosts
   assert.equal(videoOf('https://www.facebook.com/somepage'), null);
   assert.match(embedUrl(videoOf('https://www.facebook.com/watch/?v=1234567890123456')), /facebook\.com\/plugins\/video\.php\?href=https%3A%2F%2Fwww\.facebook\.com%2Fwatch%2F%3Fv%3D1234567890123456/);
 });
+
+test('微博: post, status, detail and video links, and t.cn short links', () => {
+  for (const [u, want] of [['https://weibo.com/1234567890/NrXyZ12ab', 'NrXyZ12ab'], ['https://m.weibo.cn/status/NrXyZ12ab', 'NrXyZ12ab'], ['https://m.weibo.cn/detail/4950000000000001', '4950000000000001'],
+    ['https://weibo.com/detail/4950000000000001?from=share', '4950000000000001'], ['https://weibo.cn/status/NrXyZ12ab', 'NrXyZ12ab'], ['weibo.com/1234567890/NrXyZ12ab?type=comment', 'NrXyZ12ab']])
+    assert.deepEqual([videoOf(u).kind, videoOf(u).id], ['weibo', want], u);
+  for (const u of ['https://weibo.com/tv/show/1034:4950000000000002', 'https://video.weibo.com/show?fid=1034:4950000000000002']) assert.deepEqual([videoOf(u).id, videoOf(u).video], ['1034:4950000000000002', true], u);
+  assert.equal(videoOf('http://t.cn/A6abcDEF').kind, 'short');
+  assert.equal(videoOf('https://weibo.com/u/1234567890'), null);
+});

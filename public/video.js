@@ -2,7 +2,7 @@
 // (desktop web, mobile web, the mobile app's Share button, a TV/embed link…); all of them map to one player.
 
 // Links in text: with a scheme, or bare (youtu.be/…, www.youtube.com/…, b23.tv/…) as people often type or paste them.
-export const LINK_RE = /(?:https?:\/\/|\b(?=(?:www\.|m\.|music\.|mobile\.|vm\.|vt\.|v\.|web\.|mbasic\.)?(?:youtube\.com|youtu\.be|youtube-nocookie\.com|vimeo\.com|player\.vimeo\.com|bilibili\.com|b23\.tv|x\.com|twitter\.com|instagram\.com|instagr\.am|tiktok\.com|douyin\.com|iesdouyin\.com|facebook\.com|fb\.watch|fb\.com)\/))[^\s<>"'\u3000-\u303f\u3400-\u9fff\uff00-\uffef]+/gi; // a link ends at a space or Chinese text/punctuation
+export const LINK_RE = /(?:https?:\/\/|\b(?=(?:www\.|m\.|music\.|mobile\.|vm\.|vt\.|v\.|web\.|mbasic\.)?(?:youtube\.com|youtu\.be|youtube-nocookie\.com|vimeo\.com|player\.vimeo\.com|bilibili\.com|b23\.tv|x\.com|twitter\.com|instagram\.com|instagr\.am|tiktok\.com|douyin\.com|iesdouyin\.com|facebook\.com|fb\.watch|fb\.com|weibo\.com|weibo\.cn|t\.cn)\/))[^\s<>"'\u3000-\u303f\u3400-\u9fff\uff00-\uffef]+/gi; // a link ends at a space or Chinese text/punctuation
 
 // "1h2m3s", "90s", "90", "1:30" → seconds.
 export function seconds(t) {
@@ -95,6 +95,18 @@ export function videoOf(raw) {
     if ((m = path.match(/\/videos\/(?:[^/]+\/)?(\d{6,25})/))) return { kind: 'facebook', id: m[1] };
     return null;
   }
+
+  // 新浪微博: weibo.com/UID/BID, weibo.com/detail/MID, m.weibo.cn/status|detail/ID, weibo.cn/status/ID, video posts
+  // (weibo.com/tv/show/1034:…, video.weibo.com/show?fid=1034:…), and t.cn short links (followed by the server).
+  // Weibo doesn't allow its pages in frames, so these show as a card (text, picture) made by the server.
+  if (/(^|\.)weibo\.(com|cn)$/.test(host)) {
+    if ((m = path.match(/^\/(?:status|detail)\/(\w{6,20})/))) return { kind: 'weibo', id: m[1] };
+    if ((m = path.match(/^\/\d{5,12}\/(\w{6,20})(?:[/?#]|$)/))) return { kind: 'weibo', id: m[1] };
+    const fid = q.get('fid') || (path.match(/\/tv\/show\/(1034:\d{6,25})/) || [])[1];
+    if (/^1034:\d{6,25}$/.test(fid || '')) return { kind: 'weibo', id: fid, video: true };
+    return null;
+  }
+  if (host === 't.cn' && (m = path.match(/^\/([\w]{4,12})/))) return { kind: 'short', id: m[1], url: `https://t.cn/${m[1]}` };
 
   if (host === 'b23.tv') {
     const code = path.split('/')[1];

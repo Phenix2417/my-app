@@ -814,3 +814,15 @@ span.verse-card-text { display: block; }
 .video-embed.tall { aspect-ratio: 9 / 16; width: min(220px, 55vw); }
 .video-embed.post { aspect-ratio: auto; height: 520px; width: min(340px, 72vw); background: var(--surface); }
 .video-embed.post.insta { height: 600px; }
+/* 微博 post card */
+.weibo-card { width: min(320px, 72vw); }
+.weibo-inner { display: flex; flex-direction: column; gap: 8px; background: var(--bg); color: var(--on-bg); border-radius: 12px; padding: 10px 12px; text-decoration: none; }
+.weibo-head { display: flex; align-items: center; gap: 8px; font-size: 15px; }
+.weibo-avatar { width: 28px; height: 28px; border-radius: 50%; }
+.weibo-brand { margin-left: auto; font-size: 12px; font-weight: 700; color: #e6162d; }
+.weibo-text { margin: 0; font-size: 15px; line-height: 1.5; white-space: pre-wrap; display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; }
+.weibo-pic { position: relative; border-radius: 8px; overflow: hidden; }
+.weibo-pic img { width: 100%; max-height: 360px; object-fit: cover; display: block; }
+.weibo-pic.is-video::after { content: "▶"; position: absolute; inset: 0; display: grid; place-items: center; font-size: 42px; color: #fff; text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+.weibo-count { position: absolute; right: 8px; bottom: 8px; background: rgba(0,0,0,.6); color: #fff; font-size: 12px; border-radius: 10px; padding: 1px 8px; }
+.weibo-open { font-size: 14px; color: var(--primary); font-weight: 600; }
