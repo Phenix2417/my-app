@@ -3504,7 +3504,7 @@ async function renderChatPage() {
   const editBar = h('div', { class: 'chat-attach edit-bar', hidden: true });
   const stopEditing = () => { editing = null; editBar.hidden = true; input.value = ''; input.style.height = ''; showAttach(); };
   // Quoting a message: shown above the box; sent as a first line "> Name: words".
-  let quoting = null, popClosedAt = 0;
+  let quoting = null;
   const quoteBar = h('div', { class: 'chat-attach quote-bar', hidden: true });
   const stopQuoting = () => { quoting = null; quoteBar.hidden = true; quoteBar.replaceChildren(); };
   const plainText = (m) => [m.ref ? `${verseRef(m.ref)} ${m.ref.text || ''}${m.ref.alt?.text ? `\n${m.ref.alt.text}` : ''}` : '', splitQuote(m.body).rest].filter((x) => x.trim()).join('\n');
@@ -3567,10 +3567,9 @@ async function renderChatPage() {
     const pop = h('div', { class: 'msg-pop', role: 'menu', 'aria-label': tr('Message') },
       ...items.map((it) => h('button', { class: 'msg-pop-item', type: 'button', role: 'menuitem', onclick: () => { close(); it.run(); } },
         svg(it.icon), h('span', {}, it.label))));
-    const close = (outside = false) => { pop.remove(); if (outside) popClosedAt = Date.now(); bubble.classList.remove('held'); document.removeEventListener('keydown', onKey); if (closeMenu === closeOutside) closeMenu = () => {}; };
-    const closeOutside = () => close(true);
+    const close = () => { pop.remove(); bubble.classList.remove('held'); document.removeEventListener('keydown', onKey); if (closeMenu === close) closeMenu = () => {}; };
     const onKey = (e) => { if (e.key === 'Escape') close(); };
-    closeMenu = closeOutside;
+    closeMenu = close;
     document.addEventListener('keydown', onKey);
     bubble.classList.add('held');
     document.body.append(pop);
@@ -3585,18 +3584,17 @@ async function renderChatPage() {
     pop.style.setProperty('--arrow-x', `${Math.min(Math.max(px - x, 16), w - 16)}px`);
     pop.querySelector('button')?.focus({ preventScroll: true });
   }
-  // A tap anywhere on a message opens its menu, except on a link, a button or a player (those do their own thing);
-  // a long press opens it anywhere, links and cards included. Right-click does the same with a mouse.
+  // A long press anywhere on a message opens its menu, links and cards included (a tap does what it always did);
+  // right-click does the same with a mouse.
   function messageActions(bubble, m) {
-    const interactive = (t) => t.closest('a, button, iframe, input, video, audio');
     let suppressClick = false;
     bubble.addEventListener('click', (e) => {
-      if (suppressClick) { suppressClick = false; e.preventDefault(); e.stopPropagation(); return; }
-      // (A tap while a menu is open only closes it.)
-      if (interactive(e.target) || Date.now() - popClosedAt < 500 || String(getSelection?.() || '').trim()) return;
-      messageMenu(bubble, m, e.detail ? { x: e.clientX, y: e.clientY } : null); // (detail 0: Enter on a focused message)
+      if (suppressClick) { suppressClick = false; e.preventDefault(); e.stopPropagation(); }
     }, true);
-    bubble.addEventListener('contextmenu', (e) => { e.preventDefault(); messageMenu(bubble, m, { x: e.clientX, y: e.clientY }); });
+    bubble.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      if (!e.pointerType || e.pointerType === 'mouse') messageMenu(bubble, m, { x: e.clientX, y: e.clientY }); // a touch is handled below
+    });
     // After half a second the bubble darkens (and the phone buzzes); the menu opens when the finger lifts, and the
     // click that follows is swallowed, so it neither follows a link nor closes the menu at once.
     bubble.addEventListener('pointerdown', (e) => {
