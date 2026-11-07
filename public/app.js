@@ -3228,6 +3228,19 @@ function videoEmbeds(text) {
   }
   return out;
 }
+// X and Instagram posts say how tall they are: fit the card to them, so it has no blank space below.
+addEventListener('message', (e) => {
+  if (!/^https:\/\/(platform\.twitter\.com|www\.instagram\.com)$/.test(e.origin)) return;
+  const frame = [...document.querySelectorAll('.video-embed.post iframe')].find((f) => f.contentWindow === e.source);
+  if (!frame) return;
+  let d = e.data, height = 0;
+  try { if (typeof d === 'string') d = JSON.parse(d); } catch { return; }
+  const x = d?.['twttr.embed'];
+  if (x?.method === 'twttr.private.resize') height = x.params?.[0]?.height;
+  else if (d?.type === 'MEASURE') height = d.details?.height;
+  if (height > 50 && height < 3000) frame.parentElement.style.height = `${Math.ceil(height)}px`;
+});
+
 function linkified(text) {
   const out = []; let last = 0;
   for (const m of String(text).matchAll(/(?:https?:\/\/|\bwww\.|\b(?:youtu\.be|b23\.tv|vimeo\.com|youtube\.com|bilibili\.com|x\.com|twitter\.com|instagram\.com|tiktok\.com|vm\.tiktok\.com|vt\.tiktok\.com|douyin\.com|v\.douyin\.com)\/)[^\s<>"'\u3000-\u303f\u3400-\u9fff\uff00-\uffef]+/gi)) {
