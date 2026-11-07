@@ -3230,13 +3230,16 @@ function videoEmbeds(text) {
       else if (r.kind === 'card') { box.className = 'weibo-card'; linkCard(box, r); }
       else {
         // A cover over the player, so the app sees a long press on it (a touch inside a frame never reaches the app, and the
-        // phone would show its own text menu). A tap lifts the cover and starts a video playing; touching anywhere
+        // phone would show its own text menu). A tap on a video lifts the cover and starts it playing; touching anywhere
         // else puts the cover back.
         box.className = 'video-embed' + shape(r, link);
         const f = frame(embedUrl(r));
-        const shield = h('div', { class: 'embed-shield', onclick: () => {
+        // A post (X, Instagram, Facebook) opens in its app or site at the first tap, as a tap inside its card would.
+        const post = ['x', 'instagram', 'facebook-post'].includes(r.kind);
+        const shield = h('div', { class: 'embed-shield', role: 'button', 'aria-label': post ? 'Open post' : 'Play', onclick: () => {
+          if (post) { window.open(/^https?:/i.test(link) ? link : `https://${link}`, '_blank', 'noopener'); return; }
           box.classList.add('live');
-          if (!box.dataset.started && !['x', 'instagram', 'facebook-post'].includes(r.kind)) { box.dataset.started = '1'; f.src = autoplayUrl(f.src); }
+          if (!box.dataset.started) { box.dataset.started = '1'; f.src = autoplayUrl(f.src); }
         } });
         box.append(f, shield);
       }
