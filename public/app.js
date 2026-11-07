@@ -615,7 +615,7 @@ function noteEditor(note, { isNew } = {}) {
 }
 
 /* ---------------- Reader ---------------- */
-// mode: 'bible' on the Read page, 'commentary' when the same word selection runs on commentary text.
+// mode: 'bible' on the Bible page, 'commentary' when the same word selection runs on commentary text.
 const reader = { mode: 'bible', words: [], gaps: [], verseEls: [], body: null, handles: null, toolbar: null, chapterData: null };
 const cmp = (a, b) => a.v - b.v || a.w - b.w;
 const inRange = (p, s, e) => cmp(p, s) >= 0 && cmp(p, e) <= 0;
@@ -2028,7 +2028,7 @@ function goBack() {
     });
   });
 }
-// A "Back to …" button on the Read page while we're on a chapter opened from a reference.
+// A "Back to …" button on the Bible page while we're on a chapter opened from a reference.
 function backButton() {
   const from = backStack[backStack.length - 1];
   if (!from) return null;
@@ -3188,7 +3188,7 @@ async function renderNotes() {
         { id: `note-edit-${n.id}`, label: 'Edit note', icon: ICONS.pencil, action: () => noteEditor(n) },
         { id: `note-delete-${n.id}`, label: 'Delete', icon: ICONS.close, action: () => confirmDeleteNote(n, () => renderNotes()) },
       ] }))
-        : [h('p', { class: 'empty' }, 'No notes yet. In Read, hold a word to start a highlight.')]));
+        : [h('p', { class: 'empty' }, 'No notes yet. In the Bible tab, hold a word to start a highlight.')]));
     } else {
       const notes = state.friendsFeed;
       list.replaceChildren(...(notes.length ? notes.map((n) => noteCard(n, { friend: true, onClick: n.versionLabel || n.alt?.label ? () => friendNoteChoice(n) : open(n) }))
@@ -3357,7 +3357,7 @@ function verseCard(v) {
       // Both versions side by side, when this person has the second one too.
       if (known && v.alt && (state.versions || []).some((x) => x.id === v.alt.version)) { state.parallel = v.alt.version; store.set('parallel', state.parallel); }
       goTo({ book: v.book, chapter: v.chapter }, v.start);
-    } }, 'Open in Read →'));
+    } }, 'Open in Bible →'));
 }
 
 // Send a verse (from the reading bubble): to the chat it was picked for, or to one chosen now.
@@ -3951,14 +3951,14 @@ async function renderChatPage() {
         close(); state.shareTarget = chat; await shareVerse(noteVerse(n), n.body);
       } }, h('span', { class: 'note-pick-ref' }, `${verseRef(noteVerse(n))}`), h('span', { class: 'note-pick-quote quote' }, n.quote.slice(0, 120)),
         n.body ? h('span', { class: 'note-pick-body note-body' }, n.body.slice(0, 120)) : null)))
-        : h('p', { class: 'empty-inline' }, 'No notes yet. In Read, hold a word to start a highlight.'),
+        : h('p', { class: 'empty-inline' }, 'No notes yet. In the Bible tab, hold a word to start a highlight.'),
     ], { label: 'Share a note' });
   };
   const shareVerseHere = () => {
     openSheet((close) => [h('h2', {}, 'Share a verse'),
-      h('p', { class: 'confirm-text' }, 'In Read, select the verses, then tap Share to chat in the bubble: they come back to this chat.'),
+      h('p', { class: 'confirm-text' }, 'In the Bible tab, select the verses, then tap Share to chat in the bubble: they come back to this chat.'),
       h('div', { class: 'sheet-actions' }, h('span', { class: 'spacer' }), h('button', { class: 'text-btn', type: 'button', onclick: close }, 'Cancel'),
-        h('button', { class: 'filled-btn', type: 'button', onclick: () => { close(); state.shareTarget = chat; state.tab = 'read'; render(); toast('Select the verses to share'); } }, 'Go to Read'))],
+        h('button', { class: 'filled-btn', type: 'button', onclick: () => { close(); state.shareTarget = chat; state.tab = 'read'; render(); toast('Select the verses to share'); } }, 'Go to Bible'))],
     { label: 'Share a verse' });
   };
   // The + panel under the box (as in WeChat): what can be sent besides words.
@@ -4790,7 +4790,7 @@ function buildNav() {
       clearSelection(); state.tab = tab; render(); window.scrollTo(0, 0); // re-tapping Notes/Books/Friends refreshes
     } },
   h('span', { class: 'icon badge' }, svg(tab === 'friends' ? ICONS.message : ICONS[tab])), label);
-  navEl = h('nav', { class: 'bottom-nav', 'aria-label': 'Main' }, item('read', 'Read'), item('notes', 'Notes'), item('books', 'Shelf'), item('friends', 'Chat'));
+  navEl = h('nav', { class: 'bottom-nav', 'aria-label': 'Main' }, item('read', 'Bible'), item('notes', 'Notes'), item('books', 'Shelf'), item('friends', 'Chat'));
 }
 function updateBadge() {
   const b = navEl?.querySelector('[data-tab="friends"] .badge');
