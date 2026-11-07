@@ -962,3 +962,5 @@ span.verse-card-text { display: block; }
 .chat-bubble.media .file-expiry { padding: 2px 4px 0; color: var(--muted); opacity: 1; text-align: right; }
 .chat-line:not(.mine) .chat-bubble.media .file-expiry { text-align: left; }
 .pdf-page-img { width: 100%; height: auto; display: block; background: #fff; }
+.shelf-uploads { display: flex; flex-direction: column; gap: 6px; margin: 0 0 10px; }
+.sheet-progress { margin: 12px 0 4px; }

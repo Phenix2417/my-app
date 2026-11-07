@@ -3071,7 +3071,12 @@ async function checkBibleEpub(bufPromise, fileName, file = null, repair = null, 
         // Saving takes a while: keep the screen on, and ask for the app to stay open.
         const wake = await navigator.wakeLock?.request('screen').catch(() => null);
         const keepOpen = h('p', { class: 'handle-sub' }, 'Keep the app open until saving finishes.');
-        btn.closest('.sheet-actions')?.before(keepOpen);
+        // Progress over everything being saved: each version's books, then the ebook going on the shelf.
+        const bar = h('span', { class: 'upload-bar' }), track = h('div', { class: 'upload-track sheet-progress' }, bar);
+        const totalBooks = chosen.reduce((n, part) => n + Object.keys(part.data).filter((id) => !repair?.missing || repair.missing.includes(id)).length, 0) || 1;
+        const shelfShare = file ? 0.2 : 0; let savedBooks = 0;
+        const setBar = (p) => { bar.style.width = `${Math.round(Math.min(1, p) * 100)}%`; };
+        btn.closest('.sheet-actions')?.before(track, keepOpen);
         try {
           for (const part of chosen) {
             const version = repair || (await api('POST', '/api/my-versions', { short: part.shortIn.value, name: part.nameIn.value, lang: part.lang, source, year: parseInt(part.yearIn.value, 10) || null })).version;
@@ -3086,12 +3091,17 @@ async function checkBibleEpub(bufPromise, fileName, file = null, repair = null, 
                 const id = ids[next++];
                 await authFetch(`/api/my-versions/${version.id}/${id}`, { method: 'PUT', body: JSON.stringify(part.data[id].map((c) => c || [])) });
                 btn.textContent = tr(`Saving ${version.short} ${++done} / ${ids.length}…`);
+                setBar((++savedBooks / totalBooks) * (1 - shelfShare));
               }
             }));
           }
           // Also keep the ebook on the shelf (unless it's already there) — before the sheet closes, while the screen is
           // kept on, so leaving the app right after can't cut the upload short.
-          if (file) { btn.textContent = tr('Putting it on your shelf…'); await (typeof file === 'function' ? file() : addBooks([{ ...file, data: await file.data }])); }
+          if (file) {
+            btn.textContent = tr('Putting it on your shelf…');
+            await (typeof file === 'function' ? file() : addBooks([{ ...file, data: await file.data }], { onProgress: (p) => setBar(1 - shelfShare + p * shelfShare) }));
+          }
+          setBar(1);
           close();
           await loadVersions();
           if (repair) { chapterCacheClear(repair.id); toast(`${repair.short} repaired`); if (state.tab === 'read') renderReader(); }
@@ -3468,26 +3478,31 @@ setInterval(() => {
   }
 }, 1000);
 const fileLabel = (f) => (f.kind === 'image' ? tr('[Photo]') : f.kind === 'video' ? tr('[Video]') : f.kind === 'audio' ? `${tr('[Voice]')}${f.duration ? ` ${clock(f.duration)}` : ''}` : `${tr('[File]')} ${f.name}`);
-// Send a file to the server (with progress); resolves to { id, name, type, kind, size, duration }. abort() stops it.
-function uploadChatFile(blob, { name, duration, onProgress, extra = {} } = {}) {
+// Send a file (or bytes) to the server, with progress (0–1); resolves to the server's answer. abort() stops it.
+function xhrUpload(url, body, { onProgress, method = 'POST' } = {}) {
   const x = new XMLHttpRequest();
   const promise = new Promise((resolve, reject) => {
-    const q = new URLSearchParams({ name: name || blob.name || 'file', type: blob.type || '', ...(duration ? { duration: String(duration) } : {}), ...extra });
-    x.open('POST', `/api/chat-files?${q}`);
+    x.open(method, url);
     for (const [k, v] of Object.entries(authHeaders())) x.setRequestHeader(k, v);
     x.setRequestHeader('Content-Type', 'application/octet-stream');
     x.upload.onprogress = (e) => { if (e.lengthComputable) onProgress?.(e.loaded / e.total); };
     x.onload = () => {
       let d = {}; try { d = JSON.parse(x.responseText); } catch { /* not JSON */ }
-      if (x.status === 201) return resolve(d.file);
+      if (x.status >= 200 && x.status < 300) return resolve(d);
       if (x.status === 401 && state.auth) signOut(true);
-      reject(new Error(d.error || `Upload failed (${x.status})`));
+      reject(Object.assign(new Error(d.error || `Upload failed (${x.status})`), { status: x.status }));
     };
     x.onerror = () => reject(new OfflineError("You're offline. Try again when connected."));
     x.onabort = () => reject(Object.assign(new Error('Cancelled'), { cancelled: true }));
-    x.send(blob);
+    x.send(body);
   });
   return { promise, abort: () => x.abort() };
+}
+// A file sent to chat; resolves to { id, name, type, kind, size, duration… }.
+function uploadChatFile(blob, { name, duration, onProgress, extra = {} } = {}) {
+  const q = new URLSearchParams({ name: name || blob.name || 'file', type: blob.type || '', ...(duration ? { duration: String(duration) } : {}), ...extra });
+  const job = xhrUpload(`/api/chat-files?${q}`, blob, { onProgress });
+  return { promise: job.promise.then((d) => d.file), abort: job.abort };
 }
 const isEpubFile = (f) => f.type === 'application/epub+zip' || /\.epub$/i.test(f.name || '');
 const isBookFile = (f) => isEpubFile(f) || /\.(pdf|txt)$/i.test(f.name || '') || f.type === 'application/pdf';
@@ -3906,6 +3921,17 @@ async function keepAwakeWhileUploading() {
   if (!chatUploads.length && uploadWake) { uploadWake.release().catch(() => {}); uploadWake = null; }
 }
 addEventListener('beforeunload', (e) => { if (chatUploads.length) { e.preventDefault(); e.returnValue = ''; } });
+// A file being sent, shown (name, progress bar, ✕) wherever its `key` is open: a chat ('friend:3'), or 'shelf'.
+function trackUpload(key, name) {
+  const j = { key, name, cancelled: false, abort: null, bar: h('span', { class: 'upload-bar' }) };
+  j.row = h('div', { class: 'chat-upload' },
+    h('span', { class: 'chat-upload-main' }, h('span', { class: 'file-name' }, name), h('span', { class: 'upload-track' }, j.bar)),
+    h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Cancel', title: 'Cancel', onclick: () => { j.cancelled = true; j.abort?.(); j.remove(); } }, svg(ICONS.close)));
+  j.setProgress = (p) => { j.bar.style.width = `${Math.round(Math.max(0, Math.min(1, p)) * 100)}%`; };
+  j.remove = () => { const i = chatUploads.indexOf(j); if (i >= 0) chatUploads.splice(i, 1); j.row.remove(); keepAwakeWhileUploading(); };
+  chatUploads.push(j); drawUploads(); keepAwakeWhileUploading();
+  return j;
+}
 function drawUploads() {
   const v = uploadsView;
   if (v?.el.isConnected) v.el.replaceChildren(...chatUploads.filter((j) => j.key === v.key).map((j) => j.row));
@@ -3915,12 +3941,7 @@ async function uploadToChat(chat, file, duration = null) {
   if (!file.size) return toast(`${file.name}: ${tr('empty file')}`);
   // A book's file name keeps just its title, author and year (no download-site tags, ISBNs, file codes…).
   if (isBookName(file.name)) file = new File([file], cleanBookName(file.name), { type: file.type });
-  const j = { key: chatKeyOf(chat), name: file.name, cancelled: false, abort: null, bar: h('span', { class: 'upload-bar' }) };
-  j.row = h('div', { class: 'chat-upload' },
-    h('span', { class: 'chat-upload-main' }, h('span', { class: 'file-name' }, file.name), h('span', { class: 'upload-track' }, j.bar)),
-    h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Cancel', title: 'Cancel', onclick: () => { j.cancelled = true; j.abort?.(); remove(); } }, svg(ICONS.close)));
-  const remove = () => { const i = chatUploads.indexOf(j); if (i >= 0) chatUploads.splice(i, 1); j.row.remove(); keepAwakeWhileUploading(); };
-  chatUploads.push(j); drawUploads(); keepAwakeWhileUploading();
+  const j = trackUpload(chatKeyOf(chat), file.name), remove = j.remove;
   await uploadTurn();
   try {
     if (j.cancelled) return;
@@ -3931,7 +3952,7 @@ async function uploadToChat(chat, file, duration = null) {
       catch { /* sent as a plain file */ }
     }
     if (j.cancelled) return;
-    const job = uploadChatFile(file, { name: file.name, duration, extra, onProgress: (p) => { j.bar.style.width = `${Math.round(p * 100)}%`; } });
+    const job = uploadChatFile(file, { name: file.name, duration, extra, onProgress: j.setProgress });
     j.abort = job.abort;
     const f = await job.promise;
     const m = await sendToChat(chat, { file: { id: f.id } });
@@ -4668,9 +4689,13 @@ async function renderLibrary() {
   const status = h('div');
   const input = h('input', { type: 'file', accept: BOOK_ACCEPT, multiple: true, hidden: true, onchange: () => { addBooks([...input.files]); input.value = ''; } });
   const pick = () => input.click();
+  // Books being added (they carry on, and are shown again here, if you leave the shelf).
+  const uploads = h('div', { class: 'chat-uploads shelf-uploads' });
+  uploadsView = { key: 'shelf', el: uploads, onSent: () => {} };
   mount(h('main', { class: 'screen library-page' },
     h('div', { class: 'title-row' }, h('h1', {}, 'Shelf'), moreMenu([{ id: 'side-add-book', label: 'Add a book', icon: ICONS.addBook, action: pick }])),
-    status, grid, input));
+    uploads, status, grid, input));
+  drawUploads();
   const draw = (books, failed) => {
     status.replaceChildren(failed ? h('p', { class: 'error' }, "Couldn't refresh your shelf. Showing the saved list.") : '');
     if (!books?.length) {
@@ -4714,15 +4739,25 @@ async function fingerprint(buf) {
 // The phone's file picker offers files on the phone and in Google Drive, Dropbox, etc.; each is copied into the account.
 // files: File objects, or { name, type, size, bytes } when the file was already read (a phone may not let a file
 // from the cloud be read twice).
-async function addBooks(files) {
-  for (const file of files) {
+async function addBooks(files, { onProgress } = {}) {
+  // Each book gets its row (name, progress, ✕) on the shelf at once; they're added one after another.
+  const jobs = files.map((file) => trackUpload('shelf', cleanBookName(file.name || 'book')));
+  for (const [k, file] of files.entries()) {
+    const j = jobs[k];
+    try { await addOneBook(file, j, onProgress); } finally { j.remove(); }
+  }
+  if (state.tab === 'books') renderLibrary();
+}
+async function addOneBook(file, j, onProgress) {
+  {
+    if (j.cancelled) return;
     const format = formatOf(file);
-    if (!format) { toast(`${file.name}: only EPUB, PDF and text files can be added.`); continue; }
+    if (!format) { toast(`${file.name}: only EPUB, PDF and text files can be added.`); return; }
     const onPhone = file.size > SHELF_MAX; // kept on this phone only
     // Read the file once; everything below uses these bytes.
     let bytes;
     // (A real File has its own bytes() method, so the already-read copy goes under `data`.)
-    try { bytes = file instanceof Blob ? await file.arrayBuffer() : file.data; } catch { toast(`${file.name} couldn't be read. Try choosing it again.`); continue; }
+    try { bytes = file instanceof Blob ? await file.arrayBuffer() : file.data; } catch { toast(`${file.name} couldn't be read. Try choosing it again.`); return; }
     let title = cleanBookTitle(file.name.replace(/\.[^.]+$/, '')) || file.name, author = '', cover = null;
     if (format === 'pdf') { try { const doc = await openPdfBytes(bytes); cover = await pdfPageCover(doc); doc.destroy(); } catch { /* no cover then */ } }
     if (format === 'epub') {
@@ -4730,34 +4765,36 @@ async function addBooks(files) {
         const book = await openEpub(bytes);
         title = cleanBookTitle(book.title || '') || title; author = book.author || '';
         if (book.coverPath) cover = await coverOf(book);
-      } catch (e) { toast(`${file.name} couldn't be opened as an EPUB book (${e.message}).`); continue; }
+      } catch (e) { toast(`${file.name} couldn't be opened as an EPUB book (${e.message}).`); return; }
     }
     if (onPhone) {
       try {
         const sha = await fingerprint(bytes);
         const same = (await localBooks()).find((x) => sha && x.sha256 === sha);
-        if (same) { toast(`“${same.title}” is already on your shelf`); continue; }
+        if (same) { toast(`“${same.title}” is already on your shelf`); return; }
         await addLocalBook({ title, author, format, size: bytes.byteLength, sha256: sha, data: bytes, cover });
         toast(`${tr('Added')} “${title}” — ${tr('over 100 MB, so it stays on this phone only')}`);
       } catch (e) { toast(`${title}: ${tr("couldn't be kept on this phone")} (${e.message})`); }
-      continue;
+      return;
     }
     // Already on the shelf (the same file, whatever its name)? Then don't upload it again.
     try {
       const sha = await fingerprint(bytes);
       const { book: same } = sha ? await api('GET', `/api/library/find?sha=${sha}&size=${bytes.byteLength}`) : { book: null };
-      if (same) { toast(`“${same.title}” is already on your shelf`); continue; }
+      if (same) { toast(`“${same.title}” is already on your shelf`); return; }
     } catch { /* couldn't check: the server still spots a duplicate on upload */ }
     toast(`Adding “${title}”…`);
     try {
       const q = new URLSearchParams({ format, title, author });
-      const { book, duplicate } = await (await authFetch(`/api/library?${q}`, { method: 'POST', body: bytes })).json();
-      if (duplicate) { toast(`“${book.title}” is already on your shelf`); continue; } // same file, whatever its name
+      const job = xhrUpload(`/api/library?${q}`, bytes, { onProgress: (p) => { j.setProgress(p); onProgress?.(p); } });
+      j.abort = job.abort;
+      if (j.cancelled) { job.abort(); return; }
+      const { book, duplicate } = await job.promise;
+      if (duplicate) { toast(`“${book.title}” is already on your shelf`); return; } // same file, whatever its name
       if (cover) await authFetch(`/api/library/${book.id}/cover`, { method: 'PUT', body: cover }).catch((e) => console.warn('cover not saved', e));
       toast(`Added “${book.title}”`);
-    } catch (e) { toast(e instanceof OfflineError ? "You're offline. Try again when you're connected." : `${title}: ${e.message}`); }
+    } catch (e) { if (!e.cancelled) toast(e instanceof OfflineError ? "You're offline. Try again when you're connected." : `${title}: ${e.message}`); }
   }
-  if (state.tab === 'books') renderLibrary();
 }
 // The cover for the shelf: a small JPEG, or the book's own picture when the phone can't shrink it.
 async function coverOf(book) {
