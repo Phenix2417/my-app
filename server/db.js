@@ -155,6 +155,13 @@ export function openDb(file) {
     if (!cols.includes('deleted_at')) db.exec(`ALTER TABLE ${t} ADD COLUMN deleted_at INTEGER`);
   }
   if (!db.prepare('PRAGMA table_info(messages)').all().some((c) => c.name === 'ref')) db.exec('ALTER TABLE messages ADD COLUMN ref TEXT');
+  // Files sent in chat, and the one a message carries ({ id, name, type, kind, size, duration }).
+  db.exec(`CREATE TABLE IF NOT EXISTS chat_files (
+    id TEXT PRIMARY KEY, user_id INTEGER REFERENCES users(id) ON DELETE SET NULL, name TEXT NOT NULL, type TEXT NOT NULL,
+    kind TEXT NOT NULL, size INTEGER NOT NULL, duration REAL, created_at INTEGER NOT NULL)`);
+  for (const t of ['messages', 'chat_group_messages']) {
+    if (!db.prepare(`PRAGMA table_info(${t})`).all().some((c) => c.name === 'file')) db.exec(`ALTER TABLE ${t} ADD COLUMN file TEXT`);
+  }
   if (!db.prepare('PRAGMA table_info(user_versions)').all().some((c) => c.name === 'year')) db.exec('ALTER TABLE user_versions ADD COLUMN year INTEGER');
   if (!db.prepare('PRAGMA table_info(user_versions)').all().some((c) => c.name === 'source_sha')) db.exec('ALTER TABLE user_versions ADD COLUMN source_sha TEXT');
   // A note made while reading two versions side by side: the second version and its words, kept apart from the first's.

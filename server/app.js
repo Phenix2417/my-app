@@ -10,6 +10,7 @@ import { BibleDictError, MARK_SKIP } from './bibledict.js';
 import { WikiError } from './wiki.js';
 import { CARD_SITES } from '../public/video.js';
 import { VERSIONS, VERSION_IDS, VersionError } from './versions.js';
+import { ChatFileError, MAX_CHAT_FILE_BYTES, MAX_CHAT_BYTES_PER_USER, sniffChatFile } from './chatfiles.js';
 import { LibraryError, BOOK_TYPES, MAX_BOOK_BYTES, MAX_LIBRARY_BYTES, MAX_COVER_BYTES, sniffFormat, sniffImage } from './library.js';
 
 const COLORS = new Set(['yellow', 'green', 'blue', 'pink', 'purple']);
@@ -77,7 +78,7 @@ export function seedTestUsers(db, users) {
   return created;
 }
 
-export function createApp(db, { publicDir, trustProxy = false, commentary = null, pronounce = null, phonetics = null, translate = null, bibleDict = null, library = null, freeDict = null, versions = null, wiki = null, encyclopedias = null } = {}) {
+export function createApp(db, { publicDir, trustProxy = false, commentary = null, pronounce = null, phonetics = null, translate = null, bibleDict = null, library = null, freeDict = null, versions = null, wiki = null, encyclopedias = null, chatFiles = null } = {}) {
   const q = (sql) => db.prepare(sql);
   const stmt = {
     userByName: q('SELECT * FROM users WHERE username = ?'),
@@ -111,9 +112,12 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
     groupMessageById: q('SELECT * FROM chat_group_messages WHERE id = ?'),
     editMessage: q('UPDATE messages SET body = ?, edited_at = ? WHERE id = ?'),
     editGroupMessage: q('UPDATE chat_group_messages SET body = ?, edited_at = ? WHERE id = ?'),
-    deleteMessage: q("UPDATE messages SET deleted_at = ?, body = '', ref = NULL WHERE id = ?"),
-    deleteGroupMessage: q("UPDATE chat_group_messages SET deleted_at = ?, body = '', ref = NULL WHERE id = ?"),
-    addMessage: q('INSERT INTO messages (from_id, to_id, body, created_at, ref) VALUES (?, ?, ?, ?, ?)'),
+    deleteMessage: q("UPDATE messages SET deleted_at = ?, body = '', ref = NULL, file = NULL WHERE id = ?"),
+    deleteGroupMessage: q("UPDATE chat_group_messages SET deleted_at = ?, body = '', ref = NULL, file = NULL WHERE id = ?"),
+    addMessage: q('INSERT INTO messages (from_id, to_id, body, created_at, ref, file) VALUES (?, ?, ?, ?, ?, ?)'),
+    addChatFile: q('INSERT INTO chat_files (id, user_id, name, type, kind, size, duration, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'),
+    chatFile: q('SELECT * FROM chat_files WHERE id = ?'),
+    chatBytes: q('SELECT COALESCE(SUM(size), 0) AS total FROM chat_files WHERE user_id = ?'),
     lastMessage: q(`SELECT * FROM messages WHERE (from_id = :me AND to_id = :other) OR (from_id = :other AND to_id = :me) ORDER BY id DESC LIMIT 1`),
     // Group chats
     addGroup: q('INSERT INTO chat_groups (name, created_by, created_at) VALUES (?, ?, ?)'),
@@ -132,7 +136,7 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
       WHERE gm.group_id = ? ORDER BY gm.id DESC LIMIT 1`),
     groupMessages: q(`SELECT * FROM (SELECT gm.*, u.username, u.display_name FROM chat_group_messages gm LEFT JOIN users u ON u.id = gm.from_id
       WHERE gm.group_id = ? ORDER BY gm.id DESC LIMIT 200) ORDER BY id`),
-    addGroupMessage: q('INSERT INTO chat_group_messages (group_id, from_id, body, ref, created_at) VALUES (?, ?, ?, ?, ?)'),
+    addGroupMessage: q('INSERT INTO chat_group_messages (group_id, from_id, body, ref, created_at, file) VALUES (?, ?, ?, ?, ?, ?)'),
     markGroupRead: q('UPDATE chat_group_members SET last_read = MAX(last_read, ?) WHERE group_id = ? AND user_id = ?'),
     deleteGroupIfEmpty: q('DELETE FROM chat_groups WHERE id = ? AND NOT EXISTS (SELECT 1 FROM chat_group_members WHERE group_id = ?)'),
     share: q('INSERT OR IGNORE INTO shares (owner_id, viewer_id) VALUES (?, ?)'),
@@ -311,7 +315,16 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
   const messageOut = (m, me) => ({ id: m.id, mine: m.from_id === me, body: m.deleted_at ? '' : m.body, createdAt: m.created_at,
     ...(m.deleted_at ? { deleted: true } : m.edited_at ? { editedAt: m.edited_at } : {}),
     ...(m.ref && !m.deleted_at ? { ref: JSON.parse(m.ref) } : {}),
+    ...(m.file && !m.deleted_at ? { file: JSON.parse(m.file) } : {}),
     ...(m.username !== undefined && m.from_id !== me ? { from: m.username ? userOut(m.from_id, m.username, m.display_name) : null } : {}) });
+  // A file sent with a message: one uploaded to chat (by anyone: forwarding sends the same file on). Its id is its key.
+  const fileOut = (f) => ({ id: f.id, name: f.name, type: f.type, kind: f.kind, size: f.size, ...(f.duration ? { duration: f.duration } : {}) });
+  function cleanFile(file) {
+    if (!file) return null;
+    const f = /^[0-9a-f]{32}$/.test(file.id || '') && stmt.chatFile.get(file.id);
+    if (!f) throw new HttpError(400, 'That file is no longer available');
+    return fileOut(f);
+  }
   const messageText = (body) => String(body ?? '').replace(/\r\n?/g, '\n').trim().slice(0, 2000);
   // A message this person sent, still in a conversation they're in.
   function ownMessage(kind, id, me) {
@@ -699,10 +712,10 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
     }, true],
     ['POST', /^\/api\/messages\/(\d+)$/, ({ me, params: [id], body }) => {
       const other = acceptedFriend(me.id, id);
-      const ref = cleanRef(body.ref), text = messageText(body.body) || (ref ? ' ' : '');
+      const ref = cleanRef(body.ref), file = cleanFile(body.file), text = messageText(body.body) || (ref || file ? ' ' : '');
       if (!text) throw new HttpError(400, 'Write a message first');
-      const at = now(), r = stmt.addMessage.run(me.id, other.id, text, at, ref ? JSON.stringify(ref) : null);
-      return { status: 201, body: { message: { id: Number(r.lastInsertRowid), mine: true, body: text, createdAt: at, ...(ref ? { ref } : {}) } } };
+      const at = now(), r = stmt.addMessage.run(me.id, other.id, text, at, ref ? JSON.stringify(ref) : null, file ? JSON.stringify(file) : null);
+      return { status: 201, body: { message: { id: Number(r.lastInsertRowid), mine: true, body: text, createdAt: at, ...(ref ? { ref } : {}), ...(file ? { file } : {}) } } };
     }, true],
 
     // An app's short link (b23.tv, vm./vt.tiktok.com, tiktok.com/t/, v.douyin.com, fb.watch, facebook.com/share/v|r) → where it leads. Only those hosts are
@@ -849,13 +862,37 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
       if (body.length > 8 * 1024 * 1024) throw new HttpError(413, 'Picture too large');
       return { status: 200, body, headers: { 'Content-Type': type, 'Cache-Control': 'private, max-age=86400' } };
     }, false], // loaded by <img>, which sends no sign-in; only sinaimg.cn pictures are passed through
+    // A file to send in chat: the body is the file itself; name, type (the phone's guess) and, for recordings, duration
+    // (seconds) come in the address. What it is comes from its first bytes.
+    ['POST', /^\/api\/chat-files$/, async ({ me, req, query }) => {
+      if (!chatFiles) throw new HttpError(503, 'Sending files is not set up on this server');
+      const room = Math.min(MAX_CHAT_FILE_BYTES, MAX_CHAT_BYTES_PER_USER - stmt.chatBytes.get(me.id).total);
+      if (room <= 0) throw new HttpError(413, "You've sent too many files. Delete some messages with files to make room.");
+      const up = await chatFiles.receive(req, room).catch((e) => { if (e instanceof ChatFileError) throw new HttpError(e.status, e.message); throw e; });
+      const { kind, type } = sniffChatFile(up.head, String(query.get('type') || ''));
+      const name = cleanText(query.get('name'), 120).replace(/[\\/\u0000-\u001f]/g, '_') || 'file';
+      const d = Number(query.get('duration'));
+      const duration = (kind === 'audio' || kind === 'video') && d > 0 && d < 86400 ? Math.round(d * 10) / 10 : null;
+      stmt.addChatFile.run(up.id, me.id, name, type, kind, up.size, duration, now());
+      return { status: 201, body: { file: fileOut(stmt.chatFile.get(up.id)) } };
+    }, true, { raw: true }],
+    // A chat file, by its id (shown by <img>/<video>/<audio>, which send no sign-in). Pictures, videos and sound play in
+    // the page; anything else is only ever downloaded. Ranges are served, so videos can seek (and play at all on iPhones).
+    ['GET', /^\/api\/chat-file\/([0-9a-f]{32})$/, async ({ params: [id] }) => {
+      const f = stmt.chatFile.get(id), disk = f && chatFiles && await chatFiles.read(id);
+      if (!disk) throw new HttpError(404, 'File not found');
+      const show = f.kind !== 'file';
+      return { file: disk.file, size: disk.size, ranges: true, headers: { 'Content-Type': f.type, 'Cache-Control': 'private, max-age=31536000, immutable',
+        'Content-Disposition': `${show ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(f.name)}`,
+        'Content-Security-Policy': "sandbox; default-src 'none'" } };
+    }, false],
     // Edit or delete a message you sent (in a private chat: kind 'dm'; in a group: 'group'). A deleted message stays
     // in the conversation as "deleted"; an edited one is marked "edited".
     ['PUT', /^\/api\/(dm|group)-messages\/(\d+)$/, ({ me, params: [kind, id], body }) => {
       const m = ownMessage(kind, id, me.id);
       if (m.deleted_at) throw new HttpError(400, 'That message was deleted');
       const text = messageText(body.body);
-      if (!text && !m.ref) throw new HttpError(400, 'Write a message first');
+      if (!text && !m.ref && !m.file) throw new HttpError(400, 'Write a message first');
       const at = now();
       (kind === 'dm' ? stmt.editMessage : stmt.editGroupMessage).run(text || ' ', at, m.id);
       return { message: messageOut({ ...m, body: text || ' ', edited_at: at }, me.id) };
@@ -868,7 +905,8 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
     // All conversations, newest first: friends (private chats) and groups, with the last message and unread count.
     ['GET', /^\/api\/chats$/, ({ me }) => {
       const f = friendsPayload(me.id);
-      const preview = (m) => (m ? { body: m.deleted_at ? '' : m.body, deleted: !!m.deleted_at, verse: m.ref && !m.deleted_at ? JSON.parse(m.ref) : null, mine: m.from_id === me.id, at: m.created_at,
+      const preview = (m) => (m ? { body: m.deleted_at ? '' : m.body, deleted: !!m.deleted_at, verse: m.ref && !m.deleted_at ? JSON.parse(m.ref) : null,
+        file: m.file && !m.deleted_at ? (({ kind, name, duration }) => ({ kind, name, duration }))(JSON.parse(m.file)) : null, mine: m.from_id === me.id, at: m.created_at,
         from: m.username && m.from_id !== me.id ? userOut(m.from_id, m.username, m.display_name) : null } : null);
       const chats = [
         ...f.friends.map((u) => ({ kind: 'friend', id: u.id, user: u, name: u.displayName, unread: u.unread, last: preview(stmt.lastMessage.get({ me: me.id, other: u.id })) })),
@@ -913,11 +951,11 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
     }, true],
     ['POST', /^\/api\/groups\/(\d+)\/messages$/, ({ me, params: [id], body }) => {
       const g = groupFor(me.id, id);
-      const ref = cleanRef(body.ref), text = messageText(body.body) || (ref ? ' ' : '');
+      const ref = cleanRef(body.ref), file = cleanFile(body.file), text = messageText(body.body) || (ref || file ? ' ' : '');
       if (!text) throw new HttpError(400, 'Write a message first');
-      const at = now(), mid = Number(stmt.addGroupMessage.run(g.id, me.id, text, ref ? JSON.stringify(ref) : null, at).lastInsertRowid);
+      const at = now(), mid = Number(stmt.addGroupMessage.run(g.id, me.id, text, ref ? JSON.stringify(ref) : null, at, file ? JSON.stringify(file) : null).lastInsertRowid);
       stmt.markGroupRead.run(mid, g.id, me.id);
-      return { status: 201, body: { message: { id: mid, mine: true, body: text, createdAt: at, ...(ref ? { ref } : {}) } } };
+      return { status: 201, body: { message: { id: mid, mine: true, body: text, createdAt: at, ...(ref ? { ref } : {}), ...(file ? { file } : {}) } } };
     }, true],
 
     ['POST', /^\/api\/friends\/requests$/, ({ me, body }) => {
@@ -1050,8 +1088,18 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
         ip: (trustProxy && String(req.headers['x-forwarded-for'] || '').split(',').pop().trim()) || req.socket.remoteAddress,
       });
       if (result && result.status && result.body) return send(res, result.status, result.body, result.headers);
-      if (result && result.file) { // a file from disk, streamed
-        res.writeHead(200, { 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer', 'Content-Length': result.size, ...result.headers });
+      if (result && result.file) { // a file from disk, streamed (a part of it, when asked for a range)
+        const base = { 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer', ...(result.ranges ? { 'Accept-Ranges': 'bytes' } : {}), ...result.headers };
+        const r = result.ranges && /^bytes=(\d*)-(\d*)$/.exec(String(req.headers.range || '').trim());
+        if (r && (r[1] || r[2])) {
+          const size = result.size;
+          let start = r[1] ? Number(r[1]) : Math.max(0, size - Number(r[2])), end = r[1] && r[2] ? Math.min(Number(r[2]), size - 1) : size - 1;
+          if (start >= size || start > end) { res.writeHead(416, { ...base, 'Content-Range': `bytes */${size}` }); return res.end(); }
+          res.writeHead(206, { ...base, 'Content-Range': `bytes ${start}-${end}/${size}`, 'Content-Length': end - start + 1 });
+          if (req.method === 'HEAD') return res.end();
+          return fs.createReadStream(result.file, { start, end }).on('error', () => res.destroy()).pipe(res);
+        }
+        res.writeHead(200, { ...base, 'Content-Length': result.size });
         return fs.createReadStream(result.file).on('error', () => res.destroy()).pipe(res);
       }
       return send(res, 200, result);

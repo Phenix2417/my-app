@@ -64,6 +64,12 @@ const ICONS = {
   contents: '<path d="M3 12h.01"/><path d="M3 18h.01"/><path d="M3 6h.01"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M8 6h13"/>',
   back: '<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>',
   close: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  mic: '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/>',
+  video: '<path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5"/><rect x="2" y="6" width="14" height="12" rx="2"/>',
+  file: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/>',
+  play: '<polygon points="6 3 20 12 6 21 6 3"/>',
+  pause: '<rect x="14" y="4" width="4" height="16" rx="1"/><rect x="6" y="4" width="4" height="16" rx="1"/>',
+  flipCamera: '<path d="M11 19H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h5"/><path d="M13 5h7a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-5"/><circle cx="12" cy="12" r="3"/><path d="m18 22-3-3 3-3"/><path d="m6 2 3 3-3 3"/>',
   forward: '<polyline points="15 17 20 12 15 7"/><path d="M4 18v-2a4 4 0 0 1 4-4h12"/>',
   quote: '<path d="M16 3a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2 1 1 0 0 1 1 1v1a2 2 0 0 1-2 2 1 1 0 0 0-1 1v2a1 1 0 0 0 1 1 6 6 0 0 0 6-6V5a2 2 0 0 0-2-2z"/><path d="M5 3a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2 1 1 0 0 1 1 1v1a2 2 0 0 1-2 2 1 1 0 0 0-1 1v2a1 1 0 0 0 1 1 6 6 0 0 0 6-6V5a2 2 0 0 0-2-2z"/>',
   trash: '<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>',
@@ -3433,6 +3439,144 @@ function openChatPage(chat, prefill = '') {
   render();
 }
 
+/* ---------------- files in chat ---------------- */
+const MAX_CHAT_FILE = 100 * 1024 * 1024;
+const chatFileUrl = (f) => `/api/chat-file/${f.id}`;
+const clock = (sec) => { const t = Math.max(0, Math.round(sec || 0)); return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`; };
+const fileSize = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(n >= 10485760 ? 0 : 1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
+const fileLabel = (f) => (f.kind === 'image' ? tr('[Photo]') : f.kind === 'video' ? tr('[Video]') : f.kind === 'audio' ? `${tr('[Voice]')}${f.duration ? ` ${clock(f.duration)}` : ''}` : `${tr('[File]')} ${f.name}`);
+// Send a file to the server (with progress); resolves to { id, name, type, kind, size, duration }. abort() stops it.
+function uploadChatFile(blob, { name, duration, onProgress } = {}) {
+  const x = new XMLHttpRequest();
+  const promise = new Promise((resolve, reject) => {
+    const q = new URLSearchParams({ name: name || blob.name || 'file', type: blob.type || '', ...(duration ? { duration: String(duration) } : {}) });
+    x.open('POST', `/api/chat-files?${q}`);
+    for (const [k, v] of Object.entries(authHeaders())) x.setRequestHeader(k, v);
+    x.setRequestHeader('Content-Type', 'application/octet-stream');
+    x.upload.onprogress = (e) => { if (e.lengthComputable) onProgress?.(e.loaded / e.total); };
+    x.onload = () => {
+      let d = {}; try { d = JSON.parse(x.responseText); } catch { /* not JSON */ }
+      if (x.status === 201) return resolve(d.file);
+      if (x.status === 401 && state.auth) signOut(true);
+      reject(new Error(d.error || `Upload failed (${x.status})`));
+    };
+    x.onerror = () => reject(new OfflineError("You're offline. Try again when connected."));
+    x.onabort = () => reject(Object.assign(new Error('Cancelled'), { cancelled: true }));
+    x.send(blob);
+  });
+  return { promise, abort: () => x.abort() };
+}
+// A picture, full screen; a tap closes it.
+function viewImage(src, alt) {
+  const close = () => { box.remove(); document.removeEventListener('keydown', onKey); };
+  const onKey = (e) => { if (e.key === 'Escape') close(); };
+  const box = h('div', { class: 'img-viewer', role: 'dialog', 'aria-label': 'Photo', onclick: close }, h('img', { src, alt: alt || '' }));
+  document.addEventListener('keydown', onKey);
+  document.body.append(box);
+}
+// One voice message plays at a time.
+let playingVoice = null;
+// A file in a message: a picture or a video shown in place, a voice message to play, or a file to download.
+function chatFileView(f) {
+  const url = chatFileUrl(f);
+  if (f.kind === 'image') return h('img', { class: 'chat-img', src: url, alt: f.name, loading: 'lazy', onclick: () => viewImage(url, f.name) });
+  if (f.kind === 'video') return h('video', { class: 'chat-video', src: `${url}#t=0.1`, controls: true, playsinline: true, preload: 'metadata' });
+  if (f.kind === 'audio') {
+    const audio = new Audio(); audio.preload = 'none'; audio.src = url;
+    const icon = h('span', { class: 'voice-icon' }, svg(ICONS.play));
+    const len = h('span', { class: 'voice-len' }, f.duration ? clock(f.duration) : '');
+    const btn = h('button', { class: 'voice-msg', type: 'button', 'aria-label': 'Play voice message', style: `width:${Math.round(Math.min(110 + (f.duration || 10) * 2.4, 240))}px`,
+      onclick: () => {
+        if (!audio.paused) return audio.pause();
+        if (playingVoice && playingVoice !== audio) playingVoice.pause();
+        playingVoice = audio; audio.currentTime = 0; audio.play().catch(() => toast("Couldn't play this voice message."));
+      } }, icon, len);
+    const show = (on) => { icon.replaceChildren(svg(on ? ICONS.pause : ICONS.play)); btn.classList.toggle('playing', on); };
+    audio.onplay = () => show(true);
+    audio.onpause = audio.onended = () => show(false);
+    audio.ontimeupdate = () => { if (audio.duration && isFinite(audio.duration)) len.textContent = clock(audio.duration - audio.currentTime); };
+    audio.onended = () => { show(false); len.textContent = f.duration ? clock(f.duration) : ''; };
+    return btn;
+  }
+  return h('a', { class: 'chat-file', href: url, download: f.name },
+    h('span', { class: 'chat-file-icon' }, svg(ICONS.file)),
+    h('span', { class: 'chat-file-main' }, h('span', { class: 'file-name' }, f.name), h('span', { class: 'chat-file-size' }, fileSize(f.size))));
+}
+// Record up to a minute of video (with sound) or voice, then send it or record again.
+function recordSheet(mode, onSend) {
+  const isVideo = mode === 'video', LIMIT = 60;
+  if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') return toast("This browser can't record here.");
+  const pick = (list) => list.find((t) => MediaRecorder.isTypeSupported?.(t)) || '';
+  const mime = isVideo ? pick(['video/mp4;codecs=avc1,mp4a', 'video/mp4', 'video/webm;codecs=vp8,opus', 'video/webm'])
+    : pick(['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus']);
+  let stream = null, rec = null, chunks = [], ticker = null, started = 0, secs = 0, blob = null, reviewUrl = null, facing = 'user';
+  const live = h('video', { class: 'rec-live', autoplay: true, muted: true, playsinline: true, hidden: !isVideo });
+  live.muted = true;
+  const review = h(isVideo ? 'video' : 'audio', { class: isVideo ? 'rec-live' : 'rec-audio', controls: true, playsinline: true, hidden: true });
+  const time = h('div', { class: 'rec-clock' }, `0:00 / ${clock(LIMIT)}`);
+  const dot = h('span', { class: 'rec-dot' });
+  const recBtn = h('button', { class: 'rec-btn', type: 'button', 'aria-label': 'Record', title: 'Record' }, dot);
+  const flipBtn = isVideo ? h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Switch camera', title: 'Switch camera', onclick: async () => {
+    facing = facing === 'user' ? 'environment' : 'user'; await openDevice();
+  } }, svg(ICONS.flipCamera)) : null;
+  const retakeBtn = h('button', { class: 'text-btn', type: 'button', hidden: true }, 'Record again');
+  const sendBtn = h('button', { class: 'filled-btn', type: 'button', hidden: true }, 'Send');
+  const hint = h('p', { class: 'rec-hint' }, isVideo ? 'Tap the red button to record (up to 1 minute).' : 'Tap the red button to record a voice message (up to 1 minute).');
+  const stopDevice = () => { stream?.getTracks().forEach((t) => t.stop()); stream = null; };
+  async function openDevice() {
+    stopDevice();
+    try {
+      stream = await navigator.mediaDevices.getUserMedia(isVideo ? { audio: true, video: { facingMode: facing, width: { ideal: 720 }, height: { ideal: 720 } } } : { audio: true });
+    } catch (e) {
+      hint.textContent = tr(e?.name === 'NotAllowedError' ? `Allow the ${isVideo ? 'camera and microphone' : 'microphone'} for this site to record.` : "Couldn't start recording on this device.");
+      recBtn.disabled = true; return;
+    }
+    if (isVideo) { live.srcObject = stream; live.classList.toggle('mirror', facing === 'user'); live.play?.().catch(() => {}); }
+  }
+  const stop = () => { if (rec && rec.state !== 'inactive') rec.stop(); };
+  const tick = () => { secs = (Date.now() - started) / 1000; time.textContent = `${clock(secs)} / ${clock(LIMIT)}`; if (secs >= LIMIT) stop(); };
+  recBtn.addEventListener('click', () => {
+    if (rec && rec.state === 'recording') return stop();
+    if (!stream) return;
+    chunks = [];
+    try { rec = new MediaRecorder(stream, { ...(mime ? { mimeType: mime } : {}), audioBitsPerSecond: 64000, ...(isVideo ? { videoBitsPerSecond: 1200000 } : {}) }); }
+    catch { rec = new MediaRecorder(stream); }
+    rec.ondataavailable = (e) => { if (e.data?.size) chunks.push(e.data); };
+    rec.onstop = () => {
+      clearInterval(ticker); recBtn.classList.remove('on'); recBtn.hidden = true; flipBtn && (flipBtn.hidden = true);
+      blob = new Blob(chunks, { type: (rec.mimeType || mime || (isVideo ? 'video/webm' : 'audio/webm')).split(';')[0] });
+      stopDevice(); live.hidden = true;
+      if (reviewUrl) URL.revokeObjectURL(reviewUrl);
+      reviewUrl = URL.createObjectURL(blob); review.src = reviewUrl; review.hidden = false;
+      retakeBtn.hidden = false; sendBtn.hidden = false;
+      hint.textContent = tr('Play it back, then send it or record again.');
+    };
+    rec.start(1000); started = Date.now(); secs = 0; ticker = setInterval(tick, 200);
+    recBtn.classList.add('on'); recBtn.setAttribute('aria-label', tr('Stop')); hint.textContent = tr('Recording… tap again to stop.');
+  });
+  let close = null;
+  retakeBtn.addEventListener('click', async () => {
+    review.pause?.(); review.hidden = true; retakeBtn.hidden = true; sendBtn.hidden = true; recBtn.hidden = false; flipBtn && (flipBtn.hidden = false);
+    live.hidden = !isVideo; time.textContent = `0:00 / ${clock(LIMIT)}`; recBtn.setAttribute('aria-label', tr('Record'));
+    hint.textContent = tr(isVideo ? 'Tap the red button to record (up to 1 minute).' : 'Tap the red button to record a voice message (up to 1 minute).');
+    await openDevice();
+  });
+  sendBtn.addEventListener('click', () => {
+    const ext = /mp4/.test(blob.type) ? (isVideo ? 'mp4' : 'm4a') : /ogg/.test(blob.type) ? 'ogg' : 'webm';
+    const stamp = new Date().toISOString().replace(/\D/g, '').slice(0, 14);
+    const b = blob, d = Math.max(1, Math.round(secs * 10) / 10);
+    close(); onSend(new File([b], `${isVideo ? 'video' : 'voice'}-${stamp}.${ext}`, { type: b.type }), d);
+  });
+  close = openSheet(() => [
+    h('h2', {}, isVideo ? 'Record video' : 'Voice message'),
+    h('div', { class: isVideo ? 'rec-stage' : 'rec-stage voice' }, live, review, isVideo ? null : h('span', { class: 'rec-mic' }, svg(ICONS.mic))),
+    hint,
+    h('div', { class: 'rec-controls' }, h('span', { class: 'rec-side' }, flipBtn), h('div', { class: 'rec-center' }, time, recBtn), h('span', { class: 'rec-side' })),
+    h('div', { class: 'sheet-actions' }, retakeBtn, h('span', { class: 'spacer' }), sendBtn),
+  ], { label: isVideo ? 'Record video' : 'Voice message', onClose: () => { clearInterval(ticker); if (rec && rec.state !== 'inactive') { rec.onstop = null; rec.stop(); } stopDevice(); if (reviewUrl) URL.revokeObjectURL(reviewUrl); } });
+  openDevice();
+}
+
 // One conversation: header, messages (with date separators and, in groups, who wrote each), and a box to write.
 let chatPoll = null;
 async function renderChatPage() {
@@ -3458,12 +3602,17 @@ async function renderChatPage() {
       h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Remove', title: 'Remove', onclick: () => { attached = null; showAttach(); } }, svg(ICONS.close)));
   };
   let shown = [];
+  const sigOf = (m) => `${m.id}:${m.editedAt || ''}:${m.deleted ? 1 : 0}`;
+  // New messages are added below the ones shown (so a video or voice message that's playing keeps playing);
+  // the whole list is drawn again only when one shown has changed (edited or deleted).
   const draw = (messages) => {
     const atBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 40;
+    const grows = shown.length && messages.length > shown.length && shown.every((m, i) => sigOf(m) === sigOf(messages[i]));
+    const from = grows ? shown.length : 0;
     shown = messages;
     const kids = [];
-    let prev = null;
-    for (const m of messages) {
+    let prev = from ? messages[from - 1] : null;
+    for (const m of messages.slice(from)) {
       if (!prev || m.createdAt - prev.createdAt > 30 * 60000 || new Date(m.createdAt).toDateString() !== new Date(prev.createdAt).toDateString()) {
         const t = new Date(m.createdAt);
         const today = t.toDateString() === new Date().toDateString();
@@ -3473,9 +3622,12 @@ async function renderChatPage() {
       const content = m.deleted ? [h('div', { class: 'bubble-text deleted' }, tr('This message was deleted'))]
         : [splitQuote(m.body).quote ? h('div', { class: 'bubble-quote' }, splitQuote(m.body).quote) : null,
           m.ref ? verseCard(m.ref) : null, splitQuote(m.body).rest.trim() ? h('div', { class: 'bubble-text note-body' }, ...linkified(splitQuote(m.body).rest)) : null,
+          m.file ? chatFileView(m.file) : null,
           ...videoEmbeds(m.body), m.editedAt ? h('span', { class: 'edited-mark' }, tr('Edited')) : null].filter(Boolean);
+      // A picture or video on its own fills the bubble.
+      const bubbleClass = m.file && !m.deleted && !m.ref && !splitQuote(m.body).rest.trim() && ['image', 'video'].includes(m.file.kind) ? 'chat-bubble media' : 'chat-bubble';
       if (m.mine) {
-        const bubble = h('div', { class: 'chat-bubble' }, ...content);
+        const bubble = h('div', { class: bubbleClass }, ...content);
         if (!m.deleted) messageActions(bubble, m);
         kids.push(h('div', { class: 'chat-line mine' }, bubble));
       }
@@ -3483,11 +3635,12 @@ async function renderChatPage() {
         const from = m.from || chat.user;
         kids.push(h('div', { class: 'chat-line' }, from ? avatar(from) : h('span', { class: 'avatar' }, '?'),
           h('div', { class: 'chat-col' }, chat.kind === 'group' ? h('div', { class: 'chat-from' }, from ? dn(from) : '—') : null,
-            (() => { const bubble = h('div', { class: 'chat-bubble' }, ...content); if (!m.deleted) messageActions(bubble, m); return bubble; })())));
+            (() => { const bubble = h('div', { class: bubbleClass }, ...content); if (!m.deleted) messageActions(bubble, m); return bubble; })())));
       }
       prev = m;
     }
-    list.replaceChildren(...(kids.length ? kids : [h('p', { class: 'empty-inline' }, 'No messages yet.')]));
+    if (grows) list.append(...kids);
+    else list.replaceChildren(...(kids.length ? kids : [h('p', { class: 'empty-inline' }, 'No messages yet.')]));
     if (atBottom || !shown.length || list.dataset.first !== '1') { list.scrollTop = list.scrollHeight; list.dataset.first = '1'; }
   };
   const path = chat.kind === 'group' ? `/api/groups/${chat.id}/messages` : `/api/messages/${chat.id}`;
@@ -3495,7 +3648,7 @@ async function renderChatPage() {
     try {
       const { messages } = await api('GET', path);
       if (state.tab !== 'chat' || state.chat !== chat) return clearInterval(chatPoll);
-      const sig = (list) => list.map((m) => `${m.id}:${m.editedAt || ''}:${m.deleted ? 1 : 0}`).join(',');
+      const sig = (list) => list.map(sigOf).join(',');
       if (sig(messages) !== sig(shown)) draw(messages);
     } catch (e) { if (!shown.length) list.replaceChildren(h('p', { class: 'error' }, e instanceof OfflineError ? "You're offline. Try again when connected." : e.message)); }
   };
@@ -3507,7 +3660,7 @@ async function renderChatPage() {
   let quoting = null;
   const quoteBar = h('div', { class: 'chat-attach quote-bar', hidden: true });
   const stopQuoting = () => { quoting = null; quoteBar.hidden = true; quoteBar.replaceChildren(); };
-  const plainText = (m) => [m.ref ? `${verseRef(m.ref)} ${m.ref.text || ''}${m.ref.alt?.text ? `\n${m.ref.alt.text}` : ''}` : '', splitQuote(m.body).rest].filter((x) => x.trim()).join('\n');
+  const plainText = (m) => [m.ref ? `${verseRef(m.ref)} ${m.ref.text || ''}${m.ref.alt?.text ? `\n${m.ref.alt.text}` : ''}` : '', splitQuote(m.body).rest, m.file ? fileLabel(m.file) : ''].filter((x) => x.trim()).join('\n');
   const whoWrote = (m) => dn(m.mine ? state.auth?.user : m.from || chat.user);
   function startEdit(m) {
     stopQuoting();
@@ -3536,7 +3689,7 @@ async function renderChatPage() {
       h('h2', {}, 'Forward to'),
       chats.length ? h('div', { class: 'chat-rows' }, ...chats.map((x) => h('button', { class: 'chat-row', type: 'button', onclick: async () => {
         close();
-        if (await sendToChat(x, { ...(body ? { body } : {}), ...(m.ref ? { ref: m.ref } : {}) })) {
+        if (await sendToChat(x, { ...(body ? { body } : {}), ...(m.ref ? { ref: m.ref } : {}), ...(m.file ? { file: { id: m.file.id } } : {}) })) {
           toast(`Sent to ${x.name}`);
           if (x.kind === chat.kind && x.id === chat.id) load();
         }
@@ -3556,6 +3709,9 @@ async function renderChatPage() {
   function messageMenu(bubble, m, at = null) {
     closeMenu();
     const items = [
+      m.file && m.file.kind !== 'audio' ? { label: 'Save', icon: ICONS.arrowDown, run: () => {
+        const a = h('a', { href: chatFileUrl(m.file), download: m.file.name }); document.body.append(a); a.click(); a.remove();
+      } } : null,
       { label: 'Copy', icon: ICONS.copy, run: async () => {
         try { await navigator.clipboard.writeText(plainText(m)); toast('Copied'); } catch { toast("Couldn't copy"); }
       } },
@@ -3641,13 +3797,65 @@ async function renderChatPage() {
     sendBtn.disabled = false;
   };
   const sendBtn = h('button', { class: 'chat-send', type: 'button', 'aria-label': 'Send', title: 'Send', onclick: send }, svg(ICONS.send));
-  const verseBtn = h('button', { class: 'chat-verse', type: 'button', 'aria-label': 'Share a verse', title: 'Share a verse', onclick: () => {
+  // Files being sent: each with its progress and a cancel button.
+  const uploads = h('div', { class: 'chat-uploads' });
+  async function sendFile(file, duration = null) {
+    if (file.size > MAX_CHAT_FILE) return toast(`${file.name}: ${tr('too large (100 MB at most)')}`);
+    if (!file.size) return toast(`${file.name}: ${tr('empty file')}`);
+    const bar = h('span', { class: 'upload-bar' });
+    const job = uploadChatFile(file, { name: file.name, duration, onProgress: (p) => { bar.style.width = `${Math.round(p * 100)}%`; } });
+    const row = h('div', { class: 'chat-upload' },
+      h('span', { class: 'chat-upload-main' }, h('span', { class: 'file-name' }, file.name), h('span', { class: 'upload-track' }, bar)),
+      h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Cancel', title: 'Cancel', onclick: () => job.abort() }, svg(ICONS.close)));
+    uploads.append(row);
+    try {
+      const f = await job.promise;
+      const m = await sendToChat(chat, { file: { id: f.id } });
+      if (m && state.chat === chat) { draw([...shown, m]); list.scrollTop = list.scrollHeight; }
+    } catch (e) { if (!e.cancelled) toast(`${file.name}: ${e.message}`); }
+    row.remove();
+  }
+  const pickFiles = (accept) => {
+    const inp = h('input', { type: 'file', multiple: true, hidden: true, ...(accept ? { accept } : {}) });
+    inp.addEventListener('change', async () => { const files = [...inp.files]; inp.remove(); for (const f of files) await sendFile(f); });
+    document.body.append(inp); inp.click();
+  };
+  // Choose one of my notes to share here.
+  const pickNote = () => {
+    const notes = Object.values(state.mine?.notes || {}).filter((n) => !n.lib && n.quote).sort((a, b) => b.updatedAt - a.updatedAt);
+    openSheet((close) => [
+      h('h2', {}, 'Share a note'),
+      notes.length ? h('div', { class: 'note-pick-list' }, ...notes.map((n) => h('button', { class: 'note-pick', type: 'button', onclick: async () => {
+        close(); state.shareTarget = chat; await shareVerse(noteVerse(n), n.body);
+      } }, h('span', { class: 'note-pick-ref' }, `${verseRef(noteVerse(n))}`), h('span', { class: 'note-pick-quote quote' }, n.quote.slice(0, 120)),
+        n.body ? h('span', { class: 'note-pick-body note-body' }, n.body.slice(0, 120)) : null)))
+        : h('p', { class: 'empty-inline' }, 'No notes yet. In Read, hold a word to start a highlight.'),
+    ], { label: 'Share a note' });
+  };
+  const shareVerseHere = () => {
     openSheet((close) => [h('h2', {}, 'Share a verse'),
       h('p', { class: 'confirm-text' }, 'In Read, select the verses, then tap Share to chat in the bubble: they come back to this chat.'),
       h('div', { class: 'sheet-actions' }, h('span', { class: 'spacer' }), h('button', { class: 'text-btn', type: 'button', onclick: close }, 'Cancel'),
         h('button', { class: 'filled-btn', type: 'button', onclick: () => { close(); state.shareTarget = chat; state.tab = 'read'; render(); toast('Select the verses to share'); } }, 'Go to Read'))],
     { label: 'Share a verse' });
-  } }, svg(ICONS.read));
+  };
+  // The + panel under the box (as in WeChat): what can be sent besides words.
+  const plusPanel = h('div', { class: 'chat-plus-panel', hidden: true },
+    ...[
+      ['Verse', ICONS.read, shareVerseHere],
+      ['Note', ICONS.notes, pickNote],
+      ['Photos & videos', ICONS.image, () => pickFiles('image/*,video/*')],
+      ['Record video', ICONS.video, () => recordSheet('video', sendFile)],
+      ['Voice', ICONS.mic, () => recordSheet('audio', sendFile)],
+      ['File', ICONS.file, () => pickFiles('')],
+    ].map(([label, icon, run]) => h('button', { class: 'plus-item', type: 'button', onclick: () => { setPlus(false); run(); } },
+      h('span', { class: 'plus-icon' }, svg(icon)), h('span', { class: 'plus-label' }, label))));
+  const plusBtn = h('button', { class: 'chat-verse chat-plus', type: 'button', 'aria-label': 'Send more', title: 'Send more', 'aria-expanded': 'false', onclick: () => setPlus(plusPanel.hidden) }, svg(ICONS.plus));
+  function setPlus(open) {
+    plusPanel.hidden = !open; plusBtn.setAttribute('aria-expanded', String(open)); plusBtn.classList.toggle('open', open);
+    if (open) { input.blur(); list.scrollTop = list.scrollHeight; }
+  }
+  input.addEventListener('focus', () => setPlus(false));
   const menu = chat.kind === 'group'
     ? moreMenu([
       { id: 'group-members', label: 'Members', icon: ICONS.friends, action: () => groupMembers() },
@@ -3668,7 +3876,9 @@ async function renderChatPage() {
     attachBox,
     quoteBar,
     editBar,
-    h('div', { class: 'chat-bar' }, verseBtn, input, sendBtn)));
+    uploads,
+    h('div', { class: 'chat-bar' }, plusBtn, input, sendBtn),
+    plusPanel));
   showAttach();
   if (attached) input.focus();
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && matchMedia('(pointer: fine)').matches) { e.preventDefault(); send(); } });
@@ -3770,7 +3980,7 @@ async function renderFriends() {
     const q = search.value.trim().toLowerCase();
     const rows = c.chats.filter((x) => (filter === 'all' || x.kind === filter) && (!q || x.name.toLowerCase().includes(q) || x.user?.username.toLowerCase().includes(q)));
     for (const x of rows) {
-      const last = x.last?.deleted ? tr('This message was deleted') : x.last ? `${x.kind === 'group' && x.last.from ? `${dn(x.last.from)}：` : x.last.mine ? (LANG === 'zh' ? '我：' : 'You: ') : ''}${x.last.verse ? `${tr(x.last.verse.kind === 'note' ? 'Shared a note' : 'Shared')} ${verseRef(x.last.verse)}${x.last.body.trim() ? `：${x.last.body}` : ''}` : x.last.body}` : '';
+      const last = x.last?.deleted ? tr('This message was deleted') : x.last ? `${x.kind === 'group' && x.last.from ? `${dn(x.last.from)}：` : x.last.mine ? (LANG === 'zh' ? '我：' : 'You: ') : ''}${x.last.verse ? `${tr(x.last.verse.kind === 'note' ? 'Shared a note' : 'Shared')} ${verseRef(x.last.verse)}${x.last.body.trim() ? `：${x.last.body}` : ''}` : x.last.file ? `${fileLabel(x.last.file)}${x.last.body.trim() ? ` ${x.last.body}` : ''}` : x.last.body}` : '';
       kids.push(h('button', { class: 'chat-row', type: 'button', onclick: () => openChatPage(x) },
         x.kind === 'group' ? avatar(null, x.name) : avatar(x.user),
         h('div', { class: 'chat-main' },

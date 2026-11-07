@@ -9,6 +9,7 @@ import { createBibleDictionary } from './bibledict.js';
 import { createWikiService } from './wiki.js';
 import { createEncyclopedias } from './encyclopedia.js';
 import { createLibraryStore } from './library.js';
+import { createChatFileStore } from './chatfiles.js';
 import { createVersionService } from './versions.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -39,6 +40,7 @@ const translate = createTranslateService({ cacheDir: path.join(dataDir, 'transla
 createServer(db, { publicDir: path.join(root, 'public'), trustProxy, commentary, pronounce, phonetics, translate, bibleDict: createBibleDictionary({ cacheDir: path.join(dataDir, 'bibledict-cache') }),
   library: createLibraryStore({ dir: path.join(dataDir, 'library') }), freeDict,
   versions: createVersionService({ cacheDir: path.join(dataDir, 'bible-cache') }),
-  wiki: createWikiService({ cacheDir: path.join(dataDir, 'wiki-cache') }), encyclopedias: createEncyclopedias() }).listen(port, host, () => {
+  wiki: createWikiService({ cacheDir: path.join(dataDir, 'wiki-cache') }), encyclopedias: createEncyclopedias(),
+  chatFiles: createChatFileStore({ dir: path.join(dataDir, 'chat-files') }) }).listen(port, host, () => {
   console.log(`Bible Study running at http://localhost:${port}`);
 });

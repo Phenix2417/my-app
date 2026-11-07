@@ -42,3 +42,45 @@ test('a sender can edit or delete their own messages, which stay marked', async 
   assert.deepEqual([g.body, !!g.editedAt], ['hi everyone', true]);
   assert.equal((await api('GET', '/api/chats', { token: b.token })).data.chats.find((c) => c.kind === 'friend').last.deleted, true);
 });
+
+test('files sent in chat: uploaded, recognised by their bytes, served in parts, carried by messages', async () => {
+  const { mkdtempSync } = await import('node:fs');
+  const os = await import('node:os'), path = await import('node:path');
+  const { createChatFileStore } = await import('../server/chatfiles.js');
+  const srv = createServer(openDb(':memory:'), { chatFiles: createChatFileStore({ dir: mkdtempSync(path.join(os.tmpdir(), 'chatfiles-')) }) });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  const b2 = `http://127.0.0.1:${srv.address().port}`;
+  const call = async (method, p, token, body) => { const r = await fetch(b2 + p, { method, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: body && JSON.stringify(body) }); return { status: r.status, data: await r.json() }; };
+  const reg = async (n) => (await (await fetch(`${b2}/api/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: n, password: 'password1' }) })).json());
+  const a = await reg('file_a'), b = await reg('file_b');
+  await call('POST', '/api/friends/requests', a.token, { username: 'file_b' });
+  await call('POST', `/api/friends/${a.user.id}/accept`, b.token);
+  const upload = async (bytes, q) => { const r = await fetch(`${b2}/api/chat-files?${new URLSearchParams(q)}`, { method: 'POST', headers: { Authorization: `Bearer ${a.token}` }, body: bytes }); return { status: r.status, data: await r.json() }; };
+  // A webm recording said to be audio is a voice message; an HTML page is only ever a file to download.
+  const webm = Buffer.concat([Buffer.from([0x1a, 0x45, 0xdf, 0xa3]), Buffer.alloc(996, 7)]);
+  const voice = (await upload(webm, { name: 'voice.webm', type: 'audio/webm', duration: '12.34' })).data.file;
+  assert.deepEqual([voice.kind, voice.type, voice.size, voice.duration], ['audio', 'audio/webm', 1000, 12.3]);
+  const page = (await upload(Buffer.from('<html><script>alert(1)</script>'), { name: 'x.html', type: 'text/html' })).data.file;
+  assert.deepEqual([page.kind, page.type], ['file', 'application/octet-stream']);
+  let r = await fetch(`${b2}/api/chat-file/${page.id}`);
+  assert.match(r.headers.get('content-disposition'), /^attachment/);
+  assert.match(r.headers.get('content-security-policy'), /sandbox/);
+  // Ranges, for seeking in videos.
+  r = await fetch(`${b2}/api/chat-file/${voice.id}`, { headers: { Range: 'bytes=0-3' } });
+  assert.equal(r.status, 206);
+  assert.equal(r.headers.get('content-range'), 'bytes 0-3/1000');
+  assert.deepEqual([...Buffer.from(await r.arrayBuffer())], [0x1a, 0x45, 0xdf, 0xa3]);
+  assert.equal((await fetch(`${b2}/api/chat-file/${'0'.repeat(32)}`)).status, 404);
+  // A message with just a file; the friend sees it, and can forward it on.
+  const sent = (await call('POST', `/api/messages/${b.user.id}`, a.token, { file: { id: voice.id } })).data.message;
+  assert.equal(sent.file.id, voice.id);
+  const got = (await call('GET', `/api/messages/${a.user.id}`, b.token)).data.messages[0];
+  assert.deepEqual([got.file.kind, got.file.duration], ['audio', 12.3]);
+  assert.equal((await call('POST', `/api/messages/${a.user.id}`, b.token, { file: { id: voice.id } })).status, 201);
+  assert.equal((await call('POST', `/api/messages/${a.user.id}`, b.token, { file: { id: 'f'.repeat(32) } })).status, 400);
+  assert.equal((await call('GET', '/api/chats', b.token)).data.chats[0].last.file.kind, 'audio');
+  // Deleting the message takes the file off it.
+  await call('DELETE', `/api/dm-messages/${sent.id}`, a.token);
+  assert.equal((await call('GET', `/api/messages/${a.user.id}`, b.token)).data.messages[0].file, undefined);
+  srv.close();
+});

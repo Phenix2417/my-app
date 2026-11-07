@@ -848,3 +848,62 @@ span.verse-card-text { display: block; }
 .option-row.danger-row, .option-row.danger-row .line-icon { color: var(--error); }
 .edit-bar .chat-attach-main { border-left-color: var(--primary); }
 .chat-bubble.held { filter: brightness(.9); transition: filter .15s; }
+
+/* ---------- files in chat ---------- */
+.chat-plus .line-icon { transition: transform .15s; }
+.chat-plus.open .line-icon { transform: rotate(45deg); }
+.chat-plus-panel { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px 8px; padding: 14px 4px calc(14px + env(safe-area-inset-bottom)); border-top: 1px solid var(--divider); }
+.chat-plus-panel[hidden] { display: none; }
+.plus-item { display: flex; flex-direction: column; align-items: center; gap: 6px; border: 0; background: none; color: var(--on-bg); font: inherit; font-size: 12px; cursor: pointer; padding: 0; }
+.plus-icon { width: 58px; height: 58px; border-radius: 16px; background: var(--surface); color: var(--on-bg); display: grid; place-items: center; }
+.plus-icon .line-icon { width: 26px; height: 26px; }
+.plus-item:active .plus-icon { filter: brightness(.92); }
+.chat-bar:has(+ .chat-plus-panel:not([hidden])) { padding-bottom: 8px; }
+.chat-uploads:empty { display: none; }
+.chat-upload { display: flex; align-items: center; gap: 8px; background: var(--surface); border-radius: 12px; padding: 6px 6px 6px 12px; margin: 6px 0 0; }
+.chat-upload-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.chat-upload .file-name { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.upload-track { height: 4px; border-radius: 2px; background: var(--divider); overflow: hidden; }
+.upload-bar { display: block; height: 100%; width: 0; background: var(--primary); transition: width .2s; }
+.chat-bubble.media { padding: 0; background: none !important; overflow: hidden; border-radius: 12px; }
+.chat-img { display: block; max-width: min(240px, 60vw); max-height: 320px; border-radius: 10px; cursor: zoom-in; background: var(--surface); }
+.chat-video { display: block; width: min(260px, 64vw); max-height: 360px; border-radius: 10px; background: #000; }
+.voice-msg { display: flex; align-items: center; gap: 8px; min-width: 96px; max-width: 100%; border: 0; background: none; color: inherit; font: inherit; padding: 2px 0; cursor: pointer; }
+.chat-line.mine .voice-msg { flex-direction: row-reverse; }
+.voice-icon .line-icon { width: 18px; height: 18px; fill: currentColor; }
+.voice-len { font-size: 14px; font-variant-numeric: tabular-nums; opacity: .85; }
+.voice-msg.playing .voice-icon { animation: voice-pulse 1s ease-in-out infinite; }
+@keyframes voice-pulse { 50% { opacity: .4; } }
+.chat-file { display: flex; align-items: center; gap: 10px; min-width: 180px; max-width: min(260px, 64vw); text-decoration: none; color: inherit; }
+.chat-file-icon { width: 40px; height: 40px; flex: none; border-radius: 8px; background: rgba(127,127,127,.18); display: grid; place-items: center; }
+.chat-file-icon .line-icon { width: 22px; height: 22px; }
+.chat-file-main { display: flex; flex-direction: column; min-width: 0; }
+.chat-file .file-name { font-size: 15px; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.chat-file-size { font-size: 12px; opacity: .7; }
+.img-viewer { position: fixed; inset: 0; z-index: 80; background: rgba(0,0,0,.92); display: grid; place-items: center; cursor: zoom-out; }
+.img-viewer img { max-width: 100vw; max-height: 100vh; object-fit: contain; }
+/* recording */
+.rec-stage { position: relative; display: grid; place-items: center; background: #000; border-radius: 14px; overflow: hidden; aspect-ratio: 3 / 4; max-height: 52vh; margin: 8px auto 0; width: 100%; }
+.rec-stage.voice { aspect-ratio: auto; height: 120px; background: var(--surface); }
+.rec-live { width: 100%; height: 100%; object-fit: cover; }
+.rec-live.mirror { transform: scaleX(-1); }
+.rec-live[hidden], .rec-audio[hidden] { display: none; }
+.rec-audio { width: 90%; position: relative; z-index: 1; }
+.rec-mic { position: absolute; color: var(--muted); }
+.rec-mic .line-icon { width: 40px; height: 40px; }
+.rec-stage.voice:has(.rec-audio:not([hidden])) .rec-mic { display: none; }
+.rec-hint { text-align: center; color: var(--muted); font-size: 14px; margin: 10px 0 0; }
+.rec-controls { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; }
+.rec-side { width: 44px; display: grid; place-items: center; }
+.rec-center { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.rec-clock { font-variant-numeric: tabular-nums; font-size: 14px; color: var(--muted); }
+.rec-btn { width: 68px; height: 68px; border-radius: 50%; border: 4px solid var(--divider); background: none; display: grid; place-items: center; cursor: pointer; padding: 0; }
+.rec-btn[hidden] { display: none; }
+.rec-btn:disabled { opacity: .4; }
+.rec-dot { width: 48px; height: 48px; border-radius: 50%; background: #e5373a; transition: all .15s; }
+.rec-btn.on .rec-dot { width: 26px; height: 26px; border-radius: 6px; }
+.note-pick-list { display: flex; flex-direction: column; gap: 8px; max-height: 60vh; overflow: auto; }
+.note-pick { display: flex; flex-direction: column; gap: 4px; text-align: left; border: 0; border-radius: 12px; background: var(--surface); color: var(--on-bg); font: inherit; padding: 10px 12px; cursor: pointer; }
+.note-pick-ref { font-size: 13px; font-weight: 600; color: var(--muted); }
+.note-pick-quote { font-family: "Noto Serif", Georgia, serif; font-size: 15px; line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.note-pick-body { font-size: 14px; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }

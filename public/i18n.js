@@ -41,7 +41,13 @@ const ZH = {
   "Couldn't load this chapter. Check your connection and try again.": '无法载入这一章，请检查网络连接后再试。',
   "Couldn't load this chapter.": '无法载入这一章。', 'Selection start': '选择起点', 'Selection end': '选择终点',
   'Dictionary counts': '词典数量标记', Translate: '翻译', Original: '原文', 'Try again': '重试', 'Open as ebook': '作为电子书打开', 'Open as Bible': '作为圣经打开', 'Import as a Bible': '作为圣经导入', 'Change cover': '更换封面', 'Pictures in the book': '书中的图片', 'Pages of the book': '书的页面', 'A photo from your phone': '手机里的照片', 'No pictures in this book.': '这本书里没有图片。', 'No pages to use.': '没有可用的页面。', Page: '页', 'Cover changed': '封面已更换', "That picture couldn't be used.": '这张图片无法使用。', Messages: '消息', Chat: '聊天', 'Search friends or groups': '搜索好友或群组', All: '全部', Private: '私聊', Groups: '群聊', Group: '群',
-  'New chat': '新建聊天', 'New group chat': '新建群聊', Shared: '分享了', 'Shared verse': '分享经文', 'This message was deleted': '此消息已删除', Edited: '已编辑', Edit: '编辑', 'Edit message': '编辑消息', Forward: '转发', Quote: '引用', 'Forward to': '转发给',
+  'New chat': '新建聊天', 'New group chat': '新建群聊', Shared: '分享了', 'Shared verse': '分享经文', 'This message was deleted': '此消息已删除', Edited: '已编辑', Edit: '编辑', 'Edit message': '编辑消息', Forward: '转发', '[Photo]': '[图片]', '[Video]': '[视频]', '[Voice]': '[语音]', '[File]': '[文件]', Verse: '经文', 'Photos & videos': '相册', 'Record video': '拍摄',
+  Voice: '语音', File: '文件', 'Send more': '更多', 'Share a note': '分享笔记', 'Voice message': '语音消息', 'Record again': '重录', 'Switch camera': '切换摄像头',
+  Record: '录制', Stop: '停止', 'Play voice message': '播放语音', Photo: '图片', 'too large (100 MB at most)': '文件太大（最多 100 MB）', 'empty file': '空文件',
+  'Tap the red button to record (up to 1 minute).': '点红色按钮开始录制（最长 1 分钟）。', 'Tap the red button to record a voice message (up to 1 minute).': '点红色按钮录语音（最长 1 分钟）。',
+  'Recording… tap again to stop.': '录制中…再点一下停止。', 'Play it back, then send it or record again.': '可以先回放，再发送或重录。',
+  'Allow the camera and microphone for this site to record.': '请允许本网站使用摄像头和麦克风后再录制。', 'Allow the microphone for this site to record.': '请允许本网站使用麦克风后再录制。',
+  "Couldn't start recording on this device.": '这台设备无法开始录制。', "This browser can't record here.": '这个浏览器无法在这里录制。', "Couldn't play this voice message.": '无法播放这条语音。', Quote: '引用', 'Forward to': '转发给',
   'Delete this message?': '删除这条消息？', 'Everyone in the chat will see “This message was deleted”.': '聊天中的每个人都会看到“此消息已删除”。', Message: '消息', 'That message was deleted': '这条消息已被删除', 'Message not found': '找不到这条消息', 'Add a comment (optional)': '添加留言（可选）', 'Shared note': '分享笔记', 'Shared a note': '分享了笔记', 'Open in Read →': '在读经中打开 →',
   'Share to chat': '分享到聊天', 'Share a verse': '分享经文', 'Say something…': '说点什么…', 'Back to Chat': '返回聊天', members: '位成员',
   'Group name': '群名称', 'Add members': '添加成员', Create: '创建', Members: '成员', 'Rename group': '修改群名称', 'Leave group': '退出群聊', Leave: '退出',
@@ -186,7 +192,7 @@ export function t(s) {
 }
 
 // Elements whose text is content (Bible words, notes, dictionary entries, book and people's names…): never translated.
-export const CONTENT_CLASS = /(^|\s)(w|g|vnum|tw|quote|note-body|note-title|bd-text|bd-term|bd-en|dict-word|dict-en|dict-zh|dict-sense|dict-ex|trans-en|trans-zh|lib-title|lib-meta|lib-tile-title|lib-tile-author|toc-title|toc-item|b-running|person-name|dname|who|version-name|manage-name|commentary-text|c-entry|bible-sample|g-text|g-sentence|ipa|xref|vref|lang-switch)(\s|$)/;
+export const CONTENT_CLASS = /(^|\s)(w|g|vnum|tw|quote|note-body|note-title|bd-text|bd-term|bd-en|dict-word|dict-en|dict-zh|dict-sense|dict-ex|trans-en|trans-zh|lib-title|lib-meta|lib-tile-title|lib-tile-author|toc-title|toc-item|b-running|person-name|dname|who|version-name|manage-name|commentary-text|c-entry|bible-sample|g-text|g-sentence|ipa|xref|vref|lang-switch|file-name)(\s|$)/;
 
 // Bible book names in Chinese (和合本), in Bible order.
 export const ZH_BOOKS = '创世记 出埃及记 利未记 民数记 申命记 约书亚记 士师记 路得记 撒母耳记上 撒母耳记下 列王纪上 列王纪下 历代志上 历代志下 以斯拉记 尼希米记 以斯帖记 约伯记 诗篇 箴言 传道书 雅歌 以赛亚书 耶利米书 耶利米哀歌 以西结书 但以理书 何西阿书 约珥书 阿摩司书 俄巴底亚书 约拿书 弥迦书 那鸿书 哈巴谷书 西番雅书 哈该书 撒迦利亚书 玛拉基书 马太福音 马可福音 路加福音 约翰福音 使徒行传 罗马书 哥林多前书 哥林多后书 加拉太书 以弗所书 腓立比书 歌罗西书 帖撒罗尼迦前书 帖撒罗尼迦后书 提摩太前书 提摩太后书 提多书 腓利门书 希伯来书 雅各书 彼得前书 彼得后书 约翰一书 约翰二书 约翰三书 犹大书 启示录'.split(' ');
