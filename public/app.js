@@ -689,7 +689,7 @@ async function renderReader() {
       : e.status >= 500 || e.status === 0 || !e.status ? `${versionInfo(version).short}: the server isn't answering right now (${e.status || e.message}). Try again in a moment.`
       : `${versionInfo(version).short}: ${tr(e.message)}`;
     const own = versionInfo(version).mine && e.status === 404;
-    body.append(h('p', { class: 'error' }, own ? `${versionInfo(version).short} doesn't have this chapter — its import may not have finished. Repair it from the EPUB it came from.` : why),
+    body.append(h('p', { class: 'error' }, own ? `${versionInfo(version).short} doesn't have this chapter — adding it may not have finished. Repair it from the EPUB it came from.` : why),
       h('div', { class: 'row-actions' },
         own ? h('button', { class: 'filled-btn', type: 'button', onclick: () => addBibleFromEpub(versionInfo(version)) }, `Repair ${versionInfo(version).short}`) : null,
         h('button', { class: 'tonal-btn', type: 'button', onclick: () => renderReader() }, 'Try again')));
@@ -4459,7 +4459,7 @@ function bookOptions(b, { onSaved = renderLibrary, onDeleted = renderLibrary } =
     const found = await bibleVersionsOf(b);
     closeSheet();
     if (found.length) return openLibraryBook(b);
-    if (!await confirmSheet({ title: 'Open as Bible', message: `“${b.title}” isn't in the Bible reader yet. Import it as a Bible? The app reads its books, chapters and verses and shows you what it found first.`, action: 'Import as a Bible', danger: false })) return;
+    if (!await confirmSheet({ title: 'Open as Bible', message: `“${b.title}” isn't in the Bible reader yet. Add it as a Bible? The app reads its books, chapters and verses and shows you what it found first.`, action: 'Add as Bible', danger: false })) return;
     checkBibleEpub(authFetch(`/api/library/${b.id}/file`).then((r) => r.arrayBuffer()), b.title, null, null, () => openLibraryBook(b));
   } }, svg(ICONS.read), h('span', {}, 'Open as Bible'));
   // A new cover: a picture from the book, a page of the book, or a photo from the phone — shrunk to a small JPEG.
