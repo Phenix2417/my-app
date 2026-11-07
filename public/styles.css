@@ -961,3 +961,4 @@ span.verse-card-text { display: block; }
 .file-expiry { font-size: 12px; opacity: .75; margin-top: -2px; }
 .chat-bubble.media .file-expiry { padding: 2px 4px 0; color: var(--muted); opacity: 1; text-align: right; }
 .chat-line:not(.mine) .chat-bubble.media .file-expiry { text-align: left; }
+.pdf-page-img { width: 100%; height: auto; display: block; background: #fff; }

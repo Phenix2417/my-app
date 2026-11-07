@@ -3650,9 +3650,11 @@ async function pdfPictures(doc, pages = 12, max = 24) {
   }
   return out;
 }
-async function previewPdf(buf, body, cleanups) {
-  const doc = await openPdfBytes(buf);
-  cleanups.push(() => doc.destroy());
+// buf: the PDF's bytes, or a PDF already open (left open afterwards); start: the page to show first.
+async function previewPdf(buf, body, cleanups, start = 1) {
+  const own = !(buf && typeof buf.getPage === 'function');
+  const doc = own ? await openPdfBytes(buf) : buf;
+  if (own) cleanups.push(() => doc.destroy());
   const pages = h('div', { class: 'fp-pdf' });
   const count = h('div', { class: 'fp-count' }, `1 / ${doc.numPages}`);
   body.classList.add('grey');
@@ -3679,6 +3681,90 @@ async function previewPdf(buf, body, cleanups) {
   }, { root: pages, rootMargin: '600px 0px' });
   slots.forEach((s) => io.observe(s));
   cleanups.push(() => io.disconnect());
+  if (start > 1) requestAnimationFrame(() => slots[Math.min(start, slots.length) - 1]?.scrollIntoView({ block: 'start' }));
+}
+// A PDF's pages as printed, full screen, from a given page.
+function openPdfPages(title, doc, start = 1) {
+  const cleanups = [];
+  const body = h('div', { class: 'fp-body' }, h('p', { class: 'empty-inline' }, 'Opening…'));
+  const close = () => { cleanups.forEach((c) => { try { c(); } catch { /* gone */ } }); box.remove(); document.removeEventListener('keydown', onKey); };
+  const onKey = (e) => { if (e.key === 'Escape') close(); };
+  const box = h('div', { class: 'file-preview', role: 'dialog', 'aria-label': title },
+    h('div', { class: 'fp-top' }, h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Close', title: 'Close', onclick: close }, svg(ICONS.back)),
+      h('div', { class: 'fp-heading' }, h('div', { class: 'fp-title lib-title' }, title))), body);
+  document.addEventListener('keydown', onKey);
+  document.body.append(box);
+  previewPdf(doc, body, cleanups, start).catch(() => body.replaceChildren(h('p', { class: 'error' }, "This PDF couldn't be shown.")));
+}
+// A PDF as a book for the reader: one section per page, its text set as paragraphs (so it can be selected,
+// highlighted and noted like an EPUB); a page with no text (a scan) shows as its picture. Pages are read as needed.
+async function openPdfBook(b) {
+  const doc = await openShelfPdf(b);
+  const toc = [];
+  try {
+    const walk = async (items, depth) => {
+      for (const it of items || []) {
+        if (toc.length >= 1000) return;
+        try {
+          const dest = typeof it.dest === 'string' ? await doc.getDestination(it.dest) : it.dest;
+          const ref = dest?.[0];
+          const i = ref == null ? -1 : typeof ref === 'number' ? ref : await doc.getPageIndex(ref);
+          if (i >= 0 && it.title?.trim()) toc.push({ label: it.title.trim(), chapter: i, anchor: '', depth });
+        } catch { /* a bookmark that goes nowhere */ }
+        await walk(it.items, depth + 1);
+      }
+    };
+    await walk(await doc.getOutline(), 0);
+  } catch { /* no contents */ }
+  const tocByPage = [...toc].sort((x, y) => x.chapter - y.chapter);
+  return {
+    kind: 'pdf', title: b.title, author: '', doc, toc,
+    chapters: Array.from({ length: doc.numPages }, (_, i) => ({ href: `page-${i + 1}` })),
+    chapterTitle(i) { return [...tocByPage].reverse().find((t) => t.chapter <= i)?.label || pageLabel(i + 1); },
+    async render(i) {
+      const frag = document.createDocumentFragment();
+      const page = await doc.getPage(i + 1);
+      const blocks = pdfTextBlocks(await page.getTextContent());
+      if (!blocks.length) { // a scanned page: its picture
+        const img = h('img', { class: 'pdf-page-img', alt: pageLabel(i + 1) });
+        frag.append(h('figure', {}, img));
+        pdfPageCover(doc, i + 1, Math.min(1400, Math.round(innerWidth * (devicePixelRatio || 1)))).then((blob) => { if (blob) img.src = URL.createObjectURL(blob); }).catch(() => {});
+        return frag;
+      }
+      for (const blk of blocks) { const el = document.createElement(blk.heading ? 'h3' : 'p'); el.textContent = blk.text; frag.append(el); }
+      return frag;
+    },
+  };
+}
+// A page's text as paragraphs: pieces on one line joined, lines joined into a paragraph until a wider gap, a
+// larger size (a heading), or a jump back up the page (a new column). A word broken by a hyphen is put back together.
+function pdfTextBlocks(content) {
+  const lines = [];
+  let cur = null;
+  for (const it of content.items) {
+    if (typeof it.str !== 'string') continue;
+    const y = it.transform[5], size = Math.hypot(it.transform[2], it.transform[3]) || it.height || 10;
+    if (!cur || Math.abs(y - cur.y) > size * 0.5) { cur = { y, size, text: '' }; lines.push(cur); }
+    cur.text += it.str; cur.size = Math.max(cur.size, size);
+    if (it.hasEOL) cur = null;
+  }
+  const ls = lines.map((l) => ({ ...l, text: l.text.replace(/\s+/g, ' ').trim() })).filter((l) => l.text);
+  if (!ls.length) return [];
+  const gaps = ls.slice(1).map((l, k) => ls[k].y - l.y).filter((g) => g > 0).sort((a, b) => a - b);
+  const sizes = ls.map((l) => l.size).sort((a, b) => a - b);
+  const gap = gaps[Math.floor(gaps.length / 2)] || sizes[0] * 1.2, body = sizes[Math.floor(sizes.length / 2)];
+  const CJK = /[\u3000-\u303f\u3400-\u9fff\uff00-\uffef]/;
+  const blocks = [];
+  let blk = null, prev = null;
+  for (const l of ls) {
+    const heading = l.size > body * 1.25 && l.text.length < 120;
+    const d = prev ? prev.y - l.y : 0;
+    if (!blk || heading || blk.heading || d < 0 || d > gap * 1.45) { blk = { text: l.text, heading }; blocks.push(blk); }
+    else if (/[A-Za-z]-$/.test(blk.text) && /^[a-z]/.test(l.text)) blk.text = blk.text.slice(0, -1) + l.text;
+    else blk.text += (CJK.test(blk.text.slice(-1)) || CJK.test(l.text[0]) ? '' : ' ') + l.text;
+    prev = l;
+  }
+  return blocks;
 }
 // A picture, full screen; a tap closes it.
 function viewImage(src, alt) {
@@ -4870,26 +4956,7 @@ async function openLibraryBook(b, { asEbook = false } = {}) {
     toast(bible.map((v) => v.short).join(' + '));
     return;
   }
-  if (b.format === 'pdf' && b.local) { // kept on this phone: shown by the app's own PDF viewer
-    const box = h('div', { class: 'file-preview', role: 'dialog', 'aria-label': b.title });
-    const body = h('div', { class: 'fp-body' }, h('p', { class: 'empty-inline' }, 'Opening…'));
-    const cleanups = [];
-    const close = () => { cleanups.forEach((c) => { try { c(); } catch { /* gone */ } }); box.remove(); };
-    box.append(h('div', { class: 'fp-top' }, h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Close', title: 'Close', onclick: close }, svg(ICONS.back)),
-      h('div', { class: 'fp-title lib-title' }, b.title)), body);
-    document.body.append(box);
-    try { await previewPdf(await (await authFetch(`/api/library/${b.id}/file`)).arrayBuffer(), body, cleanups); }
-    catch (e) { body.replaceChildren(h('p', { class: 'error' }, e.message || "This PDF couldn't be shown.")); }
-    return;
-  }
-  if (b.format === 'pdf') { // the phone's own PDF viewer, through a short-lived link
-    const win = window.open('', '_blank');
-    try {
-      const { url } = await api('POST', `/api/library/${b.id}/link`);
-      if (win) win.location.href = url; else location.href = url;
-    } catch (e) { win?.close(); toast(e.message); }
-    return;
-  }
+  // (PDFs open in the app's reader too: their text can be selected, highlighted and noted like an EPUB's.)
   lib.current = b;
   state.tab = 'book';
   render();
@@ -4916,7 +4983,9 @@ async function renderBookReader() {
     barBtn('Back to shelf', ICONS.back, toLibrary), h('span', { class: 'spacer' }),
     barBtn('Book options', ICONS.more, () => bookOptions(b, { onSaved: () => { runEl.textContent = runEl.textContent.replace(/^[^·]*/, b.title + ' '); }, onDeleted: toLibrary })));
   const toolbar = h('nav', { class: 'b-toolbar', 'aria-label': 'Book' }, barBtn('Contents', ICONS.contents, () => showContents()),
-    barBtn('Notes', ICONS.notes, () => showBookNotes()), sizeBtn);
+    barBtn('Notes', ICONS.notes, () => showBookNotes()), sizeBtn,
+    // A PDF: its page as printed (pictures, layout), over the text.
+    b.format === 'pdf' ? barBtn('Original page', ICONS.image, () => { const bk = lib.opened.get(b.id); if (bk?.doc) openPdfPages(b.title, bk.doc, lib.chapter + 1); }) : null);
   const screen = h('main', { class: 'screen commentary-page book-page' }, runEl, scroller, progressEl, topBar, sizePanel, toolbar);
   mount(screen);
 
@@ -4924,8 +4993,11 @@ async function renderBookReader() {
   try {
     book = lib.opened.get(b.id);
     if (!book) {
-      const buf = await (await authFetch(`/api/library/${b.id}/file`)).arrayBuffer();
-      book = b.format === 'epub' ? await openEpub(buf) : openText(buf, b.title);
+      if (b.format === 'pdf') book = await openPdfBook(b);
+      else {
+        const buf = await (await authFetch(`/api/library/${b.id}/file`)).arrayBuffer();
+        book = b.format === 'epub' ? await openEpub(buf) : openText(buf, b.title);
+      }
       lib.opened.set(b.id, book);
     }
   } catch (e) {
@@ -4958,7 +5030,8 @@ async function renderBookReader() {
     paint();
     const ct = book.chapterTitle(chapter);
     runEl.textContent = ct && ct !== b.title ? `${b.title} · ${ct}` : b.title;
-    whereEl.textContent = tr(`Chapter ${chapter + 1} of ${book.chapters.length}`);
+    whereEl.textContent = book.kind === 'pdf' ? (LANG === 'zh' ? `第 ${chapter + 1} 页，共 ${book.chapters.length} 页` : `Page ${chapter + 1} of ${book.chapters.length}`)
+      : tr(`Chapter ${chapter + 1} of ${book.chapters.length}`);
     if (slide) { body.classList.remove('slide-from-right', 'slide-from-left'); void body.offsetWidth; body.classList.add(slide > 0 ? 'slide-from-right' : 'slide-from-left'); }
     requestAnimationFrame(() => {
       const target = (anchor && body.querySelector(`#${CSS.escape(ANCHOR_PREFIX + anchor)}`)) || (block && lib.blocks[block - 1]);
