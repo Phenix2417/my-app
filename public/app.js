@@ -3081,7 +3081,12 @@ async function checkBibleEpub(bufPromise, fileName, file = null, repair = null, 
           await loadVersions();
           if (repair) { chapterCacheClear(repair.id); toast(`${repair.short} repaired`); if (state.tab === 'read') renderReader(); }
           else if (onAdded) onAdded(added);
-          else setVersion(added[0].id, { quiet: true }), goTo(state.pos);
+          else {
+            // Open what was just added: its first two translations side by side, in the book's order.
+            state.version = added[0].id; store.set('version', state.version);
+            state.parallel = added[1]?.id || null; store.set('parallel', state.parallel);
+            goTo(state.pos);
+          }
         } catch (err) {
           // Don't leave half-saved versions behind (a repair keeps its version: try again).
           for (const v of added) await api('DELETE', `/api/my-versions/${v.id}`).catch(() => {});
