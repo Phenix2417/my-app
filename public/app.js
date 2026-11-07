@@ -665,7 +665,7 @@ async function renderReader() {
     const to = dir > 0 ? next : prev;
     if (!to) { toast(dir > 0 ? 'This is the last chapter of the Bible.' : 'This is the first chapter of the Bible.'); return; }
     reader.slideFrom = dir;
-    reader.keepBars = true; // turning the page leaves the title bar and toolbar as they are
+    reader.hideBars = true; // turning the page hides the title bar and toolbar (a tap in the middle brings them back)
     goTo(to);
   };
   const screen = h('main', { class: 'screen reader-page' },
@@ -695,8 +695,8 @@ async function renderReader() {
   reader.scroller = scroller;
   const back = backButton();
   if (back) screen.append(back);
-  const keep = reader.keepBars; reader.keepBars = false;
-  if (!keep) setBars(true);
+  const turned = reader.hideBars; reader.hideBars = false;
+  setBars(!turned);
   // Reading further down slides the bars away; a tap brings them back. (The scrolling done when a chapter opens —
   // to its top, or to a verse — isn't reading, so it leaves them alone.)
   let lastTop = 0, settling = true;
@@ -5294,9 +5294,12 @@ async function renderBookReader() {
   Object.assign(reader, { mode: 'book', body, scroller, words: [], gaps: [], verseEls: [], handles: null, toolbar: null });
   body.addEventListener('pointerdown', (e) => { const blk = bookBlockAt(e.target); if (blk) wrapBookBlock(blk); }, { capture: true });
   attachReaderGestures(body);
-  let settlingUntil = 0; // (the scrolling done when a chapter opens isn't reading: it leaves the bars as they are)
+  let settlingUntil = 0, opened = false; // (the scrolling done when a chapter opens isn't reading)
   const show = async (i, { frac = 0, anchor = '', slide = 0, block = 0 } = {}) => {
     settlingUntil = Date.now() + 400;
+    // Turning to another page or chapter hides the bars (a tap in the middle brings them back); opening the book doesn't.
+    if (opened) { setBars(false); sizePanel.hidden = true; sizeBtn.setAttribute('aria-expanded', 'false'); }
+    opened = true;
     chapter = Math.max(0, Math.min(book.chapters.length - 1, i));
     clearSelection();
     const content = await book.render(chapter);
