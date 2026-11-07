@@ -761,12 +761,13 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
         }
         return '';
       };
-      let got = await page('facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)');
-      if (!got || !meta(got.html, ['og:title', 'twitter:title'])) got = (await page('Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1')) || got;
+      // Asked honestly as this app's link-preview fetcher; a site that doesn't share previews with it just gets the plain card.
+      const got = await page('BibleStudyApp-LinkPreview/1.0 (+https://github.com/Phenix2417/my-app)');
       if (!got) throw new HttpError(404, 'No preview for this link');
       const { html, at } = got;
-      const title = (meta(html, ['og:title', 'twitter:title']) || (html.match(/<title[^>]*>([^<]{1,300})/i) || [])[1] || '').trim();
-      if (!title) throw new HttpError(404, 'No preview for this link');
+      const title = (meta(html, ['og:title', 'twitter:title']) || (html.match(/<title[^>]*>([^<]{1,300})/i) || [])[1] || '').replace(/&amp;/g, '&').trim();
+      // A login or "security check" page instead of the post isn't worth a card.
+      if (!title || (/^(知乎|zhihu|安全验证|登录|log ?in|sign ?in|access denied|robot check|just a moment)/i.test(title) && title.length < 20)) throw new HttpError(404, 'No preview for this link');
       let picture = meta(html, ['og:image', 'og:image:url', 'twitter:image', 'twitter:image:src']);
       if (picture.startsWith('//')) picture = `https:${picture}`;
       let image = null;

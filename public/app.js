@@ -3259,14 +3259,14 @@ function linkCard(box, v) {
   const domain = siteOf(new URL(v.url).hostname);
   const site = domain === 'wikipedia.org' && /^https:\/\/zh\./.test(v.url) ? '维基百科' : CARD_SITES[domain] || new URL(v.url).hostname;
   const shell = (...kids) => h('a', { class: 'weibo-inner', href: v.url, target: '_blank', rel: 'noopener noreferrer' }, ...kids);
-  box.replaceChildren(shell(h('div', { class: 'weibo-head' }, h('b', {}, site), h('span', { class: 'weibo-brand' }, site)), h('span', { class: 'empty-inline' }, 'Loading…')));
+  box.replaceChildren(shell(h('div', { class: 'weibo-head' }, h('b', {}, site)), h('span', { class: 'empty-inline' }, 'Loading…')));
   cachedGet(`/api/link-card?url=${encodeURIComponent(v.url)}`).then((c) => {
     box.replaceChildren(shell(
       h('div', { class: 'weibo-head' }, h('b', { class: 'card-title' }, c.title), h('span', { class: 'weibo-brand card-site' }, site)),
       c.text && c.text !== c.title ? h('p', { class: 'weibo-text' }, c.text) : null,
       c.image ? h('div', { class: 'weibo-pic' }, h('img', { src: c.image, alt: '', onerror: (e) => e.target.parentElement.remove() })) : null,
       h('span', { class: 'weibo-open' }, LANG === 'zh' ? `在${site}查看` : `Open in ${site}`)));
-  }).catch(() => box.replaceChildren(shell(h('div', { class: 'weibo-head' }, h('b', {}, site), h('span', { class: 'weibo-brand' }, site)),
+  }).catch(() => box.replaceChildren(shell(h('div', { class: 'weibo-head' }, h('b', {}, site)),
     h('span', { class: 'weibo-open' }, LANG === 'zh' ? `在${site}查看` : `Open in ${site}`))));
 }
 
