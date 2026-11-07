@@ -8,6 +8,7 @@ import { PronounceError } from './pronounce.js';
 import { TranslateError } from './translate.js';
 import { BibleDictError, MARK_SKIP } from './bibledict.js';
 import { WikiError } from './wiki.js';
+import { CARD_SITES } from '../public/video.js';
 import { VERSIONS, VERSION_IDS, VersionError } from './versions.js';
 import { LibraryError, BOOK_TYPES, MAX_BOOK_BYTES, MAX_LIBRARY_BYTES, MAX_COVER_BYTES, sniffFormat, sniffImage } from './library.js';
 
@@ -313,7 +314,7 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
   const groupOut = (g) => ({ id: g.id, name: g.name, members: stmt.members.all(g.id).map((u) => userOut(u.id, u.username, u.display_name)) });
   const videoLinks = new Map(); // short link -> where it leads
   // Pages on the platforms that chat shows (videos, posts, cards); short links and cards only ever go to these.
-  const PLATFORM_URL = /^https:\/\/([\w-]+\.)*(bilibili\.com|b23\.tv|tiktok\.com|douyin\.com|iesdouyin\.com|facebook\.com|weibo\.com|weibo\.cn|xiaohongshu\.com|xhslink\.com|youtube\.com|youtu\.be|vimeo\.com|x\.com|twitter\.com|instagram\.com|wikipedia\.org|zhihu\.com)\//;
+  const PLATFORM_URL = new RegExp(`^https?:\\/\\/([\\w-]+\\.)*(${Object.keys(CARD_SITES).map((d) => d.replace(/\./g, '\\.')).join('|')})(:443)?\\/`);
   const linkCards = new Map(); // page address -> card
   const cardImages = new Map(); // key -> picture address (only pictures named by a card can be fetched)
   const weiboCards = new Map(); // 微博 post id -> card

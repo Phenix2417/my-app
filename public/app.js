@@ -1,6 +1,6 @@
 // Bible Study — single-page app. No build step, no dependencies.
 import { openEpub, openText, parseBibleEpub, ANCHOR_PREFIX } from './epub.js';
-import { videoOf, embedUrl, LINK_RE as VIDEO_LINK_RE } from './video.js';
+import { videoOf, embedUrl, LINK_RE as VIDEO_LINK_RE, CARD_SITES, siteOf } from './video.js';
 import { t as tr, LANG, setLang, CONTENT_CLASS, ZH_BOOKS } from './i18n.js';
 
 const COLORS = ['yellow', 'green', 'blue', 'pink', 'purple'];
@@ -3224,7 +3224,7 @@ function videoEmbeds(text) {
     };
     if (v.kind === 'short') {
       // An app's short link: ask the server where it leads, then show that post.
-      api('GET', `/api/video-link?url=${encodeURIComponent(v.url)}`).then(({ url }) => {
+      cachedGet(`/api/video-link?url=${encodeURIComponent(v.url)}`).then(({ url }) => {
         const r = videoOf(url);
         if (r && r.kind !== 'short') show(r, url); else box.remove();
       }).catch(() => box.remove());
@@ -3237,7 +3237,7 @@ function videoEmbeds(text) {
 function weiboCard(box, v, link) {
   const href = /^https?:/i.test(link) ? link : `https://${link}`;
   box.replaceChildren(h('a', { class: 'weibo-inner', href, target: '_blank', rel: 'noopener noreferrer' }, h('span', { class: 'weibo-brand' }, '微博'), h('span', { class: 'empty-inline' }, 'Loading…')));
-  api('GET', `/api/weibo/${encodeURIComponent(v.id)}`).then((c) => {
+  cachedGet(`/api/weibo/${encodeURIComponent(v.id)}`).then((c) => {
     box.replaceChildren(h('a', { class: 'weibo-inner', href: c.url || href, target: '_blank', rel: 'noopener noreferrer' },
       h('div', { class: 'weibo-head' }, c.avatar ? h('img', { class: 'weibo-avatar', src: c.avatar, alt: '' }) : null, h('b', {}, c.author || '微博'), h('span', { class: 'weibo-brand' }, '微博')),
       c.text ? h('p', { class: 'weibo-text' }, c.text) : null,
@@ -3249,14 +3249,18 @@ function weiboCard(box, v, link) {
 
 // Any other page on these platforms (a profile, channel, 动态, 小红书 note, photo post…): a card with its title,
 // description and picture, as the page describes itself. Tap opens it.
-const SITE_NAMES = { 'youtube.com': 'YouTube', 'bilibili.com': '哔哩哔哩', 'x.com': 'X', 'twitter.com': 'X', 'instagram.com': 'Instagram', 'tiktok.com': 'TikTok',
-  'douyin.com': '抖音', 'iesdouyin.com': '抖音', 'facebook.com': 'Facebook', 'xiaohongshu.com': '小红书', 'weibo.com': '微博', 'weibo.cn': '微博', 'vimeo.com': 'Vimeo', 'wikipedia.org': 'Wikipedia', 'zhihu.com': '知乎' };
+// Card details, remembered for this session (a chat redraws its messages often).
+const cardCache = new Map();
+function cachedGet(path) {
+  if (!cardCache.has(path)) { const p = api('GET', path); cardCache.set(path, p); p.catch(() => cardCache.delete(path)); }
+  return cardCache.get(path);
+}
 function linkCard(box, v) {
-  const host = new URL(v.url).hostname.replace(/^([\w-]+\.)*(?=[\w-]+\.[a-z]+$)/, '');
-  const site = host === 'wikipedia.org' && /^https:\/\/zh\./.test(v.url) ? '维基百科' : SITE_NAMES[host] || host;
+  const domain = siteOf(new URL(v.url).hostname);
+  const site = domain === 'wikipedia.org' && /^https:\/\/zh\./.test(v.url) ? '维基百科' : CARD_SITES[domain] || new URL(v.url).hostname;
   const shell = (...kids) => h('a', { class: 'weibo-inner', href: v.url, target: '_blank', rel: 'noopener noreferrer' }, ...kids);
   box.replaceChildren(shell(h('div', { class: 'weibo-head' }, h('b', {}, site), h('span', { class: 'weibo-brand' }, site)), h('span', { class: 'empty-inline' }, 'Loading…')));
-  api('GET', `/api/link-card?url=${encodeURIComponent(v.url)}`).then((c) => {
+  cachedGet(`/api/link-card?url=${encodeURIComponent(v.url)}`).then((c) => {
     box.replaceChildren(shell(
       h('div', { class: 'weibo-head' }, h('b', { class: 'card-title' }, c.title), h('span', { class: 'weibo-brand card-site' }, site)),
       c.text && c.text !== c.title ? h('p', { class: 'weibo-text' }, c.text) : null,

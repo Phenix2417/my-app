@@ -119,3 +119,25 @@ test('Wikipedia and 知乎: one card per article or page, whatever the link form
   const text = '推荐 https://zhuanlan.zhihu.com/p/123456 和 zh.wikipedia.org/wiki/亚伯拉罕，看看 https://en.wikipedia.org/wiki/Moses。';
   assert.deepEqual([...text.matchAll(LINK_RE)].map((m) => videoOf(m[0]).id), ['zhuanlan.zhihu.com/p/123456', 'zh:亚伯拉罕', 'en:Moses']);
 });
+
+test('Q&A and shopping sites (American and Chinese): cards, one per product, from web, mobile or app links', async () => {
+  const { CARD_SITES, siteOf } = await import('../public/video.js');
+  for (const u of ['https://www.quora.com/How-do-I-start-reading-the-Bible', 'https://www.reddit.com/r/Christianity/comments/abc123/title/', 'https://redd.it/abc123',
+    'https://stackoverflow.com/questions/123/how', 'https://hermeneutics.stackexchange.com/questions/1/x', 'https://zhidao.baidu.com/question/123456.html',
+    'https://baike.baidu.com/item/圣经', 'https://www.target.com/p/x/-/A-123', 'https://www.etsy.com/listing/123/x', 'https://www.temu.com/x-g-601.html',
+    'https://m.tb.cn/h.5ABCDE?tk=xyz', 'https://u.jd.com/AbCdEf', 'https://3.cn/abc-DEF', 'https://amzn.to/3AbCdEf', 'https://a.co/d/abc1234', 'https://www.goofish.com/item?id=123'])
+    assert.equal(videoOf(u)?.kind, 'card', u);
+  const same = (urls, want) => { for (const u of urls) assert.equal(videoOf(u).url, want, u); };
+  same(['https://www.amazon.com/Holy-Bible-ESV/dp/B000123456/ref=sr_1_1?keywords=bible&qid=1', 'https://www.amazon.com/gp/product/B000123456?th=1', 'https://smile.amazon.com/dp/B000123456', 'amazon.com/gp/aw/d/B000123456'], 'https://www.amazon.com/dp/B000123456');
+  same(['https://item.jd.com/100012345678.html?spm=a', 'https://item.m.jd.com/product/100012345678.html?utm_source=x'], 'https://item.jd.com/100012345678.html');
+  same(['https://item.taobao.com/item.htm?spm=a21n57&id=623456789012&ali_trackid=1', 'https://h5.m.taobao.com/awp/core/detail.htm?id=623456789012'], 'https://item.taobao.com/item.htm?id=623456789012');
+  same(['https://detail.tmall.com/item.htm?id=623456789012&skuId=1'], 'https://detail.tmall.com/item.htm?id=623456789012');
+  same(['https://mobile.yangkeduo.com/goods.html?goods_id=123456789&page_from=23'], 'https://mobile.yangkeduo.com/goods.html?goods_id=123456789');
+  same(['https://www.walmart.com/ip/Holy-Bible/123456789?athbdg=L1'], 'https://www.walmart.com/ip/123456789');
+  same(['https://www.ebay.com/itm/Holy-Bible/123456789012?hash=x'], 'https://www.ebay.com/itm/123456789012');
+  assert.equal(siteOf('smile.amazon.com'), 'amazon.com');
+  assert.equal(CARD_SITES[siteOf('detail.tmall.com')], '天猫');
+  assert.equal(videoOf('https://www.amazon.com/'), null); // a home page isn't a card
+  const share = '【淘宝】限时特惠 https://m.tb.cn/h.5ABCDE?tk=xyz CZ0001 「圣经 和合本」点击链接直接打开';
+  assert.deepEqual([...share.matchAll(LINK_RE)].map((m) => m[0]), ['https://m.tb.cn/h.5ABCDE?tk=xyz']);
+});

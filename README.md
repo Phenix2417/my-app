@@ -170,3 +170,9 @@ Every other page on these platforms — and all of 小红书, 知乎 and Wikiped
 from the page's Open Graph tags read by the server (`/api/link-card`, platform addresses only; pictures through
 `/api/card-image/<key>`, only those a card named). Facebook posts use Facebook's post embed; 小红书 notes and the
 app's xhslink.com short links become cards.
+
+Q&A and shopping sites show as cards the same way: Quora, Reddit, Stack Overflow / Stack Exchange, 百度知道, 百度百科,
+豆瓣, 简书; Amazon, eBay, Walmart, Target, Best Buy, Etsy, Costco, Home Depot, Lowe's, Temu, SHEIN, AliExpress, Wayfair,
+Macy's, Kohl's, Newegg, Chewy, IKEA…; 淘宝, 天猫, 京东, 拼多多, 1688, 苏宁易购, 唯品会, 当当, 闲鱼, 得物, 快手, 美团,
+大众点评, 小米商城 — including their apps' short links (amzn.to, a.co, m.tb.cn, u.jd.com, 3.cn, redd.it…). The list is
+`CARD_SITES` in `public/video.js`; product links are reduced to one address per product (tracking extras dropped).
