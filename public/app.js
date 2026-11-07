@@ -3769,20 +3769,193 @@ async function openPdfBook(b) {
     kind: 'pdf', title: b.title, author: '', doc, toc,
     chapters: Array.from({ length: doc.numPages }, (_, i) => ({ href: `page-${i + 1}` })),
     chapterTitle(i) { return [...tocByPage].reverse().find((t) => t.chapter <= i)?.label || pageLabel(i + 1); },
-    async render(i) {
-      const frag = document.createDocumentFragment();
-      const page = await doc.getPage(i + 1);
-      const blocks = pdfTextBlocks(await page.getTextContent());
-      if (!blocks.length) { // a scanned page: its picture
-        const img = h('img', { class: 'pdf-page-img', alt: pageLabel(i + 1) });
-        frag.append(h('figure', {}, img));
-        pdfPageCover(doc, i + 1, Math.min(1400, Math.round(innerWidth * (devicePixelRatio || 1)))).then((blob) => { if (blob) img.src = URL.createObjectURL(blob); }).catch(() => {});
-        return frag;
-      }
-      for (const blk of blocks) { const el = document.createElement(blk.heading ? 'h3' : 'p'); el.textContent = blk.text; frag.append(el); }
-      return frag;
-    },
+    async render(i) { return pdfPageFlow(doc, i + 1); },
   };
+}
+// One PDF page for the reader, everything on it in reading order: paragraphs and headings as text, tables rebuilt
+// as tables (their words line up in columns), and everything else — pictures, charts, diagrams, drawn artwork — as
+// pictures cut from the page, placed where they sit among the text. Pictures are found by drawing the page and
+// looking for ink that isn't text; flat fills behind text (shaded boxes, table rules, backgrounds) are left out, and
+// words printed inside a picture (a diagram's labels) stay with the picture. A page with no text shows whole.
+async function pdfPageFlow(doc, n) {
+  const pdfjs = await loadPdfjs();
+  const page = await doc.getPage(n), content = await page.getTextContent();
+  const width = Math.min(1600, Math.max(900, Math.round(innerWidth * Math.min(devicePixelRatio || 1, 2))));
+  const vp = page.getViewport({ scale: width / page.getViewport({ scale: 1 }).width });
+  const canvas = document.createElement('canvas'); canvas.width = Math.round(vp.width); canvas.height = Math.round(vp.height);
+  const g = canvas.getContext('2d', { willReadFrequently: true });
+  g.fillStyle = '#fff'; g.fillRect(0, 0, canvas.width, canvas.height);
+  await page.render({ canvasContext: g, viewport: vp }).promise;
+  const frag = document.createDocumentFragment();
+  const crop = (x, y, w, hgt) => {
+    const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(w)); c.height = Math.max(1, Math.round(hgt));
+    c.getContext('2d').drawImage(canvas, x, y, w, hgt, 0, 0, c.width, c.height);
+    const img = h('img', { class: 'pdf-figure-img', alt: '' });
+    c.toBlob((blob) => { if (blob) img.src = URL.createObjectURL(blob); }, 'image/jpeg', 0.9);
+    return h('figure', { class: 'pdf-figure' }, img);
+  };
+  // The words, with their boxes on the drawn page.
+  const items = [];
+  for (const it of content.items) {
+    if (typeof it.str !== 'string' || !it.str.trim()) continue;
+    const t = pdfjs.Util.transform(vp.transform, it.transform), size = Math.hypot(t[2], t[3]) || 10;
+    items.push({ str: it.str, eol: it.hasEOL, x: t[4], base: t[5], size, w: Math.max(it.width * vp.scale, size * 0.3), top: t[5] - size, raw: it });
+  }
+  if (!items.length) { frag.append(crop(0, 0, canvas.width, canvas.height)); return frag; } // a scan
+
+  // Ink that isn't text, on a grid of small cells.
+  const C = 8, gw = Math.ceil(canvas.width / C), gh = Math.ceil(canvas.height / C);
+  const px = g.getImageData(0, 0, canvas.width, canvas.height).data;
+  const textCell = new Uint8Array(gw * gh), ink = new Uint8Array(gw * gh);
+  for (const it of items) {
+    for (let cy = Math.max(0, Math.floor((it.top - it.size * 0.25) / C)); cy <= Math.min(gh - 1, Math.floor((it.base + it.size * 0.3) / C)); cy++) {
+      for (let cx = Math.max(0, Math.floor(it.x / C) - 1); cx <= Math.min(gw - 1, Math.floor((it.x + it.w) / C) + 1); cx++) textCell[cy * gw + cx] = 1;
+    }
+  }
+  for (let cy = 0; cy < gh; cy++) for (let cx = 0; cx < gw; cx++) {
+    if (textCell[cy * gw + cx]) continue;
+    let dark = 0;
+    for (let y = cy * C; y < Math.min(canvas.height, cy * C + C); y += 2) for (let x = cx * C; x < Math.min(canvas.width, cx * C + C); x += 2) {
+      const k = (y * canvas.width + x) * 4;
+      if (px[k] < 235 || px[k + 1] < 235 || px[k + 2] < 235) dark++;
+    }
+    if (dark >= 2) ink[cy * gw + cx] = 1;
+  }
+  // Connected areas of ink (gaps of a cell or two bridged), as boxes.
+  const seen = new Uint8Array(gw * gh), boxes = [];
+  for (let start = 0; start < gw * gh; start++) {
+    if (!ink[start] || seen[start]) continue;
+    const stack = [start]; seen[start] = 1;
+    let x0 = gw, y0 = gh, x1 = 0, y1 = 0, cells = 0;
+    while (stack.length) {
+      const c = stack.pop(), cx = c % gw, cy = (c - cx) / gw; cells++;
+      x0 = Math.min(x0, cx); x1 = Math.max(x1, cx); y0 = Math.min(y0, cy); y1 = Math.max(y1, cy);
+      for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+        const nx = cx + dx, ny = cy + dy;
+        if (nx < 0 || ny < 0 || nx >= gw || ny >= gh) continue;
+        const k = ny * gw + nx;
+        if (ink[k] && !seen[k]) { seen[k] = 1; stack.push(k); }
+      }
+    }
+    boxes.push({ x: x0 * C, y: y0 * C, w: (x1 - x0 + 1) * C, h: (y1 - y0 + 1) * C, cells });
+  }
+  // Pieces of one picture (a diagram's shapes, a photo and its frame) are joined when they nearly touch.
+  const near = (p, q, m) => p.x - m < q.x + q.w && q.x - m < p.x + p.w && p.y - m < q.y + q.h && q.y - m < p.y + p.h;
+  let groups = boxes.filter((b) => b.cells >= 3).map((b) => ({ ...b }));
+  for (let merged = true; merged;) {
+    merged = false;
+    for (let i = 0; i < groups.length && !merged; i++) for (let k = i + 1; k < groups.length && !merged; k++) {
+      const p = groups[i], q = groups[k];
+      if (!near(p, q, 24)) continue;
+      const x = Math.min(p.x, q.x), y = Math.min(p.y, q.y);
+      groups[i] = { x, y, w: Math.max(p.x + p.w, q.x + q.w) - x, h: Math.max(p.y + p.h, q.y + q.h) - y, cells: p.cells + q.cells };
+      groups.splice(k, 1); merged = true;
+    }
+  }
+  // Keep real pictures: not specks, not the whole page's background, not a flat fill behind text (a shaded box),
+  // not ruled lines (a table's borders, a frame). Judged from the ink only: the white around it doesn't count.
+  const isInk = (k) => px[k] < 235 || px[k + 1] < 235 || px[k + 2] < 235;
+  const figures = groups.filter((b) => {
+    if (b.w < 48 || b.h < 40 || b.cells < 30) return false;
+    if (b.w * b.h > canvas.width * canvas.height * 0.85) return false;
+    const x0 = b.x, y0 = b.y, x1 = Math.min(canvas.width, b.x + b.w), y1 = Math.min(canvas.height, b.y + b.h);
+    const colours = new Map(); let inked = 0, room = 0, ruled = 0;
+    const colInk = new Uint32Array(x1 - x0);
+    for (let y = y0; y < y1; y++) {
+      let rowInk = 0;
+      const textRow = Math.floor(y / C) * gw;
+      for (let x = x0; x < x1; x++) {
+        if (textCell[textRow + Math.floor(x / C)]) continue;
+        room++;
+        const k = (y * canvas.width + x) * 4;
+        if (!isInk(k)) continue;
+        inked++; rowInk++; colInk[x - x0]++;
+        if ((x & 3) === 0 && (y & 3) === 0) { const key = `${px[k] >> 5},${px[k + 1] >> 5},${px[k + 2] >> 5}`; colours.set(key, (colours.get(key) || 0) + 1); }
+      }
+      if (rowInk >= (x1 - x0) * 0.6) ruled += rowInk; // a line across
+    }
+    for (const v of colInk) if (v >= (y1 - y0) * 0.6) ruled += v; // a line down
+    if (!inked) return false;
+    const counts = [...colours.values()].sort((p, q) => q - p), sampledInk = counts.reduce((t, v) => t + v, 0) || 1;
+    const main = counts[0] / sampledInk, dense = inked / Math.max(1, room);
+    if (dense > 0.6) return main < 0.75; // filled: many colours is a picture (a photo); one colour is a shaded box
+    if (ruled / inked > 0.75) return false; // all straight lines across or down: a table's rules, a frame
+    return true; // a drawing, a diagram, a chart
+  });
+  // Words inside a picture belong to it.
+  const inFigure = (it) => figures.some((f) => it.x + it.w / 2 >= f.x && it.x + it.w / 2 <= f.x + f.w && it.base - it.size / 2 >= f.y && it.base - it.size / 2 <= f.y + f.h);
+  const words = items.filter((it) => !inFigure(it));
+
+  // Lines (in the page's reading order), each with its pieces' left edges, for finding tables.
+  const lines = [];
+  let cur = null;
+  for (const it of words) {
+    if (!cur || Math.abs(it.base - cur.base) > it.size * 0.5) { cur = { base: it.base, top: it.top, size: it.size, parts: [] }; lines.push(cur); }
+    const last = cur.parts[cur.parts.length - 1];
+    if (last && it.x - (last.x + last.w) < it.size * 1.2) { last.str += it.str; last.w = it.x + it.w - last.x; }
+    else cur.parts.push({ x: it.x, w: it.w, str: it.str });
+    cur.top = Math.min(cur.top, it.top); cur.size = Math.max(cur.size, it.size);
+    if (it.eol) cur = null;
+  }
+  // A table: three or more lines in a row, each in two or more pieces with wide gaps, whose pieces start at the same
+  // places as the lines before; a line whose pieces start elsewhere begins a new table (or isn't one).
+  const isRow = (l) => l.parts.length >= 2;
+  const tables = [];
+  for (let k = 0; k < lines.length;) {
+    if (!isRow(lines[k])) { k++; continue; }
+    let cols = lines[k].parts.map((p) => p.x), e = k;
+    while (e + 1 < lines.length) {
+      const nx = lines[e + 1];
+      if (!isRow(nx) || nx.base <= lines[e].base || nx.base - lines[e].base > lines[e].size * 3) break;
+      const tol = nx.size * 1.2, aligned = nx.parts.filter((p) => cols.some((x) => Math.abs(x - p.x) < tol)).length;
+      if (aligned < Math.max(2, Math.ceil(nx.parts.length * 0.6)) || aligned < Math.ceil(cols.length * 0.6)) break;
+      for (const p of nx.parts) if (!cols.some((x) => Math.abs(x - p.x) < tol)) cols.push(p.x);
+      e++;
+    }
+    if (e - k + 1 >= 3) tables.push({ from: k, to: e, cols: cols.sort((p, q) => p - q) });
+    k = e + 1;
+  }
+  const tableAt = new Map(tables.map((t) => [t.from, t]));
+  const inTable = new Set(tables.flatMap((t) => Array.from({ length: t.to - t.from + 1 }, (_, q) => t.from + q)));
+
+  // The flow: paragraphs (as before) from the lines outside tables; tables; pictures placed by where they sit.
+  const flow = [];
+  let run = [];
+  const flushText = () => {
+    if (!run.length) return;
+    const blocks = pdfTextBlocks({ items: run.flatMap((l) => l.parts.map((p) => ({ str: p.str, transform: [l.size, 0, 0, l.size, p.x, -l.base], hasEOL: false }))).map((it, q, all) => ({ ...it, hasEOL: q === all.length - 1 || all[q + 1].transform[5] !== it.transform[5] })) });
+    // (Each paragraph keeps where it starts on the page, so pictures can go between them.)
+    for (const blk of blocks) { const el = document.createElement(blk.heading ? 'h3' : 'p'); el.textContent = blk.text; flow.push({ top: -blk.y - blk.size, els: [el] }); }
+    run = [];
+  };
+  for (let k = 0; k < lines.length; k++) {
+    const t = tableAt.get(k);
+    if (t) {
+      flushText();
+      const table = h('table', { class: 'pdf-table' });
+      for (const l of lines.slice(t.from, t.to + 1)) {
+        const cells = t.cols.map(() => []);
+        for (const p of l.parts) { let c = 0; t.cols.forEach((x, q) => { if (p.x >= x - l.size) c = q; }); cells[c].push(p.str.trim()); }
+        table.append(h('tr', {}, ...cells.map((c) => h('td', {}, c.join(' ')))));
+      }
+      flow.push({ top: lines[t.from].top, els: [table] });
+      k = t.to; continue;
+    }
+    if (!inTable.has(k)) run.push(lines[k]);
+  }
+  flushText();
+  for (const f of figures) {
+    const pad = 4, x = Math.max(0, f.x - pad), y = Math.max(0, f.y - pad);
+    flow.push({ top: f.y, figure: true, els: [crop(x, y, Math.min(canvas.width - x, f.w + pad * 2), Math.min(canvas.height - y, f.h + pad * 2))] });
+  }
+  // Text keeps its reading order; each picture goes before the first text that starts below it.
+  const texts = flow.filter((b) => !b.figure), out = [...texts];
+  for (const f of flow.filter((b) => b.figure).sort((a, b) => a.top - b.top)) {
+    const at = out.findIndex((b) => !b.figure && b.top > f.top);
+    out.splice(at < 0 ? out.length : at, 0, f);
+  }
+  for (const b of out) frag.append(...b.els);
+  return frag;
 }
 // A page's text as paragraphs: pieces on one line joined, lines joined into a paragraph until a wider gap, a
 // larger size (a heading), or a jump back up the page (a new column). A word broken by a hyphen is put back together.
@@ -3800,14 +3973,17 @@ function pdfTextBlocks(content) {
   if (!ls.length) return [];
   const gaps = ls.slice(1).map((l, k) => ls[k].y - l.y).filter((g) => g > 0).sort((a, b) => a - b);
   const sizes = ls.map((l) => l.size).sort((a, b) => a - b);
-  const gap = gaps[Math.floor(gaps.length / 2)] || sizes[0] * 1.2, body = sizes[Math.floor(sizes.length / 2)];
+  // The usual space between lines of a paragraph: the tighter spacings (a page with few lines and big pictures
+  // would otherwise take a picture's height as "usual").
+  const body = sizes[Math.floor(sizes.length / 2)];
+  const gap = Math.max(body * 0.9, gaps[Math.floor(gaps.length / 4)] || body * 1.2);
   const CJK = /[\u3000-\u303f\u3400-\u9fff\uff00-\uffef]/;
   const blocks = [];
   let blk = null, prev = null;
   for (const l of ls) {
     const heading = l.size > body * 1.25 && l.text.length < 120;
     const d = prev ? prev.y - l.y : 0;
-    if (!blk || heading || blk.heading || d < 0 || d > gap * 1.45) { blk = { text: l.text, heading }; blocks.push(blk); }
+    if (!blk || heading || blk.heading || d < 0 || d > gap * 1.45 || d > body * 2.2) { blk = { text: l.text, heading, y: l.y, size: l.size }; blocks.push(blk); }
     else if (/[A-Za-z]-$/.test(blk.text) && /^[a-z]/.test(l.text)) blk.text = blk.text.slice(0, -1) + l.text;
     else blk.text += (CJK.test(blk.text.slice(-1)) || CJK.test(l.text[0]) ? '' : ' ') + l.text;
     prev = l;
@@ -5176,6 +5352,8 @@ async function renderBookReader() {
 
   // Links inside the book go to their chapter (and place on the page).
   body.addEventListener('click', (e) => {
+    const fig = e.target.closest('.pdf-figure-img'); // a picture from a PDF page: full screen
+    if (fig?.src && !state.selection) { viewImage(fig.src, ''); return; }
     const link = e.target.closest('.bk-link');
     if (!link || state.selection) return;
     const i = book.chapters.findIndex((c) => c.href === link.dataset.file);
