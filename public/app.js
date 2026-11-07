@@ -2985,6 +2985,7 @@ const KNOWN_VERSIONS = [[/english standard|\bESV\b/i, 'ESV', 'English Standard V
   [/king james|\bKJV\b/i, 'KJV', 'King James Version'], [/amplified/i, 'AMP', 'Amplified Bible'], [/the message/i, 'MSG', 'The Message']];
 const KNOWN_CHINESE = [[/和合|\bCUV\b/i, '和合本', '和合本'], [/新译本|\bCNV\b/i, '新译本', '新译本'], [/当代|\bCCB\b/i, '当代译本', '当代译本'], [/思高/, '思高本', '思高本']];
 // file: set when the EPUB came from the phone (not from the shelf); it's then also put on the shelf, unless it's already there.
+// (Or a function that puts it there, e.g. for a book sent in chat.)
 // onAdded: what to do once the Bible is added (e.g. open the shelf book in the Bible reader).
 async function checkBibleEpub(bufPromise, fileName, file = null, repair = null, onAdded = null) {
   const status = h('p', { class: 'confirm-text' }, 'Reading your Bible…');
@@ -3086,7 +3087,7 @@ async function checkBibleEpub(bufPromise, fileName, file = null, repair = null, 
           }
           // Also keep the ebook on the shelf (unless it's already there) — before the sheet closes, while the screen is
           // kept on, so leaving the app right after can't cut the upload short.
-          if (file) { btn.textContent = tr('Putting it on your shelf…'); await addBooks([{ ...file, data: await file.data }]); }
+          if (file) { btn.textContent = tr('Putting it on your shelf…'); await (typeof file === 'function' ? file() : addBooks([{ ...file, data: await file.data }])); }
           close();
           await loadVersions();
           if (repair) { chapterCacheClear(repair.id); toast(`${repair.short} repaired`); if (state.tab === 'read') renderReader(); }
@@ -3469,20 +3470,33 @@ function uploadChatFile(blob, { name, duration, onProgress, extra = {} } = {}) {
 const isEpubFile = (f) => f.type === 'application/epub+zip' || /\.epub$/i.test(f.name || '');
 const isBookFile = (f) => isEpubFile(f) || /\.(pdf|txt)$/i.test(f.name || '') || f.type === 'application/pdf';
 // An EPUB's title and author, and its cover sent to chat as a picture (for the book's card): { title, author, cover }.
+// A Bible? Its title says so, or its contents run from Genesis to Matthew (in English or Chinese).
+const BIBLE_TITLE = /\bbible\b|圣经|聖經|\btestament\b|新约|旧约|新約|舊約/i;
+function looksLikeBible(book) {
+  const toc = (book.toc || []).map((t) => t.label).join(' ');
+  return BIBLE_TITLE.test(book.title || '') || (/genesis|创世记|創世記/i.test(toc) && /matthew|马太|馬太/i.test(toc));
+}
+const isBibleFile = (f) => isEpubFile(f) && (f.book?.bible ?? BIBLE_TITLE.test(f.book?.title || f.name || ''));
 async function chatBookDetails(bytes) {
   const book = await openEpub(bytes);
-  const out = { title: book.title || '', author: book.author || '' };
+  const out = { title: book.title || '', author: book.author || '', bible: looksLikeBible(book) };
   const cover = book.coverPath ? await coverOf(book) : null;
   if (cover) { try { out.cover = (await uploadChatFile(cover, { name: 'cover.jpg' }).promise).id; } catch { /* no cover then */ } }
   return out;
 }
 // Put a book sent in chat on my shelf: the server keeps it as the same file (nothing is downloaded or sent again).
-async function addChatFileToShelf(f) {
+async function addChatFileToShelf(f, { quiet = false } = {}) {
   try {
     const { book, duplicate } = await api('POST', '/api/library/from-chat', { file: f.id, title: f.book?.title || '', author: f.book?.author || '' });
-    toast(duplicate ? `“${book.title}” is already on your shelf` : `Added “${book.title}”`);
+    if (!quiet) toast(duplicate ? `“${book.title}” is already on your shelf` : `Added “${book.title}”`);
     if (state.tab === 'books') renderLibrary();
   } catch (e) { toast(e instanceof OfflineError ? "You're offline. Try again when connected." : e.message); }
+}
+// A Bible sent in chat, added to my Bible versions (the same screen as adding one from the phone); the ebook also
+// goes on my shelf, as the same file on the server.
+function addChatBible(f) {
+  const buf = fetch(chatFileUrl(f)).then((r) => { if (!r.ok) throw new Error(tr('This file has expired')); return r.arrayBuffer(); });
+  checkBibleEpub(buf, f.book?.title || f.name, () => addChatFileToShelf(f, { quiet: true }));
 }
 // A picture, full screen; a tap closes it.
 function viewImage(src, alt) {
@@ -3689,7 +3703,7 @@ async function renderChatPage() {
   function fileWithRepair(m) {
     const el = chatFileView(m.file);
     const f = m.file;
-    if (m.mine && isEpubFile(f) && !f.book && !f.expired && !repairing.has(f.id)) {
+    if (m.mine && isEpubFile(f) && (!f.book || f.book.bible === undefined) && !f.expired && !repairing.has(f.id)) {
       repairing.add(f.id);
       (async () => {
         const res = await fetch(chatFileUrl(f)); if (!res.ok) return;
@@ -3809,6 +3823,7 @@ async function renderChatPage() {
   function messageMenu(bubble, m, at = null) {
     closeMenu();
     const items = [
+      m.file && !m.file.expired && isBibleFile(m.file) ? { label: 'Add as Bible', icon: ICONS.versions, run: () => addChatBible(m.file) } : null,
       m.file && !m.file.expired && isBookFile(m.file) ? { label: 'Add to shelf', icon: ICONS.addBook, run: () => addChatFileToShelf(m.file) } : null,
       m.file && !m.file.expired && m.file.kind !== 'audio' ? { label: 'Save', icon: ICONS.arrowDown, run: () => {
         const a = h('a', { href: chatFileUrl(m.file), download: m.file.name }); document.body.append(a); a.click(); a.remove();

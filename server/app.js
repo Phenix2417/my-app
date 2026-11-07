@@ -329,9 +329,10 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
   const fileOut = (f) => ({ id: f.id, name: f.name, type: f.type, kind: f.kind, size: f.size, ...(f.duration ? { duration: f.duration } : {}),
     ...(f.meta ? { book: JSON.parse(f.meta) } : {}) });
   // A book's details for its card: title, author, and its cover (a picture this person sent to chat).
-  function bookMeta(me, { title, author, cover } = {}) {
+  // bible: whether it holds a Bible (so the app offers to add it as a Bible version).
+  function bookMeta(me, { title, author, cover, bible } = {}) {
     const c = /^[0-9a-f]{32}$/.test(cover || '') && stmt.chatFile.get(cover);
-    const meta = { title: cleanText(title, 200), author: cleanText(author, 120), ...(c && c.kind === 'image' && c.user_id === me ? { cover: c.id } : {}) };
+    const meta = { title: cleanText(title, 200), author: cleanText(author, 120), ...(c && c.kind === 'image' && c.user_id === me ? { cover: c.id } : {}), ...(bible !== undefined ? { bible: bible === true || bible === 'true' } : {}) };
     return meta.title || meta.cover ? JSON.stringify(meta) : null;
   }
   // A message's file, marked expired once it's been deleted (a month after it was sent).
@@ -942,7 +943,7 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
       const d = Number(query.get('duration'));
       const duration = (kind === 'audio' || kind === 'video') && d > 0 && d < 86400 ? Math.round(d * 10) / 10 : null;
       stmt.addChatFile.run(up.id, me.id, name, type, kind, up.size, duration, now(), up.sha256);
-      if (type === 'application/epub+zip') stmt.setChatFileMeta.run(bookMeta(me.id, { title: query.get('title'), author: query.get('author'), cover: query.get('cover') }), up.id);
+      if (type === 'application/epub+zip') stmt.setChatFileMeta.run(bookMeta(me.id, { title: query.get('title'), author: query.get('author'), cover: query.get('cover'), bible: query.get('bible') ?? undefined }), up.id);
       return { status: 201, body: { file: fileOut(stmt.chatFile.get(up.id)) } };
     }, true, { raw: true }],
     // A book sent before its details were read (title, author, cover): the person who sent it fills them in.
