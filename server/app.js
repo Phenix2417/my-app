@@ -768,6 +768,10 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
       const title = (meta(html, ['og:title', 'twitter:title']) || (html.match(/<title[^>]*>([^<]{1,300})/i) || [])[1] || '').replace(/&amp;/g, '&').trim();
       // A login or "security check" page instead of the post isn't worth a card.
       if (!title || (/^(知乎|zhihu|安全验证|登录|log ?in|sign ?in|access denied|robot check|just a moment)/i.test(title) && title.length < 20)) throw new HttpError(404, 'No preview for this link');
+      // Only the site's own name ("Amazon.com", "淘宝网") isn't a preview of the page either.
+      const bare = (x) => String(x).toLowerCase().replace(/^www\./, '').replace(/\.(com|cn|net|org|us)$/, '').replace(/[\s:：|\-–—_.网]+/g, '');
+      const domain = new URL(at).hostname.replace(/^([\w-]+\.)*(?=[\w-]+\.[a-z]+$)/, '');
+      if (bare(title) === bare(domain) || bare(title) === bare(CARD_SITES[domain] || '') || /^amazon\.com\s*[:：]\s*online shopping/i.test(title)) throw new HttpError(404, 'No preview for this link');
       let picture = meta(html, ['og:image', 'og:image:url', 'twitter:image', 'twitter:image:src']);
       if (picture.startsWith('//')) picture = `https:${picture}`;
       let image = null;

@@ -288,3 +288,13 @@ test('Wikipedia cards come from the article summary', async () => {
     assert.deepEqual([c.title, c.text, c.site, /^\/api\/card-image\//.test(c.image)], ['亚伯拉罕', '亚伯拉罕是希伯来人的始祖。', '维基百科', true]);
   } finally { globalThis.fetch = real; }
 });
+
+test('a page that only names its site gives no preview (the plain card instead)', async () => {
+  const u = (await api('POST', '/api/register', { body: { username: 'bare_cards', password: 'password1' } })).data;
+  const real = globalThis.fetch;
+  globalThis.fetch = (url, opts) => (String(url).startsWith('https://www.amazon.com/dp/')
+    ? Promise.resolve(new Response('<html><head><title>Amazon.com</title></head></html>', { headers: { 'content-type': 'text/html' } })) : real(url, opts));
+  try {
+    assert.equal((await api('GET', `/api/link-card?url=${encodeURIComponent('https://www.amazon.com/dp/B000123456')}`, { token: u.token })).status, 404);
+  } finally { globalThis.fetch = real; }
+});
