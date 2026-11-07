@@ -3446,10 +3446,10 @@ const clock = (sec) => { const t = Math.max(0, Math.round(sec || 0)); return `${
 const fileSize = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(n >= 10485760 ? 0 : 1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
 const fileLabel = (f) => (f.kind === 'image' ? tr('[Photo]') : f.kind === 'video' ? tr('[Video]') : f.kind === 'audio' ? `${tr('[Voice]')}${f.duration ? ` ${clock(f.duration)}` : ''}` : `${tr('[File]')} ${f.name}`);
 // Send a file to the server (with progress); resolves to { id, name, type, kind, size, duration }. abort() stops it.
-function uploadChatFile(blob, { name, duration, onProgress } = {}) {
+function uploadChatFile(blob, { name, duration, onProgress, extra = {} } = {}) {
   const x = new XMLHttpRequest();
   const promise = new Promise((resolve, reject) => {
-    const q = new URLSearchParams({ name: name || blob.name || 'file', type: blob.type || '', ...(duration ? { duration: String(duration) } : {}) });
+    const q = new URLSearchParams({ name: name || blob.name || 'file', type: blob.type || '', ...(duration ? { duration: String(duration) } : {}), ...extra });
     x.open('POST', `/api/chat-files?${q}`);
     for (const [k, v] of Object.entries(authHeaders())) x.setRequestHeader(k, v);
     x.setRequestHeader('Content-Type', 'application/octet-stream');
@@ -3465,6 +3465,26 @@ function uploadChatFile(blob, { name, duration, onProgress } = {}) {
     x.send(blob);
   });
   return { promise, abort: () => x.abort() };
+}
+const isEpubFile = (f) => f.type === 'application/epub+zip' || /\.epub$/i.test(f.name || '');
+const isBookFile = (f) => isEpubFile(f) || /\.(pdf|txt)$/i.test(f.name || '') || f.type === 'application/pdf';
+// An EPUB's title and author, and its cover sent to chat as a picture (for the book's card): { title, author, cover }.
+async function chatBookDetails(bytes) {
+  const book = await openEpub(bytes);
+  const out = { title: book.title || '', author: book.author || '' };
+  const cover = book.coverPath ? await coverOf(book) : null;
+  if (cover) { try { out.cover = (await uploadChatFile(cover, { name: 'cover.jpg' }).promise).id; } catch { /* no cover then */ } }
+  return out;
+}
+// Put a book sent in chat on my shelf.
+async function addChatFileToShelf(f) {
+  toast(`Adding “${f.book?.title || f.name}”…`);
+  try {
+    const res = await fetch(chatFileUrl(f));
+    if (!res.ok) throw new Error(res.status === 404 ? tr('This file has expired') : `(${res.status})`);
+    const data = await res.arrayBuffer();
+    await addBooks([{ name: f.name, type: isEpubFile(f) ? 'application/epub+zip' : f.type, size: data.byteLength, data }]);
+  } catch (e) { toast(e instanceof TypeError ? "You're offline. Try again when connected." : `${f.name}: ${e.message}`); }
 }
 // A picture, full screen; a tap closes it.
 function viewImage(src, alt) {
@@ -3502,6 +3522,15 @@ function chatFileView(f) {
     audio.ontimeupdate = () => { if (audio.duration && isFinite(audio.duration)) len.textContent = clock(audio.duration - audio.currentTime); };
     audio.onended = () => { show(false); len.textContent = f.duration ? clock(f.duration) : ''; };
     return btn;
+  }
+  // A book: its cover, title and author.
+  if (isEpubFile(f)) {
+    return h('a', { class: 'chat-file chat-book', href: url, download: f.name },
+      f.book?.cover ? h('img', { class: 'chat-book-cover', src: chatFileUrl({ id: f.book.cover }), alt: '', loading: 'lazy' })
+        : h('span', { class: 'chat-book-cover blank' }, svg(ICONS.books)),
+      h('span', { class: 'chat-file-main' }, h('span', { class: 'file-name book-title' }, f.book?.title || f.name.replace(/\.epub$/i, '')),
+        f.book?.author ? h('span', { class: 'chat-book-author dname' }, f.book.author) : null,
+        h('span', { class: 'chat-file-size' }, `EPUB · ${fileSize(f.size)}`)));
   }
   return h('a', { class: 'chat-file', href: url, download: f.name },
     h('span', { class: 'chat-file-icon' }, svg(ICONS.file)),
@@ -3657,6 +3686,23 @@ async function renderChatPage() {
     return { el, check };
   })();
   list.append(mini.el);
+  // A book I sent before books got cards: read its title, author and cover once, and show it as a book.
+  const repairing = new Set();
+  function fileWithRepair(m) {
+    const el = chatFileView(m.file);
+    const f = m.file;
+    if (m.mine && isEpubFile(f) && !f.book && !f.expired && !repairing.has(f.id)) {
+      repairing.add(f.id);
+      (async () => {
+        const res = await fetch(chatFileUrl(f)); if (!res.ok) return;
+        const details = await chatBookDetails(await res.arrayBuffer());
+        const { file } = await api('PUT', `/api/chat-files/${f.id}/book`, details);
+        for (const x of shown) if (x.file?.id === f.id) x.file = file;
+        if (el.isConnected) el.replaceWith(chatFileView(file));
+      })().catch(() => {});
+    }
+    return el;
+  }
   let shown = [];
   const sigOf = (m) => `${m.id}:${m.editedAt || ''}:${m.deleted ? 1 : 0}`;
   // New messages are added below the ones shown (so a video or voice message that's playing keeps playing);
@@ -3678,7 +3724,7 @@ async function renderChatPage() {
       const content = m.deleted ? [h('div', { class: 'bubble-text deleted' }, tr('This message was deleted'))]
         : [splitQuote(m.body).quote ? h('div', { class: 'bubble-quote' }, splitQuote(m.body).quote) : null,
           m.ref ? verseCard(m.ref) : null, splitQuote(m.body).rest.trim() ? h('div', { class: 'bubble-text note-body' }, ...linkified(splitQuote(m.body).rest)) : null,
-          m.file ? chatFileView(m.file) : null,
+          m.file ? fileWithRepair(m) : null,
           ...videoEmbeds(m.body), m.editedAt ? h('span', { class: 'edited-mark' }, tr('Edited')) : null].filter(Boolean);
       // A picture or video on its own fills the bubble.
       const bubbleClass = m.file && !m.file.expired && !m.deleted && !m.ref && !splitQuote(m.body).rest.trim() && ['image', 'video'].includes(m.file.kind) ? 'chat-bubble media' : 'chat-bubble';
@@ -3765,10 +3811,11 @@ async function renderChatPage() {
   function messageMenu(bubble, m, at = null) {
     closeMenu();
     const items = [
+      m.file && !m.file.expired && isBookFile(m.file) ? { label: 'Add to shelf', icon: ICONS.addBook, run: () => addChatFileToShelf(m.file) } : null,
       m.file && !m.file.expired && m.file.kind !== 'audio' ? { label: 'Save', icon: ICONS.arrowDown, run: () => {
         const a = h('a', { href: chatFileUrl(m.file), download: m.file.name }); document.body.append(a); a.click(); a.remove();
       } } : null,
-      { label: 'Copy', icon: ICONS.copy, run: async () => {
+      m.file && !m.ref && !splitQuote(m.body).rest.trim() ? null : { label: 'Copy', icon: ICONS.copy, run: async () => {
         try { await navigator.clipboard.writeText(plainText(m)); toast('Copied'); } catch { toast("Couldn't copy"); }
       } },
       m.file?.expired && !m.ref && !splitQuote(m.body).rest.trim() ? null : { label: 'Forward', icon: ICONS.forward, run: () => forward(m) },
@@ -3859,7 +3906,13 @@ async function renderChatPage() {
     if (file.size > MAX_CHAT_FILE) return toast(`${file.name}: ${tr('too large (100 MB at most)')}`);
     if (!file.size) return toast(`${file.name}: ${tr('empty file')}`);
     const bar = h('span', { class: 'upload-bar' });
-    const job = uploadChatFile(file, { name: file.name, duration, onProgress: (p) => { bar.style.width = `${Math.round(p * 100)}%`; } });
+    let extra = {};
+    // (Read once: a phone may not let a file from the cloud be read twice.)
+    if (isEpubFile(file)) {
+      try { const bytes = await file.arrayBuffer(); file = new File([bytes], file.name, { type: 'application/epub+zip' }); extra = await chatBookDetails(bytes); }
+      catch { /* sent as a plain file */ }
+    }
+    const job = uploadChatFile(file, { name: file.name, duration, extra, onProgress: (p) => { bar.style.width = `${Math.round(p * 100)}%`; } });
     const row = h('div', { class: 'chat-upload' },
       h('span', { class: 'chat-upload-main' }, h('span', { class: 'file-name' }, file.name), h('span', { class: 'upload-track' }, bar)),
       h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Cancel', title: 'Cancel', onclick: () => job.abort() }, svg(ICONS.close)));

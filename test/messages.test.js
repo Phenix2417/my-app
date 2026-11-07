@@ -80,6 +80,17 @@ test('files sent in chat: uploaded, recognised by their bytes, served in parts, 
   assert.equal((await call('POST', `/api/messages/${a.user.id}`, b.token, { file: { id: voice.id } })).status, 201);
   assert.equal((await call('POST', `/api/messages/${a.user.id}`, b.token, { file: { id: 'f'.repeat(32) } })).status, 400);
   assert.equal((await call('GET', '/api/chats', b.token)).data.chats[0].last.file.kind, 'audio');
+  // An EPUB: a book card's details, with its cover (a picture the sender sent); only the sender can fill them in later.
+  const cover = (await upload(Buffer.from([0xff, 0xd8, 0xff, 0xe0, 9]), { name: 'cover.jpg', type: 'image/jpeg' })).data.file;
+  const epubBytes = Buffer.concat([Buffer.from('PK\u0003\u0004'), Buffer.alloc(26), Buffer.from('mimetypeapplication/epub+zip'), Buffer.alloc(200)]);
+  const book = (await upload(epubBytes, { name: 'b.epub', type: '', title: 'Pilgrim’s Progress', author: 'John Bunyan', cover: cover.id })).data.file;
+  assert.deepEqual([book.type, book.book], ['application/epub+zip', { title: 'Pilgrim’s Progress', author: 'John Bunyan', cover: cover.id }]);
+  const plain = (await upload(epubBytes, { name: 'c.epub' })).data.file;
+  assert.equal(plain.book, undefined);
+  await call('POST', `/api/messages/${b.user.id}`, a.token, { file: { id: plain.id } });
+  assert.equal((await call('PUT', `/api/chat-files/${plain.id}/book`, b.token, { title: 'X' })).status, 404);
+  assert.equal((await call('PUT', `/api/chat-files/${plain.id}/book`, a.token, { title: 'Later', cover: cover.id })).status, 200);
+  assert.equal((await call('GET', `/api/messages/${a.user.id}`, b.token)).data.messages.at(-1).file.book.title, 'Later');
   // A month later the file is deleted: the message says it expired, and it can't be fetched or forwarded.
   const pic = (await upload(Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]), { name: 'p.jpg', type: 'image/jpeg' })).data.file;
   await call('POST', `/api/messages/${b.user.id}`, a.token, { file: { id: pic.id } });

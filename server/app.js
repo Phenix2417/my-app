@@ -119,6 +119,7 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
     chatFile: q('SELECT * FROM chat_files WHERE id = ?'),
     oldChatFiles: q('SELECT id FROM chat_files WHERE created_at < ? LIMIT 500'),
     deleteChatFile: q('DELETE FROM chat_files WHERE id = ?'),
+    setChatFileMeta: q('UPDATE chat_files SET meta = ? WHERE id = ?'),
     chatBytes: q('SELECT COALESCE(SUM(size), 0) AS total FROM chat_files WHERE user_id = ?'),
     lastMessage: q(`SELECT * FROM messages WHERE (from_id = :me AND to_id = :other) OR (from_id = :other AND to_id = :me) ORDER BY id DESC LIMIT 1`),
     // Group chats
@@ -320,9 +321,16 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
     ...(m.file && !m.deleted_at ? { file: fileState(JSON.parse(m.file)) } : {}),
     ...(m.username !== undefined && m.from_id !== me ? { from: m.username ? userOut(m.from_id, m.username, m.display_name) : null } : {}) });
   // A file sent with a message: one uploaded to chat (by anyone: forwarding sends the same file on). Its id is its key.
-  const fileOut = (f) => ({ id: f.id, name: f.name, type: f.type, kind: f.kind, size: f.size, ...(f.duration ? { duration: f.duration } : {}) });
+  const fileOut = (f) => ({ id: f.id, name: f.name, type: f.type, kind: f.kind, size: f.size, ...(f.duration ? { duration: f.duration } : {}),
+    ...(f.meta ? { book: JSON.parse(f.meta) } : {}) });
+  // A book's details for its card: title, author, and its cover (a picture this person sent to chat).
+  function bookMeta(me, { title, author, cover } = {}) {
+    const c = /^[0-9a-f]{32}$/.test(cover || '') && stmt.chatFile.get(cover);
+    const meta = { title: cleanText(title, 200), author: cleanText(author, 120), ...(c && c.kind === 'image' && c.user_id === me ? { cover: c.id } : {}) };
+    return meta.title || meta.cover ? JSON.stringify(meta) : null;
+  }
   // A message's file, marked expired once it's been deleted (a month after it was sent).
-  const fileState = (f) => (stmt.chatFile.get(f.id) ? f : { ...f, expired: true });
+  const fileState = (f) => { const row = stmt.chatFile.get(f.id); return row ? fileOut(row) : { ...f, expired: true }; };
   // Delete chat files more than CHAT_FILE_DAYS old: on start, then every hour.
   async function purgeChatFiles(at = now()) {
     let gone = 0;
@@ -888,8 +896,16 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
       const d = Number(query.get('duration'));
       const duration = (kind === 'audio' || kind === 'video') && d > 0 && d < 86400 ? Math.round(d * 10) / 10 : null;
       stmt.addChatFile.run(up.id, me.id, name, type, kind, up.size, duration, now());
+      if (type === 'application/epub+zip') stmt.setChatFileMeta.run(bookMeta(me.id, { title: query.get('title'), author: query.get('author'), cover: query.get('cover') }), up.id);
       return { status: 201, body: { file: fileOut(stmt.chatFile.get(up.id)) } };
     }, true, { raw: true }],
+    // A book sent before its details were read (title, author, cover): the person who sent it fills them in.
+    ['PUT', /^\/api\/chat-files\/([0-9a-f]{32})\/book$/, ({ me, params: [id], body }) => {
+      const f = stmt.chatFile.get(id);
+      if (!f || f.user_id !== me.id) throw new HttpError(404, 'File not found');
+      stmt.setChatFileMeta.run(bookMeta(me.id, body), id);
+      return { status: 200, body: { file: fileOut(stmt.chatFile.get(id)) } }; // (a bare { file } would be taken as a file to stream)
+    }, true],
     // A chat file, by its id (shown by <img>/<video>/<audio>, which send no sign-in). Pictures, videos and sound play in
     // the page; anything else is only ever downloaded. Ranges are served, so videos can seek (and play at all on iPhones).
     ['GET', /^\/api\/chat-file\/([0-9a-f]{32})$/, async ({ params: [id] }) => {

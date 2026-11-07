@@ -32,6 +32,9 @@ export function sniffChatFile(head, declared = '') {
     if (/^(heic|heix|mif1|msf1)$/.test(brand)) return { kind: 'file', type: 'application/octet-stream' }; // HEIC: most browsers can't show it
     return { kind: 'video', type: brand === 'qt  ' ? 'video/quicktime' : 'video/mp4' };
   }
+  // Books: shown as a book (with its cover) but only ever downloaded.
+  if (s(0, 4) === 'PK\u0003\u0004' && head.includes(Buffer.from('application/epub+zip'))) return { kind: 'file', type: 'application/epub+zip' };
+  if (s(0, 5) === '%PDF-') return { kind: 'file', type: 'application/pdf' };
   if (head[0] === 0x1a && head[1] === 0x45 && head[2] === 0xdf && head[3] === 0xa3) return audio ? { kind: 'audio', type: 'audio/webm' } : { kind: 'video', type: 'video/webm' };
   if (s(0, 4) === 'OggS') return { kind: 'audio', type: 'audio/ogg' };
   if (s(0, 3) === 'ID3' || (head[0] === 0xff && (head[1] & 0xe6) === 0xe2)) return { kind: 'audio', type: 'audio/mpeg' };
@@ -52,7 +55,7 @@ export function createChatFileStore({ dir }) {
         transform(chunk, _enc, cb) {
           size += chunk.length;
           if (size > limit) return cb(new ChatFileError(413, 'That file is too large.'));
-          if (head.length < 64) head = Buffer.concat([head, chunk.subarray(0, 64 - head.length)]);
+          if (head.length < 4096) head = Buffer.concat([head, chunk.subarray(0, 4096 - head.length)]);
           cb(null, chunk);
         },
       });

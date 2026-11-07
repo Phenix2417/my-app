@@ -159,6 +159,8 @@ export function openDb(file) {
   db.exec(`CREATE TABLE IF NOT EXISTS chat_files (
     id TEXT PRIMARY KEY, user_id INTEGER REFERENCES users(id) ON DELETE SET NULL, name TEXT NOT NULL, type TEXT NOT NULL,
     kind TEXT NOT NULL, size INTEGER NOT NULL, duration REAL, created_at INTEGER NOT NULL)`);
+  // A book's title, author and cover (another chat file), shown on its card: { title, author, cover }.
+  if (!db.prepare('PRAGMA table_info(chat_files)').all().some((c) => c.name === 'meta')) db.exec('ALTER TABLE chat_files ADD COLUMN meta TEXT');
   for (const t of ['messages', 'chat_group_messages']) {
     if (!db.prepare(`PRAGMA table_info(${t})`).all().some((c) => c.name === 'file')) db.exec(`ALTER TABLE ${t} ADD COLUMN file TEXT`);
   }

@@ -917,3 +917,10 @@ span.verse-card-text { display: block; }
 .mini-mid { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .mini-seek { width: 100%; margin: 0; accent-color: #fff; height: 18px; }
 .mini-time { font-size: 11px; font-variant-numeric: tabular-nums; opacity: .95; }
+.chat-book { align-items: flex-start; }
+.chat-book-cover { width: 60px; height: 84px; flex: none; object-fit: cover; border-radius: 4px; box-shadow: 0 1px 4px rgba(0,0,0,.25); background: #fff; }
+.chat-book-cover.blank { display: grid; place-items: center; background: rgba(127,127,127,.18); box-shadow: none; }
+.chat-book-cover.blank .line-icon { width: 26px; height: 26px; }
+.chat-book .chat-file-main { gap: 3px; padding-top: 2px; }
+.chat-book .book-title { font-weight: 600; -webkit-line-clamp: 3; }
+.chat-book-author { font-size: 13px; opacity: .85; }
