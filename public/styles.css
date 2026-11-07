@@ -925,7 +925,7 @@ span.verse-card-text { display: block; }
 .chat-book .book-title { font-weight: 600; -webkit-line-clamp: 3; }
 .chat-book-author { font-size: 13px; opacity: .85; }
 /* A chat file, full screen (preview before saving). */
-.file-preview { position: fixed; inset: 0; z-index: 70; display: flex; flex-direction: column; background: var(--bg); color: var(--on-bg); }
+.file-preview { position: fixed; inset: 0; z-index: 26; /* (under menus, sheets and messages, which open over it) */ display: flex; flex-direction: column; background: var(--bg); color: var(--on-bg); }
 .fp-top { display: flex; align-items: center; gap: 6px; padding: calc(6px + env(safe-area-inset-top)) 8px 6px; border-bottom: 1px solid var(--divider); }
 .fp-title { flex: 1; min-width: 0; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .fp-body { flex: 1; min-height: 0; position: relative; display: flex; flex-direction: column; }

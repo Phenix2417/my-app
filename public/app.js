@@ -3552,10 +3552,11 @@ async function previewChatFile(f) {
   const prev = h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Previous', title: 'Previous', onclick: () => show(at - 1) }, svg(ICONS.back));
   const next = h('button', { class: 'icon-btn fp-next', type: 'button', 'aria-label': 'Next', title: 'Next', onclick: () => show(at + 1) }, svg(ICONS.back));
   let at = 0;
-  async function show(i) {
+  async function show(i, anchor = '') {
     at = Math.max(0, Math.min(book.chapters.length - 1, i));
     try { page.replaceChildren(await book.render(at)); } catch { page.replaceChildren(h('p', { class: 'error' }, "Couldn't show this part of the book.")); }
-    scroller.scrollTop = 0;
+    const target = anchor && page.querySelector(`#${CSS.escape(ANCHOR_PREFIX + anchor)}`);
+    if (target) target.scrollIntoView({ block: 'start' }); else scroller.scrollTop = 0;
     where.textContent = `${book.chapterTitle(at) || chapterLabel(at)} · ${at + 1}/${book.chapters.length}`;
     prev.disabled = at === 0; next.disabled = at === book.chapters.length - 1;
   }
@@ -3564,6 +3565,14 @@ async function previewChatFile(f) {
     openSheet((closeSheet) => [h('h2', {}, 'Contents'), h('div', { class: 'toc-list' }, ...entries.filter((t) => t.chapter >= 0).map((t) => h('button', { class: 'toc-item', type: 'button',
       style: `padding-left:${16 + Math.min(t.depth || 0, 4) * 18}px`, onclick: () => { closeSheet(); show(t.chapter); } }, t.label)))], { label: 'Contents' });
   }
+  // Links inside the book (its contents, cross-references) go to their chapter and place on the page.
+  page.addEventListener('click', (e) => {
+    const link = e.target.closest('.bk-link');
+    if (!link) return;
+    e.preventDefault();
+    const i = book.chapters.findIndex((c) => c.href === link.dataset.file);
+    if (i >= 0) show(i, link.dataset.anchor);
+  });
   body.replaceChildren(scroller);
   foot.replaceChildren(prev, where, next); foot.hidden = false;
   await show(0);
