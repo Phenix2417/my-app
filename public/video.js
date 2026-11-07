@@ -2,7 +2,9 @@
 // (desktop web, mobile web, the mobile app's Share button, a TV/embed link…); all of them map to one player.
 
 // Links in text: with a scheme, or bare (youtu.be/…, www.youtube.com/…, b23.tv/…) as people often type or paste them.
-export const LINK_RE = /(?:https?:\/\/|\b(?=(?:www\.|m\.|music\.|mobile\.|vm\.|vt\.|v\.|web\.|mbasic\.)?(?:youtube\.com|youtu\.be|youtube-nocookie\.com|vimeo\.com|player\.vimeo\.com|bilibili\.com|b23\.tv|x\.com|twitter\.com|instagram\.com|instagr\.am|tiktok\.com|douyin\.com|iesdouyin\.com|facebook\.com|fb\.watch|fb\.com|weibo\.com|weibo\.cn|t\.cn|xiaohongshu\.com|xhslink\.com|t\.bilibili\.com)\/))[^\s<>"'\u3000-\u303f\u3400-\u9fff\uff00-\uffef]+/gi; // a link ends at a space or Chinese text/punctuation
+// Wikipedia links often show their title in its own script (zh.wikipedia.org/wiki/亚伯拉罕): there the link runs on
+// through Chinese characters, up to a space or Chinese punctuation.
+export const LINK_RE = /(?:https?:\/\/)?(?:[a-z-]{2,12}\.)(?:m\.)?wikipedia\.org\/(?:wiki|zh-[a-z]{2,4})\/[^\s<>"'，。、！？；：（）【】「」『』《》]+|(?:https?:\/\/|\b(?=(?:www\.|m\.|music\.|mobile\.|vm\.|vt\.|v\.|web\.|mbasic\.)?(?:youtube\.com|youtu\.be|youtube-nocookie\.com|vimeo\.com|player\.vimeo\.com|bilibili\.com|b23\.tv|x\.com|twitter\.com|instagram\.com|instagr\.am|tiktok\.com|douyin\.com|iesdouyin\.com|facebook\.com|fb\.watch|fb\.com|weibo\.com|weibo\.cn|t\.cn|xiaohongshu\.com|xhslink\.com|t\.bilibili\.com|(?:[a-z-]{2,12}\.)?(?:m\.)?wikipedia\.org|zhihu\.com|zhuanlan\.zhihu\.com)\/))[^\s<>"'\u3000-\u303f\u3400-\u9fff\uff00-\uffef]+/gi; // a link ends at a space or Chinese text/punctuation
 
 // "1h2m3s", "90s", "90", "1:30" → seconds.
 export function seconds(t) {
@@ -151,7 +153,7 @@ export function embedUrl(v) {
 }
 
 // Every other page on these platforms (profiles, channels, 动态, photo posts, notes…) shows as a link card.
-const PLATFORMS = /(^|\.)(youtube\.com|vimeo\.com|bilibili\.com|x\.com|twitter\.com|instagram\.com|tiktok\.com|douyin\.com|iesdouyin\.com|facebook\.com|weibo\.com|weibo\.cn|xiaohongshu\.com)$/;
+const PLATFORMS = /(^|\.)(youtube\.com|vimeo\.com|bilibili\.com|x\.com|twitter\.com|instagram\.com|tiktok\.com|douyin\.com|iesdouyin\.com|facebook\.com|weibo\.com|weibo\.cn|xiaohongshu\.com|wikipedia\.org|zhihu\.com)$/;
 export function videoOf(raw) {
   const found = match(raw);
   if (found) return found;
@@ -159,5 +161,18 @@ export function videoOf(raw) {
   if (!/^https?:\/\//i.test(text)) text = `https://${text}`;
   let u; try { u = new URL(text); } catch { return null; }
   if (!PLATFORMS.test(u.hostname.toLowerCase()) || u.pathname.length < 2) return null; // a site's home page isn't worth a card
+  // Wikipedia: one card per article, whichever form the link takes (mobile, /wiki/, /zh-cn/ /zh-tw/ variants, ?title=).
+  const wiki = u.hostname.toLowerCase().match(/^([a-z-]{2,12})\.(?:m\.)?wikipedia\.org$/);
+  if (wiki) {
+    const pm = u.pathname.match(/^\/(?:wiki|zh(?:-[a-z]{2,4})?)\/(.+)$/i);
+    let title = pm ? pm[1] : u.searchParams.get('title') || u.searchParams.get('curid') && null;
+    if (!title) return null;
+    try { title = decodeURIComponent(title); } catch { /* keep as is */ }
+    title = title.replace(/ /g, '_');
+    const variant = (u.pathname.match(/^\/(zh-[a-z]{2,4})\//i) || [])[1];
+    return { kind: 'card', id: `${wiki[1]}:${title}`, url: `https://${wiki[1]}.wikipedia.org/${variant || 'wiki'}/${encodeURIComponent(title)}${u.hash}` };
+  }
+  // 知乎: questions, answers, 专栏 articles, pins, videos — one card per page (share parameters dropped).
+  if (/(^|\.)zhihu\.com$/.test(u.hostname.toLowerCase())) return { kind: 'card', id: u.hostname + u.pathname, url: `https://${u.hostname.replace(/^(www\.)?/, (x, w) => (/^zhuanlan\./.test(u.hostname) ? '' : 'www.'))}${u.pathname}` };
   return { kind: 'card', id: u.href, url: u.href };
 }

@@ -109,3 +109,13 @@ test('posts and other pages: Facebook posts, 小红书 notes, and cards for ever
   const share = '35 小红书分享【读经笔记】 😆 xhslink.com/a/AbCdEf123，复制本条信息';
   assert.deepEqual([...share.matchAll(LINK_RE)].map((m) => videoOf(m[0])?.kind), ['short']);
 });
+
+test('Wikipedia and 知乎: one card per article or page, whatever the link form', () => {
+  for (const u of ['https://zh.wikipedia.org/wiki/%E4%BA%9A%E4%BC%AF%E6%8B%89%E7%BD%95', 'https://zh.m.wikipedia.org/wiki/亚伯拉罕', 'https://zh.wikipedia.org/zh-cn/亚伯拉罕', 'zh.wikipedia.org/wiki/亚伯拉罕'])
+    assert.deepEqual([videoOf(u).kind, videoOf(u).id], ['card', 'zh:亚伯拉罕'], u);
+  assert.equal(videoOf('https://en.m.wikipedia.org/w/index.php?title=Moses').url, 'https://en.wikipedia.org/wiki/Moses');
+  assert.equal(videoOf('https://www.zhihu.com/question/12345/answer/67890?share_code=abc&utm_psn=1').url, 'https://www.zhihu.com/question/12345/answer/67890');
+  assert.equal(videoOf('https://zhuanlan.zhihu.com/p/123456?utm_id=0').url, 'https://zhuanlan.zhihu.com/p/123456');
+  const text = '推荐 https://zhuanlan.zhihu.com/p/123456 和 zh.wikipedia.org/wiki/亚伯拉罕，看看 https://en.wikipedia.org/wiki/Moses。';
+  assert.deepEqual([...text.matchAll(LINK_RE)].map((m) => videoOf(m[0]).id), ['zhuanlan.zhihu.com/p/123456', 'zh:亚伯拉罕', 'en:Moses']);
+});

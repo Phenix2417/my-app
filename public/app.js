@@ -3250,10 +3250,10 @@ function weiboCard(box, v, link) {
 // Any other page on these platforms (a profile, channel, 动态, 小红书 note, photo post…): a card with its title,
 // description and picture, as the page describes itself. Tap opens it.
 const SITE_NAMES = { 'youtube.com': 'YouTube', 'bilibili.com': '哔哩哔哩', 'x.com': 'X', 'twitter.com': 'X', 'instagram.com': 'Instagram', 'tiktok.com': 'TikTok',
-  'douyin.com': '抖音', 'iesdouyin.com': '抖音', 'facebook.com': 'Facebook', 'xiaohongshu.com': '小红书', 'weibo.com': '微博', 'weibo.cn': '微博', 'vimeo.com': 'Vimeo' };
+  'douyin.com': '抖音', 'iesdouyin.com': '抖音', 'facebook.com': 'Facebook', 'xiaohongshu.com': '小红书', 'weibo.com': '微博', 'weibo.cn': '微博', 'vimeo.com': 'Vimeo', 'wikipedia.org': 'Wikipedia', 'zhihu.com': '知乎' };
 function linkCard(box, v) {
   const host = new URL(v.url).hostname.replace(/^([\w-]+\.)*(?=[\w-]+\.[a-z]+$)/, '');
-  const site = SITE_NAMES[host] || host;
+  const site = host === 'wikipedia.org' && /^https:\/\/zh\./.test(v.url) ? '维基百科' : SITE_NAMES[host] || host;
   const shell = (...kids) => h('a', { class: 'weibo-inner', href: v.url, target: '_blank', rel: 'noopener noreferrer' }, ...kids);
   box.replaceChildren(shell(h('div', { class: 'weibo-head' }, h('b', {}, site), h('span', { class: 'weibo-brand' }, site)), h('span', { class: 'empty-inline' }, 'Loading…')));
   api('GET', `/api/link-card?url=${encodeURIComponent(v.url)}`).then((c) => {
@@ -3279,9 +3279,11 @@ addEventListener('message', (e) => {
   if (height > 50 && height < 3000) frame.parentElement.style.height = `${Math.ceil(height)}px`;
 });
 
+const TEXT_LINK_RE = new RegExp(`${VIDEO_LINK_RE.source}|(?:https?:\\/\\/|\\bwww\\.)[^\\s<>"'\\u3000-\\u303f\\u3400-\\u9fff\\uff00-\\uffef]+`, 'gi');
 function linkified(text) {
   const out = []; let last = 0;
-  for (const m of String(text).matchAll(/(?:https?:\/\/|\bwww\.|\b(?:youtu\.be|b23\.tv|vimeo\.com|youtube\.com|bilibili\.com|x\.com|twitter\.com|instagram\.com|tiktok\.com|vm\.tiktok\.com|vt\.tiktok\.com|douyin\.com|v\.douyin\.com|facebook\.com|fb\.watch|weibo\.com|m\.weibo\.cn|weibo\.cn|t\.cn|xiaohongshu\.com|xhslink\.com)\/)[^\s<>"'\u3000-\u303f\u3400-\u9fff\uff00-\uffef]+/gi)) {
+  // Links: the video/post links (Wikipedia titles may be in Chinese), then any other web address.
+  for (const m of String(text).matchAll(TEXT_LINK_RE)) {
     const link = m[0].replace(/[.,;:!?)\]]+$/, ''); // trailing punctuation isn't part of the link
     const href = /^https?:/i.test(link) ? link : `https://${link}`;
     out.push(text.slice(last, m.index), h('a', { href, target: '_blank', rel: 'noopener noreferrer', class: 'chat-link' }, link));

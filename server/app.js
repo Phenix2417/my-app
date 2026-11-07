@@ -313,7 +313,7 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
   const groupOut = (g) => ({ id: g.id, name: g.name, members: stmt.members.all(g.id).map((u) => userOut(u.id, u.username, u.display_name)) });
   const videoLinks = new Map(); // short link -> where it leads
   // Pages on the platforms that chat shows (videos, posts, cards); short links and cards only ever go to these.
-  const PLATFORM_URL = /^https:\/\/([\w-]+\.)*(bilibili\.com|b23\.tv|tiktok\.com|douyin\.com|iesdouyin\.com|facebook\.com|weibo\.com|weibo\.cn|xiaohongshu\.com|xhslink\.com|youtube\.com|youtu\.be|vimeo\.com|x\.com|twitter\.com|instagram\.com)\//;
+  const PLATFORM_URL = /^https:\/\/([\w-]+\.)*(bilibili\.com|b23\.tv|tiktok\.com|douyin\.com|iesdouyin\.com|facebook\.com|weibo\.com|weibo\.cn|xiaohongshu\.com|xhslink\.com|youtube\.com|youtu\.be|vimeo\.com|x\.com|twitter\.com|instagram\.com|wikipedia\.org|zhihu\.com)\//;
   const linkCards = new Map(); // page address -> card
   const cardImages = new Map(); // key -> picture address (only pictures named by a card can be fetched)
   const weiboCards = new Map(); // 微博 post id -> card
@@ -722,6 +722,22 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
       if (!PLATFORM_URL.test(url) || url.length > 1000) throw new HttpError(400, 'Invalid link');
       if (linkCards.has(url)) return linkCards.get(url);
       const asked = url;
+      // Wikipedia: the article's summary (title, opening sentences, picture) from its own API, in the page's language.
+      const wm = url.match(/^https:\/\/([a-z-]{2,12})\.wikipedia\.org\/(wiki|zh-[a-z]{2,4})\/([^#?]+)/);
+      if (wm) {
+        let d = null;
+        try {
+          const r = await fetch(`https://${wm[1]}.wikipedia.org/api/rest_v1/page/summary/${wm[3]}`, { headers: { 'User-Agent': 'BibleStudyApp/1.0 (+https://github.com/Phenix2417/my-app)', ...(wm[2] !== 'wiki' ? { 'Accept-Language': wm[2] } : wm[1] === 'zh' ? { 'Accept-Language': 'zh-cn' } : {}) }, signal: AbortSignal.timeout(8000) });
+          if (r.ok) d = await r.json();
+        } catch { /* unreachable */ }
+        if (!d?.title) throw new HttpError(404, 'No preview for this link');
+        let image = null;
+        const pic = d.thumbnail?.source;
+        if (/^https:\/\/upload\.wikimedia\.org\//.test(pic || '')) { const key = sha256(pic).slice(0, 24); cardImages.set(key, { url: pic, referer: url }); image = `/api/card-image/${key}`; }
+        const card = { title: d.title, text: String(d.extract || d.description || '').slice(0, 400), site: wm[1] === 'zh' ? '维基百科' : 'Wikipedia', image, url };
+        linkCards.set(asked, card);
+        return card;
+      }
       const page = async (ua) => {
         let at = asked;
         for (let i = 0; i < 4; i++) {

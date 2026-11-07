@@ -277,3 +277,14 @@ test('link cards: Open Graph details of platform pages only, pictures only as na
     assert.equal((await api('GET', `/api/link-card?url=${encodeURIComponent('https://example.com/x')}`, { token: u.token })).status, 400);
   } finally { globalThis.fetch = real; }
 });
+
+test('Wikipedia cards come from the article summary', async () => {
+  const u = (await api('POST', '/api/register', { body: { username: 'wiki_cards', password: 'password1' } })).data;
+  const real = globalThis.fetch;
+  globalThis.fetch = (url, opts) => (String(url).startsWith('https://zh.wikipedia.org/api/rest_v1/page/summary/')
+    ? Promise.resolve(Response.json({ title: '亚伯拉罕', extract: '亚伯拉罕是希伯来人的始祖。', thumbnail: { source: 'https://upload.wikimedia.org/a.jpg' } })) : real(url, opts));
+  try {
+    const c = (await api('GET', `/api/link-card?url=${encodeURIComponent('https://zh.wikipedia.org/wiki/%E4%BA%9A%E4%BC%AF%E6%8B%89%E7%BD%95')}`, { token: u.token })).data;
+    assert.deepEqual([c.title, c.text, c.site, /^\/api\/card-image\//.test(c.image)], ['亚伯拉罕', '亚伯拉罕是希伯来人的始祖。', '维基百科', true]);
+  } finally { globalThis.fetch = real; }
+});
