@@ -3552,7 +3552,8 @@ async function renderChatPage() {
     } catch (e) { toast(e.message); }
   }
   // The menu for a message: a dark bar of buttons just above it (below it when there's no room), as in WeChat.
-  function messageMenu(bubble, m) {
+  // at: the point touched ({x, y}); the menu's pointer aims at it. Without one, at the middle of the message's top.
+  function messageMenu(bubble, m, at = null) {
     closeMenu();
     const items = [
       { label: 'Copy', icon: ICONS.copy, run: async () => {
@@ -3574,13 +3575,14 @@ async function renderChatPage() {
     bubble.classList.add('held');
     document.body.append(pop);
     const b = bubble.getBoundingClientRect(), w = pop.offsetWidth, ph = pop.offsetHeight;
-    const top = list.getBoundingClientRect().top;
-    const above = b.top - ph - 10 >= Math.max(top, 8);
-    const x = Math.min(Math.max(b.left + b.width / 2 - w / 2, 8), innerWidth - w - 8);
+    const px = at ? at.x : b.left + b.width / 2, py = at ? at.y : b.top;
+    const gap = at ? 16 : 10; // clear of the fingertip
+    const above = py - ph - gap >= Math.max(list.getBoundingClientRect().top, 8);
+    const x = Math.min(Math.max(px - w / 2, 8), innerWidth - w - 8);
     pop.style.left = `${x}px`;
-    pop.style.top = `${above ? b.top - ph - 10 : Math.min(b.bottom + 10, innerHeight - ph - 8)}px`;
+    pop.style.top = `${above ? py - ph - gap : Math.min((at ? py : b.bottom) + gap, innerHeight - ph - 8)}px`;
     pop.classList.toggle('below', !above);
-    pop.style.setProperty('--arrow-x', `${Math.min(Math.max(b.left + b.width / 2 - x, 16), w - 16)}px`);
+    pop.style.setProperty('--arrow-x', `${Math.min(Math.max(px - x, 16), w - 16)}px`);
     pop.querySelector('button')?.focus({ preventScroll: true });
   }
   // A tap anywhere on a message opens its menu, except on a link, a button or a player (those do their own thing);
@@ -3592,9 +3594,9 @@ async function renderChatPage() {
       if (suppressClick) { suppressClick = false; e.preventDefault(); e.stopPropagation(); return; }
       // (A tap while a menu is open only closes it.)
       if (interactive(e.target) || Date.now() - popClosedAt < 500 || String(getSelection?.() || '').trim()) return;
-      messageMenu(bubble, m);
+      messageMenu(bubble, m, e.detail ? { x: e.clientX, y: e.clientY } : null); // (detail 0: Enter on a focused message)
     }, true);
-    bubble.addEventListener('contextmenu', (e) => { e.preventDefault(); messageMenu(bubble, m); });
+    bubble.addEventListener('contextmenu', (e) => { e.preventDefault(); messageMenu(bubble, m, { x: e.clientX, y: e.clientY }); });
     // After half a second the bubble darkens (and the phone buzzes); the menu opens when the finger lifts, and the
     // click that follows is swallowed, so it neither follows a link nor closes the menu at once.
     bubble.addEventListener('pointerdown', (e) => {
@@ -3612,7 +3614,7 @@ async function renderChatPage() {
         const wasHeld = held; done();
         if (!wasHeld) return;
         suppressClick = true; setTimeout(() => { suppressClick = false; }, 600);
-        messageMenu(bubble, m);
+        messageMenu(bubble, m, { x, y });
       };
       bubble.addEventListener('pointermove', moved);
       bubble.addEventListener('pointerup', up);
