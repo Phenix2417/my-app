@@ -3450,13 +3450,23 @@ const chatFileUrl = (f) => `/api/chat-file/${f.id}`;
 const clock = (sec) => { const t = Math.max(0, Math.round(sec || 0)); return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`; };
 const fileSize = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(n >= 10485760 ? 0 : 1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
 // How long a file sent in chat can still be opened or saved (files are kept for 30 days).
+// Days while a day or more is left; then hours, minutes, and the last minute in seconds.
 function fileExpiry(f) {
   if (!f.expiresAt) return '';
-  const days = Math.ceil((f.expiresAt - Date.now()) / 86400000);
-  if (days <= 0) return tr('Expired (files are kept for 30 days)');
-  if (days === 1) return LANG === 'zh' ? '最后一天可下载' : 'Last day to download';
-  return LANG === 'zh' ? `还可下载 ${days} 天` : `${days} days left to download`;
+  const ms = f.expiresAt - Date.now();
+  if (ms <= 0) return tr('Expired (files are kept for 30 days)');
+  const [n, unit, zh] = ms >= 86400000 ? [Math.round(ms / 86400000), 'day', '天'] : ms >= 3600000 ? [Math.floor(ms / 3600000), 'hour', '小时']
+    : ms >= 60000 ? [Math.floor(ms / 60000), 'minute', '分钟'] : [Math.max(1, Math.floor(ms / 1000)), 'second', '秒'];
+  return LANG === 'zh' ? `还可下载 ${n} ${zh}` : `${n} ${unit}${n === 1 ? '' : 's'} left to download`;
 }
+// The time left on files shown on screen, kept current (every second, for the last minute's countdown).
+const expiryLine = (f, cls) => h('div', { class: cls, dataset: { expires: String(f.expiresAt) } }, fileExpiry(f));
+setInterval(() => {
+  for (const el of document.querySelectorAll('[data-expires]')) {
+    const text = fileExpiry({ expiresAt: Number(el.dataset.expires) });
+    if (el.textContent !== text) el.textContent = text;
+  }
+}, 1000);
 const fileLabel = (f) => (f.kind === 'image' ? tr('[Photo]') : f.kind === 'video' ? tr('[Video]') : f.kind === 'audio' ? `${tr('[Voice]')}${f.duration ? ` ${clock(f.duration)}` : ''}` : `${tr('[File]')} ${f.name}`);
 // Send a file to the server (with progress); resolves to { id, name, type, kind, size, duration }. abort() stops it.
 function uploadChatFile(blob, { name, duration, onProgress, extra = {} } = {}) {
@@ -3527,7 +3537,7 @@ async function previewChatFile(f) {
     h('div', { class: 'fp-top' },
       h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Close', title: 'Close', onclick: () => close() }, svg(ICONS.back)),
       h('div', { class: 'fp-heading' }, h('div', { class: 'fp-title file-name' }, cleanBookTitle(f.book?.title || '') || (isBookName(f.name) ? cleanBookName(f.name) : f.name)),
-        fileExpiry(f) ? h('div', { class: 'fp-expiry' }, fileExpiry(f)) : null), menu),
+        f.expiresAt && !f.expired ? expiryLine(f, 'fp-expiry') : null), menu),
     body, foot);
   const onKey = (e) => { if (e.key === 'Escape' && !document.querySelector('.scrim, .more-menu')) close(); }; // (a sheet or menu on top closes first)
   function close() { closeMenu(); for (const c of cleanups) { try { c(); } catch { /* gone */ } } box.remove(); document.removeEventListener('keydown', onKey); }
@@ -3913,7 +3923,7 @@ async function renderChatPage() {
         : [splitQuote(m.body).quote ? h('div', { class: 'bubble-quote' }, splitQuote(m.body).quote) : null,
           m.ref ? verseCard(m.ref) : null, splitQuote(m.body).rest.trim() ? h('div', { class: 'bubble-text note-body' }, ...linkified(splitQuote(m.body).rest)) : null,
           m.file ? fileWithRepair(m) : null,
-          m.file && !m.file.expired && fileExpiry(m.file) ? h('div', { class: 'file-expiry' }, fileExpiry(m.file)) : null,
+          m.file && !m.file.expired && m.file.expiresAt ? expiryLine(m.file, 'file-expiry') : null,
           ...videoEmbeds(m.body), m.editedAt ? h('span', { class: 'edited-mark' }, tr('Edited')) : null].filter(Boolean);
       // A picture or video on its own fills the bubble.
       const bubbleClass = m.file && !m.file.expired && !m.deleted && !m.ref && !splitQuote(m.body).rest.trim() && ['image', 'video'].includes(m.file.kind) ? 'chat-bubble media' : 'chat-bubble';
