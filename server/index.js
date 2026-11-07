@@ -17,6 +17,10 @@ import { createVersionService } from './versions.js';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // On Railway, a volume attached to the service is mounted at RAILWAY_VOLUME_MOUNT_PATH; keep the database there.
 const dataDir = process.env.RAILWAY_VOLUME_MOUNT_PATH || path.join(root, 'data');
+if (process.env.RAILWAY_PROJECT_ID && !process.env.RAILWAY_VOLUME_MOUNT_PATH) {
+  console.warn('WARNING: no Railway volume is attached. Accounts, notes, chats, books and files are kept on this deployment\'s own disk '
+    + 'and will be lost with the next deploy. Attach a volume to this service (any mount path) to keep them.');
+}
 const db = openDb(process.env.DB_FILE || path.join(dataDir, 'bible-study.db'));
 // Behind a hosting proxy every request arrives from the proxy, so read the client address it adds.
 const trustProxy = process.env.TRUST_PROXY === '1' || !!process.env.RAILWAY_PROJECT_ID;

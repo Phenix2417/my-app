@@ -430,7 +430,9 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
   }, 3600000).unref();
 
   const routes = [
-    ['GET', /^\/api\/health$/, () => ({ ok: true })],
+    // storage: 'volume' when the data (database, books, files) is on storage kept across new versions; 'temporary'
+    // when it's on the server's own disk, which a hosting service may replace with each new version.
+    ['GET', /^\/api\/health$/, () => ({ ok: true, storage: process.env.RAILWAY_VOLUME_MOUNT_PATH || process.env.DATA_PERSISTENT === '1' || !process.env.RAILWAY_PROJECT_ID ? 'volume' : 'temporary' })],
 
     ['POST', /^\/api\/uploads$/, async ({ me, body }) => {
       const size = Number(body.size);

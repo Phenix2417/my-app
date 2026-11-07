@@ -4383,7 +4383,10 @@ async function renderChatPage() {
   const sub = h('div', { class: 'chat-sub' }, chat.kind === 'group' ? `${chat.members || ''} ${tr('members')}` : chat.user ? `@${chat.user.username}` : '');
   const input = h('textarea', { class: 'chat-input', rows: 1, maxlength: 2000, placeholder: 'Say something…',
     oninput: () => { input.style.height = 'auto'; input.style.height = `${Math.min(input.scrollHeight, 140)}px`; } });
-  input.value = state.chatDraft || ''; state.chatDraft = '';
+  // What's typed and not sent yet is kept (per chat), so leaving, a reload or a new version of the app doesn't lose it.
+  const draftKey = `draft.${uid()}.${chatKeyOf(chat)}`;
+  input.value = state.chatDraft || store.get(draftKey, '') || ''; state.chatDraft = '';
+  input.addEventListener('input', () => { if (!editing) { if (input.value.trim()) store.set(draftKey, input.value); else store.del(draftKey); } });
   // A verse waiting to be sent, with a comment if one is written.
   let attached = state.chatAttach || null; state.chatAttach = null;
   const attachBox = h('div', { class: 'chat-attach' });
@@ -4658,7 +4661,7 @@ async function renderChatPage() {
     sendBtn.disabled = true;
     const body = text && quoting ? `> ${quoting.replace(/\n/g, ' ')}\n${text}` : text;
     const m = await sendToChat(chat, { ...(body ? { body } : {}), ...(attached ? { ref: attached } : {}) });
-    if (m) { input.value = ''; input.style.height = ''; attached = null; showAttach(); stopQuoting(); draw([...shown, m]); list.scrollTop = list.scrollHeight; }
+    if (m) { input.value = ''; store.del(draftKey); input.style.height = ''; attached = null; showAttach(); stopQuoting(); draw([...shown, m]); list.scrollTop = list.scrollHeight; }
     sendBtn.disabled = false;
   };
   const sendBtn = h('button', { class: 'chat-send', type: 'button', 'aria-label': 'Send', title: 'Send', onclick: send }, svg(ICONS.send));
