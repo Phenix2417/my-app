@@ -3816,9 +3816,9 @@ function bookOptions(b, { onSaved = renderLibrary, onDeleted = renderLibrary } =
     const found = await bibleVersionsOf(b);
     closeSheet();
     if (found.length) return openLibraryBook(b);
-    if (!await confirmSheet({ title: 'Open in Bible reader', message: `“${b.title}” isn't in the Bible reader yet. Import it as a Bible? The app reads its books, chapters and verses and shows you what it found first.`, action: 'Import as a Bible', danger: false })) return;
+    if (!await confirmSheet({ title: 'Open as Bible', message: `“${b.title}” isn't in the Bible reader yet. Import it as a Bible? The app reads its books, chapters and verses and shows you what it found first.`, action: 'Import as a Bible', danger: false })) return;
     checkBibleEpub(authFetch(`/api/library/${b.id}/file`).then((r) => r.arrayBuffer()), b.title, null, null, () => openLibraryBook(b));
-  } }, svg(ICONS.read), h('span', {}, 'Open in Bible reader'));
+  } }, svg(ICONS.read), h('span', {}, 'Open as Bible'));
   // A new cover: any picture, shrunk to a small JPEG.
   const coverInput = h('input', { type: 'file', accept: 'image/*', hidden: true, onchange: async () => {
     const f = coverInput.files[0];
