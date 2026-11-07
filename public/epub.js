@@ -117,6 +117,8 @@ export async function openEpub(buf) {
 
   return { kind: 'epub', title: dc('title'), author: dc('creator'), lang: dc('language'), zip, chapters, toc: tocInBook,
     coverPath: cover?.href || null,
+    // Every picture in the book (JPEG/PNG/WebP/GIF), in the book's order: for choosing a cover.
+    images: items.map(([, it]) => it).filter((it) => /^image\/(jpeg|png|webp|gif)/.test(it.type)).map((it) => it.href),
     blobs: new Map(),
     blobUrl(path, bytes) {
       if (!this.blobs.has(path)) {

@@ -3809,6 +3809,69 @@ async function makeCover(bytes) {
   } catch { return null; } finally { URL.revokeObjectURL(url); }
 }
 
+// Choosing a cover for an EPUB: its pictures, its pages (the page's first picture, or its words set as a cover), or a phone photo.
+async function coverPicker(b, { setCover, fromPhone, onOpen }) {
+  const pics = h('div', { class: 'cover-grid' }, h('p', { class: 'empty-inline' }, 'Opening…'));
+  const pages = h('div', { class: 'cover-grid' });
+  const close = openSheet(() => [
+    h('h2', {}, 'Change cover'),
+    h('div', { class: 'section-label' }, 'Pictures in the book'), pics,
+    h('div', { class: 'section-label' }, 'Pages of the book'), pages,
+    h('div', { class: 'option-rows' }, h('button', { class: 'option-row', type: 'button', onclick: fromPhone }, svg(ICONS.addBook), h('span', {}, 'A photo from your phone'))),
+  ], { label: 'Change cover' });
+  onOpen?.(close);
+  let book;
+  try {
+    book = lib.opened.get(b.id);
+    if (!book) { book = await openEpub(await (await authFetch(`/api/library/${b.id}/file`)).arrayBuffer()); lib.opened.set(b.id, book); }
+  } catch (e) { pics.replaceChildren(h('p', { class: 'error' }, e.message)); return; }
+  const tile = (label, url, make) => h('button', { class: 'cover-tile', type: 'button', 'aria-label': label, title: label, onclick: async (e) => {
+    e.currentTarget.classList.add('loading'); await setCover(await make()); } }, url ? h('img', { src: url, alt: '' }) : null, h('span', {}, label));
+  // Pictures: skip tiny ones (icons, ornaments).
+  const imgs = [];
+  for (const path of (book.images || []).slice(0, 60)) {
+    const bytes = await book.zip.read(path).catch(() => null);
+    if (!bytes || bytes.length < 8000) continue;
+    imgs.push(tile(path.split('/').pop(), book.blobUrl(path, bytes), () => makeCover(bytes)));
+  }
+  pics.replaceChildren(...(imgs.length ? imgs : [h('p', { class: 'empty-inline' }, 'No pictures in this book.')]));
+  // Pages: the first dozen, each previewed as the cover it would make.
+  const tiles = [];
+  for (let i = 0; i < Math.min(book.chapters.length, 12); i++) {
+    let node; try { node = await book.render(i); } catch { continue; }
+    const img = node.querySelector?.('img');
+    const text = (node.textContent || '').replace(/\s+/g, ' ').trim();
+    if (!img && text.length < 2) continue;
+    const blob = img ? null : await pageCover(book.chapterTitle(i) || b.title, text, b.title);
+    const url = img ? img.src : URL.createObjectURL(blob);
+    const label = book.chapterTitle(i) || `${tr('Page')} ${i + 1}`;
+    tiles.push(tile(label, url, async () => (img ? makeCover(await (await fetch(img.src)).arrayBuffer()) : blob)));
+  }
+  pages.replaceChildren(...(tiles.length ? tiles : [h('p', { class: 'empty-inline' }, 'No pages to use.')]));
+}
+// A cover made from a page's words: its heading large, then its opening lines, on the app's colours.
+async function pageCover(heading, text, title) {
+  const c = document.createElement('canvas'); c.width = 360; c.height = 540;
+  const g = c.getContext('2d');
+  g.fillStyle = '#f6efe0'; g.fillRect(0, 0, 360, 540);
+  g.strokeStyle = '#8a6d3b'; g.lineWidth = 3; g.strokeRect(16, 16, 328, 508);
+  const wrap = (str, font, color, x, y, maxW, lineH, maxLines) => {
+    g.font = font; g.fillStyle = color;
+    const cjk = /[\u3400-\u9fff]/.test(str), tokens = cjk ? [...str] : str.split(' ');
+    let line = '', n = 0;
+    for (const t of tokens) {
+      const next = line ? line + (cjk ? '' : ' ') + t : t;
+      if (g.measureText(next).width > maxW && line) { g.fillText(line, x, y); y += lineH; line = t; if (++n >= maxLines - 1) break; }
+      else line = next;
+    }
+    if (line) { g.fillText(n >= maxLines - 1 ? line + '…' : line, x, y); y += lineH; }
+    return y;
+  };
+  let y = wrap(heading.slice(0, 80), '600 30px Georgia, "Noto Serif SC", serif', '#3b2f1e', 36, 90, 288, 38, 4);
+  wrap(text.slice(0, 400), '17px Georgia, "Noto Serif SC", serif', '#5a4a33', 36, y + 24, 288, 26, 12);
+  return new Promise((r) => c.toBlob(r, 'image/jpeg', 0.85));
+}
+
 function bookOptions(b, { onSaved = renderLibrary, onDeleted = renderLibrary } = {}) {
   // Open in the Bible reader: only for an ebook imported as Bible versions (shown once that's known).
   // Not imported yet: offer to import it as a Bible, then open it there.
@@ -3819,20 +3882,23 @@ function bookOptions(b, { onSaved = renderLibrary, onDeleted = renderLibrary } =
     if (!await confirmSheet({ title: 'Open as Bible', message: `“${b.title}” isn't in the Bible reader yet. Import it as a Bible? The app reads its books, chapters and verses and shows you what it found first.`, action: 'Import as a Bible', danger: false })) return;
     checkBibleEpub(authFetch(`/api/library/${b.id}/file`).then((r) => r.arrayBuffer()), b.title, null, null, () => openLibraryBook(b));
   } }, svg(ICONS.read), h('span', {}, 'Open as Bible'));
-  // A new cover: any picture, shrunk to a small JPEG.
-  const coverInput = h('input', { type: 'file', accept: 'image/*', hidden: true, onchange: async () => {
-    const f = coverInput.files[0];
-    if (!f) return;
-    const cover = await makeCover(await f.arrayBuffer());
+  // A new cover: a picture from the book, a page of the book, or a photo from the phone — shrunk to a small JPEG.
+  const setCover = async (cover) => {
     if (!cover) { toast("That picture couldn't be used."); return; }
     try {
       await authFetch(`/api/library/${b.id}/cover`, { method: 'PUT', body: cover });
       b.hasCover = true;
       const old = lib.covers.get(b.id); if (old) URL.revokeObjectURL(old);
       lib.covers.delete(b.id);
-      closeSheet(); toast('Cover changed'); onSaved();
+      closeSheet(); closePicker?.(); toast('Cover changed'); onSaved();
     } catch (e) { toast(e instanceof OfflineError ? "You're offline. Try again when you're connected." : e.message); }
+  };
+  let closePicker = null;
+  const coverInput = h('input', { type: 'file', accept: 'image/*', hidden: true, onchange: async () => {
+    const f = coverInput.files[0];
+    if (f) setCover(await makeCover(await f.arrayBuffer()));
   } });
+  const chooseCover = () => coverPicker(b, { setCover, fromPhone: () => coverInput.click(), onOpen: (close) => { closePicker = close; } });
   let closeSheet = () => {};
   openSheet((close) => {
     closeSheet = close;
@@ -3845,7 +3911,7 @@ function bookOptions(b, { onSaved = renderLibrary, onDeleted = renderLibrary } =
       h('div', { class: 'option-rows' },
         b.format === 'epub' ? bibleRow : null,
         b.format === 'epub' ? h('button', { class: 'option-row', type: 'button', onclick: () => { close(); openLibraryBook(b, { asEbook: true }); } }, svg(ICONS.books), h('span', {}, 'Open as ebook')) : null,
-        h('button', { class: 'option-row', type: 'button', onclick: () => coverInput.click() }, svg(ICONS.image), h('span', {}, 'Change cover')),
+        h('button', { class: 'option-row', type: 'button', onclick: () => (b.format === 'epub' ? chooseCover() : coverInput.click()) }, svg(ICONS.image), h('span', {}, 'Change cover')),
         coverInput),
       h('div', { class: 'sheet-actions' },
         h('button', { class: 'text-btn danger', type: 'button', onclick: async () => {
