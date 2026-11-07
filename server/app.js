@@ -239,7 +239,7 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
     const list = (x) => (Array.isArray(x) ? x.slice(0, 200).filter((e) => Array.isArray(e) && Number.isInteger(e[0]) && e[0] >= 1 && e[0] <= 200 && typeof e[1] === 'string')
       .map(([v, t]) => [v, t.trim().slice(0, 2000)]).filter(([, t]) => t) : []);
     const main = list(parts?.main), alt = list(parts?.alt);
-    const json = main.length && alt.length ? JSON.stringify({ main, alt }) : null;
+    const json = main.length ? JSON.stringify({ main, alt }) : null;
     return json && json.length <= 12000 ? json : null;
   }
   function validateNote(b, me) {
@@ -263,7 +263,10 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
       // The second version's words, when the selection covered both versions read side by side.
       ...(() => {
         const a = b.alt, q = typeof a?.quote === 'string' ? a.quote.trim().slice(0, 4000) : '';
-        if (!q || !(VERSION_IDS.has(a.version) || ownVersion(me, a.version))) return { alt_version: null, alt_quote: null, alt_range: null, parts: null };
+        if (!q || !(VERSION_IDS.has(a.version) || ownVersion(me, a.version))) {
+          const parts = cleanParts(b.parts);
+          return { alt_version: null, alt_quote: null, alt_range: null, parts: parts && JSON.stringify({ main: JSON.parse(parts).main, alt: [] }) };
+        }
         // Where its words are in that version (for highlighting them), if given and sensible.
         const ok = (x) => x && int(x.verse, 1, 200) && int(x.word, 0, 500);
         const range = ok(a.start) && ok(a.end) ? JSON.stringify({ start: { verse: a.start.verse, word: a.start.word }, end: { verse: a.end.verse, word: a.end.word } }) : null;

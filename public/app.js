@@ -503,10 +503,14 @@ function noteQuote(n) {
 }
 // Two versions' words verse by verse, as the reader shows them: verse 5, ↳ verse 5 in the second, verse 6, ↳ …
 function interleave(parts, mainClass, altClass) {
-  const verses = [...new Set([...parts.main, ...parts.alt].map(([v]) => v))].sort((a, b) => a - b);
-  const text = (list, v) => list.filter(([x]) => x === v).map(([, t]) => t).join(' ');
-  return verses.flatMap((v) => [text(parts.main, v) ? h('span', { class: mainClass }, text(parts.main, v)) : null,
-    text(parts.alt, v) ? h('span', { class: altClass }, text(parts.alt, v)) : null]).filter(Boolean);
+  const verses = [...new Set([...parts.main, ...(parts.alt || [])].map(([v]) => v))].sort((a, b) => a - b);
+  const text = (list, v) => (list || []).filter(([x]) => x === v).map(([, t]) => t).join(' ');
+  // Each verse starts with its number (on the first version's words, or the second's when only those are there).
+  const num = (v) => h('span', { class: 'qv', 'aria-hidden': 'true' }, v);
+  return verses.flatMap((v) => {
+    const a = text(parts.main, v), b = text(parts.alt, v);
+    return [a ? h('span', { class: mainClass }, num(v), a) : null, b ? h('span', { class: altClass }, a ? null : num(v), b) : null];
+  }).filter(Boolean);
 }
 
 /* ----- Commentary quotes in notes: “quote” — Matthew Henry on John 1:1–5 ----- */
@@ -1206,8 +1210,9 @@ function showToolbar() {
   const draft = (color) => ({
     id: newId(), book: state.pos.book, chapter: state.pos.chapter, version: textVersion,
     start: { verse: Math.floor(from.v), word: from.w }, end: { verse: Math.floor(to.v), word: to.w }, color, quote: ownQ || selectedQuote(), body: '',
-    ...(ownQ && otherQ ? { alt: { version: inAlt ? state.version : reader.altVersion, quote: otherQ, ...otherRange },
-      parts: { main: selectedParts(inAlt ? 'alt' : 'main'), alt: selectedParts(inAlt ? 'main' : 'alt') } } : {}),
+    // Each version's words verse by verse (shown with verse numbers, in the Bible's order).
+    parts: { main: selectedParts(inAlt ? 'alt' : 'main'), alt: ownQ && otherQ ? selectedParts(inAlt ? 'main' : 'alt') : [] },
+    ...(ownQ && otherQ ? { alt: { version: inAlt ? state.version : reader.altVersion, quote: otherQ, ...otherRange } } : {}),
   });
   if (reader.mode === 'commentary') return showCommentaryToolbar();
   if (reader.mode === 'book') return showBookToolbar();
@@ -1229,8 +1234,8 @@ function showToolbar() {
       const mainVersion = main ? state.version : reader.altVersion;
       const verse = { book: state.pos.book, chapter: state.pos.chapter, start: Math.floor(start.v), end: Math.floor(end.v),
         version: mainVersion, label: versionInfo(mainVersion).short, text: (main || alt).slice(0, 2000),
-        ...(main && alt ? { alt: { version: reader.altVersion, label: versionInfo(reader.altVersion).short, text: alt.slice(0, 2000) },
-          parts: { main: selectedParts('main'), alt: selectedParts('alt') } } : {}) };
+        parts: main ? { main: selectedParts('main'), alt: alt ? selectedParts('alt') : [] } : { main: selectedParts('alt'), alt: [] },
+        ...(main && alt ? { alt: { version: reader.altVersion, label: versionInfo(reader.altVersion).short, text: alt.slice(0, 2000) } } : {}) };
       clearSelection();
       shareVerse(verse);
     }),
@@ -3215,7 +3220,7 @@ function verseCard(v) {
   const zh = (x) => (/[\u3400-\u9fff]/.test(x.text) ? 'zh-Hans' : 'en');
   return h('div', { class: 'verse-card' },
     h('div', { class: 'verse-card-head' + (v.kind === 'note' ? ' note-head' : '') }, `${tr(v.kind === 'note' ? 'Shared note' : 'Shared verse')} · ${verseRef(v)}`, names ? h('span', { class: 'verse-card-version' }, ` · ${names}`) : null),
-    ...(v.parts && v.alt ? interleave(v.parts, 'verse-card-text', 'verse-card-text verse-card-alt').map((el) => { el.setAttribute('lang', zh({ text: el.textContent })); return el; })
+    ...(v.parts ? interleave(v.parts, 'verse-card-text', 'verse-card-text verse-card-alt').map((el) => { el.setAttribute('lang', zh({ text: el.textContent })); return el; })
       : [h('p', { class: 'verse-card-text', lang: zh(v) }, v.text), v.alt ? h('p', { class: 'verse-card-text verse-card-alt', lang: zh(v.alt) }, v.alt.text) : null]),
     h('button', { class: 'text-btn verse-card-open', type: 'button', onclick: () => {
       if (known) setVersion(v.version, { quiet: true });
@@ -3231,6 +3236,7 @@ function verseCard(v) {
 function noteVerse(n) {
   const version = n.version || 'web';
   const v = { kind: 'note', book: n.book, chapter: n.chapter, start: n.start.verse, end: n.end.verse, version, label: n.versionLabel || versionInfo(version).short, text: n.quote.slice(0, 2000) };
+  if (n.parts && !n.alt) return { ...v, parts: n.parts };
   if (n.alt) return { ...v, ...(n.parts ? { parts: n.parts } : {}), alt: { version: n.alt.version, label: n.alt.label || versionInfo(n.alt.version).short, text: n.alt.quote.slice(0, 2000) } };
   const CJK = /[\u3000-\u303f\u3400-\u9fff\uf900-\ufaff\uff00-\uffef「」『』]/;
   const runs = String(n.quote).match(/[\u3000-\u303f\u3400-\u9fff\uf900-\ufaff\uff00-\uffef「」『』]+|[^\u3000-\u303f\u3400-\u9fff\uf900-\ufaff\uff00-\uffef「」『』]+/g) || [];

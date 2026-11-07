@@ -801,3 +801,4 @@ body:has(.chat-screen) .bottom-nav { display: none; }
 .quote-main { display: block; }
 .quote-main + .quote-main, .quote-alt + .quote-main { margin-top: 6px; }
 span.verse-card-text { display: block; }
+.qv { font-size: .65em; color: var(--muted); font-weight: 600; margin-right: .35em; vertical-align: .35em; font-variant-numeric: tabular-nums; }
