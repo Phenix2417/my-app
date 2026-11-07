@@ -165,3 +165,8 @@ every form to the platform's official embed (youtube-nocookie, player.vimeo, pla
 instagram …/embed, tiktok player/v1, open.douyin player). Apps' short links (b23.tv, vm./vt.tiktok.com, tiktok.com/t/,
 v.douyin.com, fb.watch, facebook.com/share/v|r, t.cn) are followed by the server (`/api/video-link`), only to those sites. The page's CSP allows frames from
 those players only.
+
+Every other page on these platforms — and all of 小红书 — shows as a link card (title, description, picture, site),
+from the page's Open Graph tags read by the server (`/api/link-card`, platform addresses only; pictures through
+`/api/card-image/<key>`, only those a card named). Facebook posts use Facebook's post embed; 小红书 notes and the
+app's xhslink.com short links become cards.

@@ -257,3 +257,23 @@ test('微博 posts come back as cards, with pictures passed through from sinaimg
     assert.equal((await real(`${base}/api/weibo-image?url=${encodeURIComponent('https://evil.example/a.jpg')}`)).status, 400);
   } finally { globalThis.fetch = real; }
 });
+
+test('link cards: Open Graph details of platform pages only, pictures only as named by a card', async () => {
+  const u = (await api('POST', '/api/register', { body: { username: 'cards_user', password: 'password1' } })).data;
+  const real = globalThis.fetch;
+  const html = `<html><head><meta property="og:title" content="读经笔记：诗篇23篇"><meta property="og:description" content="耶和华是我的牧者 &amp; 我必不致缺乏">
+    <meta property="og:image" content="https://sns-img.xhscdn.com/abc.jpg"><meta property="og:site_name" content="小红书"></head></html>`;
+  globalThis.fetch = (url, opts) => {
+    if (String(url).startsWith('https://www.xiaohongshu.com/explore/')) return Promise.resolve(new Response(html, { headers: { 'content-type': 'text/html; charset=utf-8' } }));
+    if (String(url) === 'https://sns-img.xhscdn.com/abc.jpg') return Promise.resolve(new Response(new Uint8Array([0xff, 0xd8, 0xff]), { headers: { 'content-type': 'image/jpeg' } }));
+    return real(url, opts);
+  };
+  try {
+    const c = (await api('GET', `/api/link-card?url=${encodeURIComponent('https://www.xiaohongshu.com/explore/6543210fedcba9876543210f')}`, { token: u.token })).data;
+    assert.deepEqual([c.title, c.text, c.site], ['读经笔记：诗篇23篇', '耶和华是我的牧者 & 我必不致缺乏', '小红书']);
+    const pic = await real(base + c.image);
+    assert.deepEqual([pic.status, pic.headers.get('content-type')], [200, 'image/jpeg']);
+    assert.equal((await real(`${base}/api/card-image/${'0'.repeat(24)}`)).status, 404);
+    assert.equal((await api('GET', `/api/link-card?url=${encodeURIComponent('https://example.com/x')}`, { token: u.token })).status, 400);
+  } finally { globalThis.fetch = real; }
+});

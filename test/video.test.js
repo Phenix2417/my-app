@@ -15,7 +15,7 @@ test('YouTube: every link form (desktop, mobile web, app share, music, shorts, l
   assert.equal(videoOf('https://youtu.be/dQw4w9WgXcQ?t=1m30s').start, 90);
   assert.equal(videoOf('https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=42s').start, 42);
   assert.equal(videoOf('https://www.youtube.com/watch?v=dQw4w9WgXcQ#t=1:05').start, 65);
-  assert.equal(videoOf('https://www.youtube.com/channel/UC123'), null);
+  assert.equal(videoOf('https://www.youtube.com/channel/UC123').kind, 'card'); // a channel: shown as a card
 });
 
 test('Vimeo: page, channel, group, showcase, player and unlisted links', () => {
@@ -46,7 +46,7 @@ test('X / Twitter: x.com, twitter.com, mobile, /statuses/, /i/web/status/, mirro
     'https://mobile.twitter.com/someone/status/1750000000000000001', 'https://x.com/i/web/status/1750000000000000001',
     'https://twitter.com/someone/statuses/1750000000000000001', 'https://fxtwitter.com/someone/status/1750000000000000001', 'x.com/someone/status/1750000000000000001/photo/1'])
     assert.deepEqual(id(u), ['x', '1750000000000000001', 0], u);
-  assert.equal(videoOf('https://x.com/someone'), null);
+  assert.equal(videoOf('https://x.com/someone').kind, 'card');
   assert.match(embedUrl(videoOf('https://x.com/a/status/1750000000000000001')), /platform\.twitter\.com\/embed\/Tweet\.html\?id=1750000000000000001/);
 });
 
@@ -80,7 +80,7 @@ test('Facebook: watch, page videos, video.php, reels, live, mobile and web hosts
     assert.deepEqual(id(u), ['facebook', '1234567890123456', 0], u);
   assert.equal(videoOf('https://www.facebook.com/reel/1234567890123456?s=yWDuG2').reel, true);
   for (const u of ['https://fb.watch/abcDEF123/', 'https://www.facebook.com/share/v/1AbCdEfGh/', 'https://www.facebook.com/share/r/1AbCdEfGh/']) assert.equal(videoOf(u).kind, 'short', u);
-  assert.equal(videoOf('https://www.facebook.com/somepage'), null);
+  assert.equal(videoOf('https://www.facebook.com/somepage').kind, 'card');
   assert.match(embedUrl(videoOf('https://www.facebook.com/watch/?v=1234567890123456')), /facebook\.com\/plugins\/video\.php\?href=https%3A%2F%2Fwww\.facebook\.com%2Fwatch%2F%3Fv%3D1234567890123456/);
 });
 
@@ -90,5 +90,22 @@ test('微博: post, status, detail and video links, and t.cn short links', () =>
     assert.deepEqual([videoOf(u).kind, videoOf(u).id], ['weibo', want], u);
   for (const u of ['https://weibo.com/tv/show/1034:4950000000000002', 'https://video.weibo.com/show?fid=1034:4950000000000002']) assert.deepEqual([videoOf(u).id, videoOf(u).video], ['1034:4950000000000002', true], u);
   assert.equal(videoOf('http://t.cn/A6abcDEF').kind, 'short');
-  assert.equal(videoOf('https://weibo.com/u/1234567890'), null);
+  assert.equal(videoOf('https://weibo.com/u/1234567890').kind, 'card');
+});
+
+test('posts and other pages: Facebook posts, 小红书 notes, and cards for everything else on these platforms', () => {
+  for (const u of ['https://www.facebook.com/somepage/posts/pfbid02abcDEF', 'https://m.facebook.com/permalink.php?story_fbid=123456&id=789',
+    'https://www.facebook.com/photo/?fbid=123456789', 'https://www.facebook.com/groups/somegroup/posts/123456789/']) assert.equal(videoOf(u).kind, 'facebook-post', u);
+  assert.match(embedUrl(videoOf('https://www.facebook.com/somepage/posts/pfbid02abcDEF')), /facebook\.com\/plugins\/post\.php\?href=/);
+  assert.equal(videoOf('https://www.facebook.com/share/p/1AbcDEf/').kind, 'short');
+  const xhs = videoOf('https://www.xiaohongshu.com/discovery/item/6543210fedcba9876543210f?xsec_token=ABC&xsec_source=app_share');
+  assert.deepEqual([xhs.kind, xhs.url], ['card', 'https://www.xiaohongshu.com/explore/6543210fedcba9876543210f?xsec_token=ABC&xsec_source=pc_share']);
+  for (const u of ['http://xhslink.com/a/AbCdEf123', 'https://xhslink.com/AbCdEf123']) assert.equal(videoOf(u).kind, 'short', u);
+  for (const u of ['https://www.youtube.com/@channel', 'https://www.tiktok.com/@a/photo/7300000000000000009', 'https://t.bilibili.com/876543210',
+    'https://www.bilibili.com/opus/876543210', 'https://x.com/someone', 'https://www.instagram.com/someone/', 'https://www.douyin.com/note/7300000000000000003'])
+    assert.equal(videoOf(u).kind, 'card', u);
+  assert.equal(videoOf('https://youtube.com/'), null);
+  assert.equal(videoOf('https://example.com/page'), null);
+  const share = '35 小红书分享【读经笔记】 😆 xhslink.com/a/AbCdEf123，复制本条信息';
+  assert.deepEqual([...share.matchAll(LINK_RE)].map((m) => videoOf(m[0])?.kind), ['short']);
 });

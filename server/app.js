@@ -312,6 +312,10 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
   }
   const groupOut = (g) => ({ id: g.id, name: g.name, members: stmt.members.all(g.id).map((u) => userOut(u.id, u.username, u.display_name)) });
   const videoLinks = new Map(); // short link -> where it leads
+  // Pages on the platforms that chat shows (videos, posts, cards); short links and cards only ever go to these.
+  const PLATFORM_URL = /^https:\/\/([\w-]+\.)*(bilibili\.com|b23\.tv|tiktok\.com|douyin\.com|iesdouyin\.com|facebook\.com|weibo\.com|weibo\.cn|xiaohongshu\.com|xhslink\.com|youtube\.com|youtu\.be|vimeo\.com|x\.com|twitter\.com|instagram\.com)\//;
+  const linkCards = new Map(); // page address -> card
+  const cardImages = new Map(); // key -> picture address (only pictures named by a card can be fetched)
   const weiboCards = new Map(); // 微博 post id -> card
   function acceptedFriend(me, id) {
     const other = stmt.userById.get(Number(id));
@@ -689,8 +693,8 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
     // An app's short link (b23.tv, vm./vt.tiktok.com, tiktok.com/t/, v.douyin.com, fb.watch, facebook.com/share/v|r) → where it leads. Only those hosts are
     // asked, only their redirects are followed (to the same sites), and only the address is returned.
     ['GET', /^\/api\/video-link$/, async ({ query }) => {
-      const SHORT = /^https:\/\/(b23\.tv|vm\.tiktok\.com|vt\.tiktok\.com|www\.tiktok\.com\/t|v\.douyin\.com|fb\.watch|www\.facebook\.com\/share\/[vr]|t\.cn)\/[\w-]{4,30}\/?$/;
-      const DEST = /^https:\/\/([\w-]+\.)*(bilibili\.com|b23\.tv|tiktok\.com|douyin\.com|iesdouyin\.com|facebook\.com|weibo\.com|weibo\.cn)\//;
+      const SHORT = /^https:\/\/(b23\.tv|vm\.tiktok\.com|vt\.tiktok\.com|www\.tiktok\.com\/t|v\.douyin\.com|fb\.watch|www\.facebook\.com\/share\/[vrp]|t\.cn|xhslink\.com(\/[am])?)\/[\w-]{4,30}\/?$/;
+      const DEST = PLATFORM_URL;
       let url = String(query.get('url') || (query.get('b23') ? `https://b23.tv/${query.get('b23')}` : ''));
       if (!SHORT.test(url)) throw new HttpError(400, 'Invalid link');
       if (videoLinks.has(url)) return { url: videoLinks.get(url) };
@@ -711,6 +715,65 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
       videoLinks.set(start, clean); if (videoLinks.size > 2000) videoLinks.delete(videoLinks.keys().next().value);
       return { url: clean };
     }, true],
+    // A link card for a page on those platforms (profiles, channels, 动态, 小红书 notes, photo posts…): its title,
+    // description, site name and picture, from the page's Open Graph tags. Redirects are followed only within the platforms.
+    ['GET', /^\/api\/link-card$/, async ({ query }) => {
+      let url = String(query.get('url') || '');
+      if (!PLATFORM_URL.test(url) || url.length > 1000) throw new HttpError(400, 'Invalid link');
+      if (linkCards.has(url)) return linkCards.get(url);
+      const asked = url;
+      const page = async (ua) => {
+        let at = asked;
+        for (let i = 0; i < 4; i++) {
+          let res;
+          try { res = await fetch(at, { redirect: 'manual', headers: { 'User-Agent': ua, Accept: 'text/html', 'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8' }, signal: AbortSignal.timeout(8000) }); } catch { return null; }
+          const to = res.headers.get('location');
+          if (to) { const next = new URL(to, at).href; if (!PLATFORM_URL.test(next)) return null; at = next; continue; }
+          if (!res.ok || !/html/.test(res.headers.get('content-type') || '')) return null;
+          const reader = res.body.getReader(); let got = 0; const parts = [];
+          while (got < 1_500_000) { const { done, value } = await reader.read(); if (done) break; parts.push(value); got += value.length; }
+          reader.cancel().catch(() => {});
+          return { html: Buffer.concat(parts.map((x) => Buffer.from(x))).toString('utf8'), at };
+        }
+        return null;
+      };
+      const meta = (html, names) => {
+        for (const n of names) {
+          const re = new RegExp(`<meta[^>]+(?:property|name)=["']${n}["'][^>]*content=["']([^"']*)["']|<meta[^>]+content=["']([^"']*)["'][^>]*(?:property|name)=["']${n}["']`, 'i');
+          const m = html.match(re); if (m) return (m[1] ?? m[2]).replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').trim();
+        }
+        return '';
+      };
+      let got = await page('facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)');
+      if (!got || !meta(got.html, ['og:title', 'twitter:title'])) got = (await page('Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1')) || got;
+      if (!got) throw new HttpError(404, 'No preview for this link');
+      const { html, at } = got;
+      const title = (meta(html, ['og:title', 'twitter:title']) || (html.match(/<title[^>]*>([^<]{1,300})/i) || [])[1] || '').trim();
+      if (!title) throw new HttpError(404, 'No preview for this link');
+      let picture = meta(html, ['og:image', 'og:image:url', 'twitter:image', 'twitter:image:src']);
+      if (picture.startsWith('//')) picture = `https:${picture}`;
+      let image = null;
+      let picHost = ''; try { picHost = new URL(picture).hostname; } catch { /* not an address */ }
+      // Only ordinary public addresses (no IP literals or local names).
+      if (/^https?:\/\//.test(picture) && /\.[a-z]{2,}$/i.test(picHost) && !/^(localhost|[\d.]+|\[.*\])$/i.test(picHost)) { const key = sha256(picture).slice(0, 24); cardImages.set(key, { url: picture, referer: at }); image = `/api/card-image/${key}`; }
+      const card = { title: title.slice(0, 200), text: meta(html, ['og:description', 'twitter:description', 'description']).slice(0, 400),
+        site: meta(html, ['og:site_name']) || new URL(at).hostname.replace(/^www\./, ''), image, url: at };
+      linkCards.set(asked, card); if (linkCards.size > 2000) linkCards.delete(linkCards.keys().next().value);
+      if (cardImages.size > 5000) cardImages.delete(cardImages.keys().next().value);
+      return card;
+    }, true],
+    // A card's picture, passed through (only pictures that a card named; loaded by <img>, so no sign-in).
+    ['GET', /^\/api\/card-image\/([0-9a-f]{24})$/, async ({ params: [key] }) => {
+      const pic = cardImages.get(key);
+      if (!pic) throw new HttpError(404, 'No picture');
+      let res;
+      try { res = await fetch(pic.url, { headers: { Referer: pic.referer, 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(10000) }); } catch { throw new HttpError(503, "Couldn't load the picture."); }
+      const type = res.headers.get('content-type') || '';
+      if (!res.ok || !/^image\/(jpeg|png|gif|webp|avif)/.test(type)) throw new HttpError(404, 'No picture');
+      const body = Buffer.from(await res.arrayBuffer());
+      if (body.length > 8 * 1024 * 1024) throw new HttpError(413, 'Picture too large');
+      return { status: 200, body, headers: { 'Content-Type': type, 'Cache-Control': 'private, max-age=86400' } };
+    }, false],
     // A 微博 post as a card: author, text, a picture or video cover (pictures come through /api/weibo-image). From
     // m.weibo.cn's public post data; Weibo can't be shown in a frame. Kept for a while.
     ['GET', /^\/api\/weibo\/(\w{6,20}|1034:\d{6,25})$/, async ({ params: [id] }) => {

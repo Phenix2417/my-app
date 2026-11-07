@@ -2,7 +2,7 @@
 // (desktop web, mobile web, the mobile app's Share button, a TV/embed link…); all of them map to one player.
 
 // Links in text: with a scheme, or bare (youtu.be/…, www.youtube.com/…, b23.tv/…) as people often type or paste them.
-export const LINK_RE = /(?:https?:\/\/|\b(?=(?:www\.|m\.|music\.|mobile\.|vm\.|vt\.|v\.|web\.|mbasic\.)?(?:youtube\.com|youtu\.be|youtube-nocookie\.com|vimeo\.com|player\.vimeo\.com|bilibili\.com|b23\.tv|x\.com|twitter\.com|instagram\.com|instagr\.am|tiktok\.com|douyin\.com|iesdouyin\.com|facebook\.com|fb\.watch|fb\.com|weibo\.com|weibo\.cn|t\.cn)\/))[^\s<>"'\u3000-\u303f\u3400-\u9fff\uff00-\uffef]+/gi; // a link ends at a space or Chinese text/punctuation
+export const LINK_RE = /(?:https?:\/\/|\b(?=(?:www\.|m\.|music\.|mobile\.|vm\.|vt\.|v\.|web\.|mbasic\.)?(?:youtube\.com|youtu\.be|youtube-nocookie\.com|vimeo\.com|player\.vimeo\.com|bilibili\.com|b23\.tv|x\.com|twitter\.com|instagram\.com|instagr\.am|tiktok\.com|douyin\.com|iesdouyin\.com|facebook\.com|fb\.watch|fb\.com|weibo\.com|weibo\.cn|t\.cn|xiaohongshu\.com|xhslink\.com|t\.bilibili\.com)\/))[^\s<>"'\u3000-\u303f\u3400-\u9fff\uff00-\uffef]+/gi; // a link ends at a space or Chinese text/punctuation
 
 // "1h2m3s", "90s", "90", "1:30" → seconds.
 export function seconds(t) {
@@ -18,7 +18,7 @@ const YT_ID = /^[\w-]{11}$/;
 
 // A link → { kind: 'youtube' | 'vimeo' | 'bilibili', id, start?, hash?, page?, aid? } or null.
 // kind 'short' is an app's short link (b23.tv, vm.tiktok.com, v.douyin.com…), which the server follows to find the post.
-export function videoOf(raw) {
+function match(raw) {
   let text = String(raw || '').trim().replace(/[.,;:!?。，；：！？)\]]+$/, '');
   if (/^vnd\.youtube:/i.test(text)) { const id = text.split(':')[1]?.split(/[?&]/)[0]; return YT_ID.test(id) ? { kind: 'youtube', id, start: 0 } : null; }
   if (!/^https?:\/\//i.test(text)) text = `https://${text}`;
@@ -36,7 +36,7 @@ export function videoOf(raw) {
     const start = seconds(q.get('t') || q.get('start') || (u.hash.match(/t=([\w:]+)/) || [])[1]);
     if (YT_ID.test(q.get('v') || '')) return { kind: 'youtube', id: q.get('v'), start };
     if ((m = path.match(/^\/(?:shorts|live|embed|v|e)\/([\w-]{11})/))) return { kind: 'youtube', id: m[1], start };
-    if (path === '/attribution_link' && q.get('u')) return videoOf(`https://youtube.com${q.get('u')}`);
+    if (path === '/attribution_link' && q.get('u')) return match(`https://youtube.com${q.get('u')}`);
     return null;
   }
 
@@ -78,7 +78,7 @@ export function videoOf(raw) {
   }
   // 抖音: douyin.com/video/ID, iesdouyin.com/share/video/ID, ?modal_id=ID; app short links v.douyin.com/CODE.
   if (host === 'douyin.com' || host === 'iesdouyin.com' || host === 'v.douyin.com') {
-    if ((m = path.match(/\/(?:share\/)?(?:video|note)\/(\d{10,25})/))) return { kind: 'douyin', id: m[1] };
+    if ((m = path.match(/\/(?:share\/)?video\/(\d{10,25})/))) return { kind: 'douyin', id: m[1] };
     if (/^\d{10,25}$/.test(q.get('modal_id') || '')) return { kind: 'douyin', id: q.get('modal_id') };
     if (host === 'v.douyin.com' && (m = path.match(/^\/([\w-]{4,20})/))) return { kind: 'short', id: m[1], url: `https://v.douyin.com/${m[1]}/` };
     return null;
@@ -93,8 +93,25 @@ export function videoOf(raw) {
     const v = q.get('v') || q.get('video_id');
     if (/^\d{6,25}$/.test(v || '') && /^\/(watch|video\.php|watch\/live)?\/?/.test(path)) return { kind: 'facebook', id: v };
     if ((m = path.match(/\/videos\/(?:[^/]+\/)?(\d{6,25})/))) return { kind: 'facebook', id: m[1] };
+    // Posts and photos: /PAGE/posts/ID, permalink.php / story.php ?story_fbid=, /photo(.php)?fbid=, /PAGE/photos/…,
+    // /groups/G/posts/ID; the app's /share/p/CODE short links.
+    if ((m = path.match(/^\/share\/p\/([\w-]{4,30})/))) return { kind: 'short', id: m[1], url: `https://www.facebook.com/share/p/${m[1]}/` };
+    if (/\/posts\/[\w.-]+|^\/(permalink|story)\.php$|^\/photo(\.php)?\/?$|\/photos\/|\/groups\/[\w.-]+\/(posts|permalink)\//.test(path)
+      && (q.get('story_fbid') || q.get('fbid') || /\/(posts|photos|permalink)\//.test(path))) {
+      return { kind: 'facebook-post', id: (q.get('story_fbid') || q.get('fbid') || path).slice(0, 80), url: `https://www.facebook.com${path}${q.get('story_fbid') ? `?story_fbid=${q.get('story_fbid')}&id=${q.get('id') || ''}` : q.get('fbid') ? `?fbid=${q.get('fbid')}` : ''}` };
+    }
     return null;
   }
+  // 小红书: notes at /explore/ID, /discovery/item/ID, /user/profile/U/ID (keeping xsec_token, which the page needs);
+  // the app's xhslink.com short links. Shown as a card (小红书 can't be framed).
+  if (host === 'xiaohongshu.com') {
+    if ((m = path.match(/\/(?:explore|discovery\/item|user\/profile\/\w+)\/([0-9a-f]{24})/))) {
+      const token = q.get('xsec_token');
+      return { kind: 'card', id: m[1], url: `https://www.xiaohongshu.com/explore/${m[1]}${token ? `?xsec_token=${encodeURIComponent(token)}&xsec_source=pc_share` : ''}` };
+    }
+    return null;
+  }
+  if (host === 'xhslink.com' && (m = path.match(/^\/(?:[am]\/)?([\w-]{4,20})/))) return { kind: 'short', id: m[1], url: `https://xhslink.com/${path.slice(1).split('?')[0]}` };
 
   // 新浪微博: weibo.com/UID/BID, weibo.com/detail/MID, m.weibo.cn/status|detail/ID, weibo.cn/status/ID, video posts
   // (weibo.com/tv/show/1034:…, video.weibo.com/show?fid=1034:…), and t.cn short links (followed by the server).
@@ -124,10 +141,23 @@ export function embedUrl(v) {
     const ref = v.aid ? `aid=${v.aid}` : `bvid=${v.id}`;
     return `https://player.bilibili.com/player.html?${ref}&page=${v.page || 1}&autoplay=0&high_quality=1${v.start ? `&t=${v.start}` : ''}`;
   }
+  if (v.kind === 'facebook-post') return `https://www.facebook.com/plugins/post.php?href=${encodeURIComponent(v.url)}&show_text=true&width=500`;
   if (v.kind === 'facebook') return `https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(v.reel ? `https://www.facebook.com/reel/${v.id}` : `https://www.facebook.com/watch/?v=${v.id}`)}&show_text=false&width=560`;
   if (v.kind === 'x') return `https://platform.twitter.com/embed/Tweet.html?id=${v.id}&dnt=true`;
   if (v.kind === 'instagram') return `https://www.instagram.com/${v.type}/${v.id}/embed/captioned/`;
   if (v.kind === 'tiktok') return `https://www.tiktok.com/player/v1/${v.id}?autoplay=0&rel=0`;
   if (v.kind === 'douyin') return `https://open.douyin.com/player/video?vid=${v.id}&autoplay=0`;
   return null;
+}
+
+// Every other page on these platforms (profiles, channels, 动态, photo posts, notes…) shows as a link card.
+const PLATFORMS = /(^|\.)(youtube\.com|vimeo\.com|bilibili\.com|x\.com|twitter\.com|instagram\.com|tiktok\.com|douyin\.com|iesdouyin\.com|facebook\.com|weibo\.com|weibo\.cn|xiaohongshu\.com)$/;
+export function videoOf(raw) {
+  const found = match(raw);
+  if (found) return found;
+  let text = String(raw || '').trim().replace(/[.,;:!?。，；：！？)\]]+$/, '');
+  if (!/^https?:\/\//i.test(text)) text = `https://${text}`;
+  let u; try { u = new URL(text); } catch { return null; }
+  if (!PLATFORMS.test(u.hostname.toLowerCase()) || u.pathname.length < 2) return null; // a site's home page isn't worth a card
+  return { kind: 'card', id: u.href, url: u.href };
 }

@@ -3215,10 +3215,11 @@ function videoEmbeds(text) {
       allow: 'accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen' });
     // Shape by platform: wide players; tall for Shorts, TikTok and 抖音; posts (X, Instagram) as cards.
     const shape = (r, link) => (['tiktok', 'douyin'].includes(r.kind) || r.reel || (r.kind === 'youtube' && /\/shorts\//.test(link)) ? ' tall'
-      : r.kind === 'x' ? ' post' : r.kind === 'instagram' ? ' post insta' : '');
+      : r.kind === 'x' ? ' post' : r.kind === 'instagram' ? ' post insta' : r.kind === 'facebook-post' ? ' post fb' : '');
     const box = h('div', { class: 'video-embed' + shape(v, x[0]) });
     const show = (r, link) => {
       if (r.kind === 'weibo') { box.className = 'weibo-card'; weiboCard(box, r, link); }
+      else if (r.kind === 'card') { box.className = 'weibo-card'; linkCard(box, r); }
       else { box.className = 'video-embed' + shape(r, link); box.append(frame(embedUrl(r))); }
     };
     if (v.kind === 'short') {
@@ -3246,6 +3247,25 @@ function weiboCard(box, v, link) {
     h('div', { class: 'weibo-head' }, h('b', {}, '微博'), h('span', { class: 'weibo-brand' }, '微博')), h('span', { class: 'weibo-open' }, '在微博查看'))));
 }
 
+// Any other page on these platforms (a profile, channel, 动态, 小红书 note, photo post…): a card with its title,
+// description and picture, as the page describes itself. Tap opens it.
+const SITE_NAMES = { 'youtube.com': 'YouTube', 'bilibili.com': '哔哩哔哩', 'x.com': 'X', 'twitter.com': 'X', 'instagram.com': 'Instagram', 'tiktok.com': 'TikTok',
+  'douyin.com': '抖音', 'iesdouyin.com': '抖音', 'facebook.com': 'Facebook', 'xiaohongshu.com': '小红书', 'weibo.com': '微博', 'weibo.cn': '微博', 'vimeo.com': 'Vimeo' };
+function linkCard(box, v) {
+  const host = new URL(v.url).hostname.replace(/^([\w-]+\.)*(?=[\w-]+\.[a-z]+$)/, '');
+  const site = SITE_NAMES[host] || host;
+  const shell = (...kids) => h('a', { class: 'weibo-inner', href: v.url, target: '_blank', rel: 'noopener noreferrer' }, ...kids);
+  box.replaceChildren(shell(h('div', { class: 'weibo-head' }, h('b', {}, site), h('span', { class: 'weibo-brand' }, site)), h('span', { class: 'empty-inline' }, 'Loading…')));
+  api('GET', `/api/link-card?url=${encodeURIComponent(v.url)}`).then((c) => {
+    box.replaceChildren(shell(
+      h('div', { class: 'weibo-head' }, h('b', { class: 'card-title' }, c.title), h('span', { class: 'weibo-brand card-site' }, site)),
+      c.text && c.text !== c.title ? h('p', { class: 'weibo-text' }, c.text) : null,
+      c.image ? h('div', { class: 'weibo-pic' }, h('img', { src: c.image, alt: '', onerror: (e) => e.target.parentElement.remove() })) : null,
+      h('span', { class: 'weibo-open' }, LANG === 'zh' ? `在${site}查看` : `Open in ${site}`)));
+  }).catch(() => box.replaceChildren(shell(h('div', { class: 'weibo-head' }, h('b', {}, site), h('span', { class: 'weibo-brand' }, site)),
+    h('span', { class: 'weibo-open' }, LANG === 'zh' ? `在${site}查看` : `Open in ${site}`))));
+}
+
 // X and Instagram posts say how tall they are: fit the card to them, so it has no blank space below.
 addEventListener('message', (e) => {
   if (!/^https:\/\/(platform\.twitter\.com|www\.instagram\.com)$/.test(e.origin)) return;
@@ -3261,7 +3281,7 @@ addEventListener('message', (e) => {
 
 function linkified(text) {
   const out = []; let last = 0;
-  for (const m of String(text).matchAll(/(?:https?:\/\/|\bwww\.|\b(?:youtu\.be|b23\.tv|vimeo\.com|youtube\.com|bilibili\.com|x\.com|twitter\.com|instagram\.com|tiktok\.com|vm\.tiktok\.com|vt\.tiktok\.com|douyin\.com|v\.douyin\.com|facebook\.com|fb\.watch|weibo\.com|m\.weibo\.cn|weibo\.cn|t\.cn)\/)[^\s<>"'\u3000-\u303f\u3400-\u9fff\uff00-\uffef]+/gi)) {
+  for (const m of String(text).matchAll(/(?:https?:\/\/|\bwww\.|\b(?:youtu\.be|b23\.tv|vimeo\.com|youtube\.com|bilibili\.com|x\.com|twitter\.com|instagram\.com|tiktok\.com|vm\.tiktok\.com|vt\.tiktok\.com|douyin\.com|v\.douyin\.com|facebook\.com|fb\.watch|weibo\.com|m\.weibo\.cn|weibo\.cn|t\.cn|xiaohongshu\.com|xhslink\.com)\/)[^\s<>"'\u3000-\u303f\u3400-\u9fff\uff00-\uffef]+/gi)) {
     const link = m[0].replace(/[.,;:!?)\]]+$/, ''); // trailing punctuation isn't part of the link
     const href = /^https?:/i.test(link) ? link : `https://${link}`;
     out.push(text.slice(last, m.index), h('a', { href, target: '_blank', rel: 'noopener noreferrer', class: 'chat-link' }, link));
