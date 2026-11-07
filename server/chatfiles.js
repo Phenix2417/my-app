@@ -9,6 +9,8 @@ import { Transform } from 'node:stream';
 
 export const MAX_CHAT_FILE_BYTES = 100 * 1024 * 1024;
 export const MAX_CHAT_BYTES_PER_USER = 2 * 1024 * 1024 * 1024;
+// Files are kept for a month after they're sent, then deleted (their messages then say the file has expired).
+export const CHAT_FILE_DAYS = 30;
 
 export class ChatFileError extends Error {
   constructor(status, message) { super(message); this.status = status; }
@@ -62,6 +64,7 @@ export function createChatFileStore({ dir }) {
       await fs.promises.rename(tmp, fileOf(id));
       return { id, size, head };
     },
+    async remove(id) { await fs.promises.rm(fileOf(id), { force: true }); },
     async read(id) {
       try { const st = await fs.promises.stat(fileOf(id)); return { file: fileOf(id), size: st.size }; } catch { return null; }
     },

@@ -47,7 +47,8 @@ test('files sent in chat: uploaded, recognised by their bytes, served in parts, 
   const { mkdtempSync } = await import('node:fs');
   const os = await import('node:os'), path = await import('node:path');
   const { createChatFileStore } = await import('../server/chatfiles.js');
-  const srv = createServer(openDb(':memory:'), { chatFiles: createChatFileStore({ dir: mkdtempSync(path.join(os.tmpdir(), 'chatfiles-')) }) });
+  const fdb = openDb(':memory:');
+  const srv = createServer(fdb, { chatFiles: createChatFileStore({ dir: mkdtempSync(path.join(os.tmpdir(), 'chatfiles-')) }) });
   await new Promise((r) => srv.listen(0, '127.0.0.1', r));
   const b2 = `http://127.0.0.1:${srv.address().port}`;
   const call = async (method, p, token, body) => { const r = await fetch(b2 + p, { method, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: body && JSON.stringify(body) }); return { status: r.status, data: await r.json() }; };
@@ -79,6 +80,16 @@ test('files sent in chat: uploaded, recognised by their bytes, served in parts, 
   assert.equal((await call('POST', `/api/messages/${a.user.id}`, b.token, { file: { id: voice.id } })).status, 201);
   assert.equal((await call('POST', `/api/messages/${a.user.id}`, b.token, { file: { id: 'f'.repeat(32) } })).status, 400);
   assert.equal((await call('GET', '/api/chats', b.token)).data.chats[0].last.file.kind, 'audio');
+  // A month later the file is deleted: the message says it expired, and it can't be fetched or forwarded.
+  const pic = (await upload(Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]), { name: 'p.jpg', type: 'image/jpeg' })).data.file;
+  await call('POST', `/api/messages/${b.user.id}`, a.token, { file: { id: pic.id } });
+  fdb.prepare('UPDATE chat_files SET created_at = ? WHERE id = ?').run(Date.now() - 31 * 86400000, pic.id);
+  assert.equal(await srv.purgeChatFiles(), 1);
+  assert.equal((await fetch(`${b2}/api/chat-file/${pic.id}`)).status, 404);
+  const last = (await call('GET', `/api/messages/${a.user.id}`, b.token)).data.messages.at(-1);
+  assert.deepEqual([last.file.id, last.file.expired], [pic.id, true]);
+  assert.equal((await call('POST', `/api/messages/${a.user.id}`, b.token, { file: { id: pic.id } })).status, 400);
+  assert.equal((await fetch(`${b2}/api/chat-file/${voice.id}`)).status, 200); // newer files stay
   // Deleting the message takes the file off it.
   await call('DELETE', `/api/dm-messages/${sent.id}`, a.token);
   assert.equal((await call('GET', `/api/messages/${a.user.id}`, b.token)).data.messages[0].file, undefined);

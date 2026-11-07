@@ -907,3 +907,4 @@ span.verse-card-text { display: block; }
 .note-pick-ref { font-size: 13px; font-weight: 600; color: var(--muted); }
 .note-pick-quote { font-family: "Noto Serif", Georgia, serif; font-size: 15px; line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .note-pick-body { font-size: 14px; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.chat-file.expired { opacity: .7; cursor: default; }

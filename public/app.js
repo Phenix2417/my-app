@@ -3479,6 +3479,10 @@ let playingVoice = null;
 // A file in a message: a picture or a video shown in place, a voice message to play, or a file to download.
 function chatFileView(f) {
   const url = chatFileUrl(f);
+  // Files are kept for a month after they're sent.
+  if (f.expired) return h('div', { class: 'chat-file expired' }, h('span', { class: 'chat-file-icon' }, svg(f.kind === 'image' ? ICONS.image : f.kind === 'video' ? ICONS.video : f.kind === 'audio' ? ICONS.mic : ICONS.file)),
+    h('span', { class: 'chat-file-main' }, f.kind === 'file' ? h('span', { class: 'file-name' }, f.name) : h('span', {}, f.kind === 'image' ? 'Photo' : f.kind === 'video' ? 'Video' : 'Voice message'),
+      h('span', { class: 'chat-file-size' }, 'Expired (files are kept for 30 days)')));
   if (f.kind === 'image') return h('img', { class: 'chat-img', src: url, alt: f.name, loading: 'lazy', onclick: () => viewImage(url, f.name) });
   if (f.kind === 'video') return h('video', { class: 'chat-video', src: `${url}#t=0.1`, controls: true, playsinline: true, preload: 'metadata' });
   if (f.kind === 'audio') {
@@ -3625,7 +3629,7 @@ async function renderChatPage() {
           m.file ? chatFileView(m.file) : null,
           ...videoEmbeds(m.body), m.editedAt ? h('span', { class: 'edited-mark' }, tr('Edited')) : null].filter(Boolean);
       // A picture or video on its own fills the bubble.
-      const bubbleClass = m.file && !m.deleted && !m.ref && !splitQuote(m.body).rest.trim() && ['image', 'video'].includes(m.file.kind) ? 'chat-bubble media' : 'chat-bubble';
+      const bubbleClass = m.file && !m.file.expired && !m.deleted && !m.ref && !splitQuote(m.body).rest.trim() && ['image', 'video'].includes(m.file.kind) ? 'chat-bubble media' : 'chat-bubble';
       if (m.mine) {
         const bubble = h('div', { class: bubbleClass }, ...content);
         if (!m.deleted) messageActions(bubble, m);
@@ -3689,7 +3693,7 @@ async function renderChatPage() {
       h('h2', {}, 'Forward to'),
       chats.length ? h('div', { class: 'chat-rows' }, ...chats.map((x) => h('button', { class: 'chat-row', type: 'button', onclick: async () => {
         close();
-        if (await sendToChat(x, { ...(body ? { body } : {}), ...(m.ref ? { ref: m.ref } : {}), ...(m.file ? { file: { id: m.file.id } } : {}) })) {
+        if (await sendToChat(x, { ...(body ? { body } : {}), ...(m.ref ? { ref: m.ref } : {}), ...(m.file && !m.file.expired ? { file: { id: m.file.id } } : {}) })) {
           toast(`Sent to ${x.name}`);
           if (x.kind === chat.kind && x.id === chat.id) load();
         }
@@ -3709,13 +3713,13 @@ async function renderChatPage() {
   function messageMenu(bubble, m, at = null) {
     closeMenu();
     const items = [
-      m.file && m.file.kind !== 'audio' ? { label: 'Save', icon: ICONS.arrowDown, run: () => {
+      m.file && !m.file.expired && m.file.kind !== 'audio' ? { label: 'Save', icon: ICONS.arrowDown, run: () => {
         const a = h('a', { href: chatFileUrl(m.file), download: m.file.name }); document.body.append(a); a.click(); a.remove();
       } } : null,
       { label: 'Copy', icon: ICONS.copy, run: async () => {
         try { await navigator.clipboard.writeText(plainText(m)); toast('Copied'); } catch { toast("Couldn't copy"); }
       } },
-      { label: 'Forward', icon: ICONS.forward, run: () => forward(m) },
+      m.file?.expired && !m.ref && !splitQuote(m.body).rest.trim() ? null : { label: 'Forward', icon: ICONS.forward, run: () => forward(m) },
       { label: 'Quote', icon: ICONS.quote, run: () => startQuote(m) },
       m.mine && splitQuote(m.body).rest.trim() ? { label: 'Edit', icon: ICONS.pencil, run: () => startEdit(m) } : null,
       m.mine ? { label: 'Delete', icon: ICONS.trash, run: () => removeMessage(m) } : null,

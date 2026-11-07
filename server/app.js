@@ -10,7 +10,7 @@ import { BibleDictError, MARK_SKIP } from './bibledict.js';
 import { WikiError } from './wiki.js';
 import { CARD_SITES } from '../public/video.js';
 import { VERSIONS, VERSION_IDS, VersionError } from './versions.js';
-import { ChatFileError, MAX_CHAT_FILE_BYTES, MAX_CHAT_BYTES_PER_USER, sniffChatFile } from './chatfiles.js';
+import { ChatFileError, MAX_CHAT_FILE_BYTES, MAX_CHAT_BYTES_PER_USER, CHAT_FILE_DAYS, sniffChatFile } from './chatfiles.js';
 import { LibraryError, BOOK_TYPES, MAX_BOOK_BYTES, MAX_LIBRARY_BYTES, MAX_COVER_BYTES, sniffFormat, sniffImage } from './library.js';
 
 const COLORS = new Set(['yellow', 'green', 'blue', 'pink', 'purple']);
@@ -117,6 +117,8 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
     addMessage: q('INSERT INTO messages (from_id, to_id, body, created_at, ref, file) VALUES (?, ?, ?, ?, ?, ?)'),
     addChatFile: q('INSERT INTO chat_files (id, user_id, name, type, kind, size, duration, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'),
     chatFile: q('SELECT * FROM chat_files WHERE id = ?'),
+    oldChatFiles: q('SELECT id FROM chat_files WHERE created_at < ? LIMIT 500'),
+    deleteChatFile: q('DELETE FROM chat_files WHERE id = ?'),
     chatBytes: q('SELECT COALESCE(SUM(size), 0) AS total FROM chat_files WHERE user_id = ?'),
     lastMessage: q(`SELECT * FROM messages WHERE (from_id = :me AND to_id = :other) OR (from_id = :other AND to_id = :me) ORDER BY id DESC LIMIT 1`),
     // Group chats
@@ -315,14 +317,26 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
   const messageOut = (m, me) => ({ id: m.id, mine: m.from_id === me, body: m.deleted_at ? '' : m.body, createdAt: m.created_at,
     ...(m.deleted_at ? { deleted: true } : m.edited_at ? { editedAt: m.edited_at } : {}),
     ...(m.ref && !m.deleted_at ? { ref: JSON.parse(m.ref) } : {}),
-    ...(m.file && !m.deleted_at ? { file: JSON.parse(m.file) } : {}),
+    ...(m.file && !m.deleted_at ? { file: fileState(JSON.parse(m.file)) } : {}),
     ...(m.username !== undefined && m.from_id !== me ? { from: m.username ? userOut(m.from_id, m.username, m.display_name) : null } : {}) });
   // A file sent with a message: one uploaded to chat (by anyone: forwarding sends the same file on). Its id is its key.
   const fileOut = (f) => ({ id: f.id, name: f.name, type: f.type, kind: f.kind, size: f.size, ...(f.duration ? { duration: f.duration } : {}) });
+  // A message's file, marked expired once it's been deleted (a month after it was sent).
+  const fileState = (f) => (stmt.chatFile.get(f.id) ? f : { ...f, expired: true });
+  // Delete chat files more than CHAT_FILE_DAYS old: on start, then every hour.
+  async function purgeChatFiles(at = now()) {
+    let gone = 0;
+    for (;;) {
+      const old = stmt.oldChatFiles.all(at - CHAT_FILE_DAYS * 86400000);
+      if (!old.length) return gone;
+      for (const { id } of old) { if (chatFiles) await chatFiles.remove(id).catch(() => {}); stmt.deleteChatFile.run(id); gone++; }
+    }
+  }
+  if (chatFiles) { purgeChatFiles().catch(() => {}); setInterval(() => purgeChatFiles().catch(() => {}), 3600000).unref(); }
   function cleanFile(file) {
     if (!file) return null;
     const f = /^[0-9a-f]{32}$/.test(file.id || '') && stmt.chatFile.get(file.id);
-    if (!f) throw new HttpError(400, 'That file is no longer available');
+    if (!f || f.created_at < now() - CHAT_FILE_DAYS * 86400000) throw new HttpError(400, 'That file has expired');
     return fileOut(f);
   }
   const messageText = (body) => String(body ?? '').replace(/\r\n?/g, '\n').trim().slice(0, 2000);
@@ -881,6 +895,7 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
     ['GET', /^\/api\/chat-file\/([0-9a-f]{32})$/, async ({ params: [id] }) => {
       const f = stmt.chatFile.get(id), disk = f && chatFiles && await chatFiles.read(id);
       if (!disk) throw new HttpError(404, 'File not found');
+      if (f.created_at < now() - CHAT_FILE_DAYS * 86400000) throw new HttpError(404, 'This file has expired');
       const show = f.kind !== 'file';
       return { file: disk.file, size: disk.size, ranges: true, headers: { 'Content-Type': f.type, 'Cache-Control': 'private, max-age=31536000, immutable',
         'Content-Disposition': `${show ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(f.name)}`,
@@ -1067,7 +1082,7 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
     });
   }
 
-  return async function handler(req, res) {
+  return Object.assign(async function handler(req, res) {
     const url = new URL(req.url, 'http://x');
     try {
       if (!url.pathname.startsWith('/api/')) {
@@ -1108,9 +1123,10 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
       console.error(e);
       return send(res, 500, { error: 'Something went wrong' });
     }
-  };
+  }, { purgeChatFiles });
 }
 
 export function createServer(db, opts) {
-  return http.createServer(createApp(db, opts));
+  const app = createApp(db, opts);
+  return Object.assign(http.createServer(app), { purgeChatFiles: app.purgeChatFiles });
 }
