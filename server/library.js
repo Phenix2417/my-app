@@ -5,7 +5,7 @@ import crypto from 'node:crypto';
 import { pipeline } from 'node:stream/promises';
 import { Transform } from 'node:stream';
 
-export const MAX_BOOK_BYTES = 60 * 1024 * 1024;
+export const MAX_BOOK_BYTES = 100 * 1024 * 1024; // (bigger books stay on the phone they were added on)
 export const MAX_LIBRARY_BYTES = 1024 * 1024 * 1024;
 export const MAX_COVER_BYTES = 600 * 1024;
 export const BOOK_TYPES = { epub: 'application/epub+zip', pdf: 'application/pdf', txt: 'text/plain; charset=utf-8' };

@@ -64,6 +64,7 @@ const ICONS = {
   contents: '<path d="M3 12h.01"/><path d="M3 18h.01"/><path d="M3 6h.01"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M8 6h13"/>',
   back: '<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>',
   close: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  phone: '<rect width="14" height="20" x="5" y="2" rx="2" ry="2"/><path d="M12 18h.01"/>',
   mic: '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/>',
   video: '<path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5"/><rect x="2" y="6" width="14" height="12" rx="2"/>',
   file: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/>',
@@ -131,6 +132,8 @@ const saveMine = () => store.set(mineKey(), state.mine);
 /* ---------------- API ---------------- */
 class OfflineError extends Error {}
 async function api(method, path, body) {
+  const local = await localLibrary(method, path, body);
+  if (local) { const data = await local.json(); if (!local.ok) throw new Error(data.error); return data; }
   let res;
   try {
     res = await fetch(path, {
@@ -4352,6 +4355,8 @@ const BOOK_ACCEPT = '.epub,.pdf,.txt,application/epub+zip,application/pdf,text/p
 const lib = { books: null, opened: new Map(), covers: new Map(), current: null, saveTimer: null, notes: new Map(), chapter: 0, blocks: [] };
 const authHeaders = () => (state.auth ? { Authorization: `Bearer ${state.auth.token}` } : {});
 async function authFetch(path, opts = {}) {
+  const local = await localLibrary(opts.method || 'GET', path, opts.body);
+  if (local) { if (!local.ok) throw new Error((await local.json()).error); return local; }
   let res;
   try { res = await fetch(path, { ...opts, headers: { ...authHeaders(), ...(opts.headers || {}) } }); } catch { throw new OfflineError('You seem to be offline.'); }
   if (res.status === 401 && state.auth) { signOut(true); throw new Error('Signed out'); }
@@ -4372,16 +4377,87 @@ function bookTile(b) {
     h('span', { class: 'lib-format' }, b.format.toUpperCase()));
 }
 function coverImg(b) {
-  const box = h('div', { class: 'lib-cover' }, bookTile(b));
+  // A book kept on this phone only (over 100 MB) is marked in its corner.
+  const badge = () => (b.local ? h('span', { class: 'lib-local', title: 'On this phone only', 'aria-label': 'On this phone only' }, svg(ICONS.phone)) : null);
+  const box = h('div', { class: 'lib-cover' }, bookTile(b), badge());
   if (!b.hasCover) return box;
-  const show = (url) => box.replaceChildren(h('img', { src: url, alt: '' }));
+  const show = (url) => box.replaceChildren(h('img', { src: url, alt: '' }), badge());
   if (lib.covers.has(b.id)) show(lib.covers.get(b.id));
   else authFetch(`/api/library/${b.id}/cover`).then((r) => r.blob()).then((blob) => { const u = URL.createObjectURL(blob); lib.covers.set(b.id, u); show(u); }).catch(() => {});
   return box;
 }
 
+/* ----- Books kept on this phone only: over the 100 MB the server takes, they stay in the browser's storage ----- */
+const SHELF_MAX = 100 * 1024 * 1024;
+const isLocalBookId = (id) => /^local-/.test(String(id || ''));
+let localDb = null, localDbUser = null; // (one store per account on this phone)
+function localStore(name, mode = 'readonly') {
+  if (localDbUser !== uid()) { localDb = null; localDbUser = uid(); }
+  localDb ||= new Promise((resolve, reject) => {
+    const req = indexedDB.open(`bs-local-${uid()}`, 1);
+    req.onupgradeneeded = () => { const db = req.result; db.createObjectStore('books', { keyPath: 'id' }); db.createObjectStore('files'); db.createObjectStore('notes', { keyPath: 'id' }); };
+    req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error);
+  });
+  return localDb.then((db) => db.transaction(name, mode).objectStore(name));
+}
+const idb = (req) => new Promise((resolve, reject) => { req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error); });
+const localBooks = async () => { try { return await idb((await localStore('books')).getAll()); } catch { return []; } };
+async function addLocalBook({ title, author, format, size, sha256, data, cover }) {
+  const id = `local-${newId().slice(0, 10)}`, now = Date.now();
+  navigator.storage?.persist?.().catch(() => {}); // ask the browser not to clear it when space runs low
+  await idb((await localStore('files', 'readwrite')).put(new Blob([data]), id));
+  if (cover) await idb((await localStore('files', 'readwrite')).put(cover, `${id}.cover`));
+  const book = { id, local: true, title, author, format, size, sha256, hasCover: !!cover, position: null, createdAt: now, openedAt: null };
+  await idb((await localStore('books', 'readwrite')).put(book));
+  return book;
+}
+// The shelf's requests about a book kept on this phone, answered here (as the server would for one in the account).
+async function localLibrary(method, path, body) {
+  const m = /^\/api\/(library|library-notes)\/([\w-]+)(?:\/(file|cover|notes|link))?$/.exec(String(path).split('?')[0]);
+  if (!m) return null;
+  const [, kind, id, part] = m;
+  const reply = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } });
+  const json = () => (typeof body === 'string' ? JSON.parse(body) : body || {});
+  if (kind === 'library-notes') {
+    const notes = await localStore('notes', 'readwrite').catch(() => null);
+    if (method === 'PUT' && isLocalBookId(json().lib)) { await idb(notes.put({ ...json(), id })); return reply({ note: { ...json(), id } }); }
+    if (method === 'DELETE' && notes && await idb(notes.get(id))) { await idb((await localStore('notes', 'readwrite')).delete(id)); return reply({ ok: true }); }
+    return null;
+  }
+  if (!isLocalBookId(id)) return null;
+  const book = await idb((await localStore('books')).get(id));
+  if (!book) return reply({ error: 'Book not found' }, 404);
+  if (part === 'file' || (part === 'cover' && method === 'GET')) {
+    const blob = await idb((await localStore('files')).get(part === 'cover' ? `${id}.cover` : id));
+    return blob ? new Response(blob) : reply({ error: 'Not found' }, 404);
+  }
+  if (part === 'cover') { // PUT: a new cover
+    await idb((await localStore('files', 'readwrite')).put(body instanceof Blob ? body : new Blob([body]), `${id}.cover`));
+    await idb((await localStore('books', 'readwrite')).put({ ...book, hasCover: true }));
+    return reply({ ok: true });
+  }
+  if (part === 'notes') return reply({ notes: (await idb((await localStore('notes')).getAll())).filter((n) => n.lib === id) });
+  if (part === 'link') return reply({ url: URL.createObjectURL(await idb((await localStore('files')).get(id))) });
+  if (method === 'PUT') {
+    const b = json(), next = { ...book, ...(b.title ? { title: String(b.title).trim().slice(0, 200) || book.title } : {}), ...(b.position ? { position: b.position, openedAt: Date.now() } : {}) };
+    await idb((await localStore('books', 'readwrite')).put(next));
+    return reply({ book: next });
+  }
+  if (method === 'DELETE') {
+    const files = await localStore('files', 'readwrite');
+    await idb(files.delete(id)); await idb(files.delete(`${id}.cover`));
+    await idb((await localStore('books', 'readwrite')).delete(id));
+    const notes = await localStore('notes', 'readwrite');
+    for (const n of await idb(notes.getAll())) if (n.lib === id) await idb((await localStore('notes', 'readwrite')).delete(n.id));
+    return reply({ ok: true });
+  }
+  return reply(book);
+}
+
 async function loadLibrary() {
-  const { books } = await api('GET', '/api/library');
+  const { books: inAccount } = await api('GET', '/api/library');
+  const recent = (b) => Math.max(b.openedAt || 0, b.createdAt || 0);
+  const books = [...inAccount, ...await localBooks()].sort((a, b) => recent(b) - recent(a));
   lib.books = books;
   store.set(`library.${uid()}`, books);
   return books;
@@ -4425,7 +4501,7 @@ async function addBooks(files) {
   for (const file of files) {
     const format = formatOf(file);
     if (!format) { toast(`${file.name}: only EPUB, PDF and text files can be added.`); continue; }
-    if (file.size > 60 * 1024 * 1024) { toast(`${file.name} is larger than 60 MB.`); continue; }
+    const onPhone = file.size > SHELF_MAX; // kept on this phone only
     // Read the file once; everything below uses these bytes.
     let bytes;
     // (A real File has its own bytes() method, so the already-read copy goes under `data`.)
@@ -4437,6 +4513,16 @@ async function addBooks(files) {
         title = book.title || title; author = book.author || '';
         if (book.coverPath) cover = await coverOf(book);
       } catch (e) { toast(`${file.name} couldn't be opened as an EPUB book (${e.message}).`); continue; }
+    }
+    if (onPhone) {
+      try {
+        const sha = await fingerprint(bytes);
+        const same = (await localBooks()).find((x) => sha && x.sha256 === sha);
+        if (same) { toast(`“${same.title}” is already on your shelf`); continue; }
+        await addLocalBook({ title, author, format, size: bytes.byteLength, sha256: sha, data: bytes, cover });
+        toast(`${tr('Added')} “${title}” — ${tr('over 100 MB, so it stays on this phone only')}`);
+      } catch (e) { toast(`${title}: ${tr("couldn't be kept on this phone")} (${e.message})`); }
+      continue;
     }
     // Already on the shelf (the same file, whatever its name)? Then don't upload it again.
     try {
@@ -4586,7 +4672,7 @@ function bookOptions(b, { onSaved = renderLibrary, onDeleted = renderLibrary } =
     return [
       h('h2', {}, 'Book options'),
       h('label', { class: 'field' }, h('span', {}, 'Title'), input),
-      h('p', { class: 'handle-sub' }, `${b.format.toUpperCase()} · ${(b.size / 1048576).toFixed(b.size < 10485760 ? 1 : 0)} MB`),
+      h('p', { class: 'handle-sub' }, `${b.format.toUpperCase()} · ${(b.size / 1048576).toFixed(b.size < 10485760 ? 1 : 0)} MB${b.local ? ` · ${tr('On this phone only (over 100 MB)')}` : ''}`),
       // Other ways to open it, and its cover.
       h('div', { class: 'option-rows' },
         b.format === 'epub' ? bibleRow : null,
@@ -4635,6 +4721,18 @@ async function openLibraryBook(b, { asEbook = false } = {}) {
     state.tab = 'read';
     render();
     toast(bible.map((v) => v.short).join(' + '));
+    return;
+  }
+  if (b.format === 'pdf' && b.local) { // kept on this phone: shown by the app's own PDF viewer
+    const box = h('div', { class: 'file-preview', role: 'dialog', 'aria-label': b.title });
+    const body = h('div', { class: 'fp-body' }, h('p', { class: 'empty-inline' }, 'Opening…'));
+    const cleanups = [];
+    const close = () => { cleanups.forEach((c) => { try { c(); } catch { /* gone */ } }); box.remove(); };
+    box.append(h('div', { class: 'fp-top' }, h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Close', title: 'Close', onclick: close }, svg(ICONS.back)),
+      h('div', { class: 'fp-title lib-title' }, b.title)), body);
+    document.body.append(box);
+    try { await previewPdf(await (await authFetch(`/api/library/${b.id}/file`)).arrayBuffer(), body, cleanups); }
+    catch (e) { body.replaceChildren(h('p', { class: 'error' }, e.message || "This PDF couldn't be shown.")); }
     return;
   }
   if (b.format === 'pdf') { // the phone's own PDF viewer, through a short-lived link
