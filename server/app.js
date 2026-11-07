@@ -137,10 +137,10 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
     myNotes: q('SELECT * FROM notes WHERE user_id = ? ORDER BY updated_at DESC'),
     myChapterNotes: q('SELECT * FROM notes WHERE user_id = ? AND book = ? AND chapter = ? ORDER BY created_at'),
     note: q('SELECT * FROM notes WHERE id = ?'),
-    upsertNote: q(`INSERT INTO notes (id, user_id, book, chapter, version, verse_start, word_start, verse_end, word_end, color, quote, body, alt_version, alt_quote, alt_range, created_at, updated_at)
-      VALUES (:id, :user_id, :book, :chapter, :version, :verse_start, :word_start, :verse_end, :word_end, :color, :quote, :body, :alt_version, :alt_quote, :alt_range, :now, :now)
+    upsertNote: q(`INSERT INTO notes (id, user_id, book, chapter, version, verse_start, word_start, verse_end, word_end, color, quote, body, alt_version, alt_quote, alt_range, parts, created_at, updated_at)
+      VALUES (:id, :user_id, :book, :chapter, :version, :verse_start, :word_start, :verse_end, :word_end, :color, :quote, :body, :alt_version, :alt_quote, :alt_range, :parts, :now, :now)
       ON CONFLICT (id) DO UPDATE SET book = :book, chapter = :chapter, version = :version, verse_start = :verse_start, word_start = :word_start,
-        verse_end = :verse_end, word_end = :word_end, color = :color, quote = :quote, body = :body, alt_version = :alt_version, alt_quote = :alt_quote, alt_range = :alt_range, updated_at = :now`),
+        verse_end = :verse_end, word_end = :word_end, color = :color, quote = :quote, body = :body, alt_version = :alt_version, alt_quote = :alt_quote, alt_range = :alt_range, parts = :parts, updated_at = :now`),
     deleteNote: q('DELETE FROM notes WHERE id = ? AND user_id = ?'),
     // Notes from friends who have allowed `viewer` to see them.
     friendNotes: q(`SELECT n.*, u.username, u.display_name FROM notes n
@@ -227,12 +227,21 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
     id: n.id, book: n.book, chapter: n.chapter, version: n.version || 'web', // words are counted in this version's text
     start: { verse: n.verse_start, word: n.word_start }, end: { verse: n.verse_end, word: n.word_end },
     color: n.color, quote: n.quote, body: n.body, createdAt: n.created_at, updatedAt: n.updated_at,
+    ...(n.parts ? { parts: JSON.parse(n.parts) } : {}),
     ...(n.alt_quote ? { alt: { version: n.alt_version, quote: n.alt_quote, ...(n.alt_label ? { label: n.alt_label } : {}), ...(n.alt_range ? JSON.parse(n.alt_range) : {}) } } : {}),
     ...(n.version_label ? { versionLabel: n.version_label } : {}),
     ...(n.username ? { author: userOut(n.user_id, n.username, n.display_name) } : {}),
   });
 
   const ownVersion = (me, id) => !!(me && /^u[\w-]{6,20}$/.test(String(id)) && stmt.userVersion.get(id, me.id));
+  // Each version's words verse by verse: { main: [[verse, text]…], alt: [[verse, text]…] } (checked, size-limited), as JSON.
+  function cleanParts(parts) {
+    const list = (x) => (Array.isArray(x) ? x.slice(0, 200).filter((e) => Array.isArray(e) && Number.isInteger(e[0]) && e[0] >= 1 && e[0] <= 200 && typeof e[1] === 'string')
+      .map(([v, t]) => [v, t.trim().slice(0, 2000)]).filter(([, t]) => t) : []);
+    const main = list(parts?.main), alt = list(parts?.alt);
+    const json = main.length && alt.length ? JSON.stringify({ main, alt }) : null;
+    return json && json.length <= 12000 ? json : null;
+  }
   function validateNote(b, me) {
     const book = BOOKS.find((x) => x.id === b.book);
     if (!book) throw new HttpError(400, 'Unknown book');
@@ -254,11 +263,11 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
       // The second version's words, when the selection covered both versions read side by side.
       ...(() => {
         const a = b.alt, q = typeof a?.quote === 'string' ? a.quote.trim().slice(0, 4000) : '';
-        if (!q || !(VERSION_IDS.has(a.version) || ownVersion(me, a.version))) return { alt_version: null, alt_quote: null, alt_range: null };
+        if (!q || !(VERSION_IDS.has(a.version) || ownVersion(me, a.version))) return { alt_version: null, alt_quote: null, alt_range: null, parts: null };
         // Where its words are in that version (for highlighting them), if given and sensible.
         const ok = (x) => x && int(x.verse, 1, 200) && int(x.word, 0, 500);
         const range = ok(a.start) && ok(a.end) ? JSON.stringify({ start: { verse: a.start.verse, word: a.start.word }, end: { verse: a.end.verse, word: a.end.word } }) : null;
-        return { alt_version: a.version, alt_quote: q, alt_range: range };
+        return { alt_version: a.version, alt_quote: q, alt_range: range, parts: cleanParts(b.parts) };
       })() };
   }
 
@@ -285,7 +294,8 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
     // The second version's words, when two were read side by side.
     const altText = String(ref.alt?.text ?? '').trim().slice(0, 2000);
     // kind: 'note' for a shared note (else a shared verse).
-    return { book, chapter, start, end, ...(ref.kind === 'note' ? { kind: 'note' } : {}), version: version(ref), ...(label(ref) ? { label: label(ref) } : {}), text,
+    const parts = cleanParts(ref.parts);
+    return { book, chapter, start, end, ...(parts ? { parts: JSON.parse(parts) } : {}), ...(ref.kind === 'note' ? { kind: 'note' } : {}), version: version(ref), ...(label(ref) ? { label: label(ref) } : {}), text,
       ...(altText ? { alt: { version: version(ref.alt), ...(label(ref.alt) ? { label: label(ref.alt) } : {}), text: altText } } : {}) };
   }
   const messageOut = (m, me) => ({ id: m.id, mine: m.from_id === me, body: m.body, createdAt: m.created_at,

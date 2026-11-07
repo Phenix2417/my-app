@@ -798,3 +798,6 @@ body:has(.chat-screen) .bottom-nav { display: none; }
   -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 1.5v8.5h9' stroke-dasharray='0.1 2.6'/%3E%3Cpath d='M9.5 7l3 3-3 3'/%3E%3C/svg%3E") center / contain no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 1.5v8.5h9' stroke-dasharray='0.1 2.6'/%3E%3Cpath d='M9.5 7l3 3-3 3'/%3E%3C/svg%3E") center / contain no-repeat; }
 /* Tap areas: the margin beside the verse number's line and the arrow's line, from the screen edge to the text. */
 .vnum::after { content: ""; position: absolute; left: -16px; top: 0; width: calc(1.5 * var(--verse-size) + 16px); height: calc(var(--verse-size) * 1.9); }
+.quote-main { display: block; }
+.quote-main + .quote-main, .quote-alt + .quote-main { margin-top: 6px; }
+span.verse-card-text { display: block; }

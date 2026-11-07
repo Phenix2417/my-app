@@ -214,6 +214,9 @@ test('a note on two versions read side by side keeps both versions’ words', as
   assert.equal((await api('PUT', '/api/notes/note-twover-1', { token: u.token, body: note })).status, 200);
   const [n] = (await api('GET', '/api/notes', { token: u.token })).data.notes;
   assert.deepEqual([n.quote, n.alt.version, n.alt.quote, n.alt.end.word], ['but is under guardians', 'eng_kjv', 'But is under tutors', 3]);
+  // Each version's words verse by verse, for showing them in the Bible's order.
+  await api('PUT', '/api/notes/note-twover-1', { token: u.token, body: { ...note, parts: { main: [[2, 'but is under'], [3, 'So we also']], alt: [[2, 'But is under'], [3, 'Even so we']] } } });
+  assert.deepEqual((await api('GET', '/api/notes', { token: u.token })).data.notes[0].parts.alt, [[2, 'But is under'], [3, 'Even so we']]);
   // An unknown second version is dropped, not stored.
   await api('PUT', '/api/notes/note-twover-1', { token: u.token, body: { ...note, alt: { version: 'nope', quote: 'x' } } });
   assert.equal((await api('GET', '/api/notes', { token: u.token })).data.notes[0].alt, undefined);

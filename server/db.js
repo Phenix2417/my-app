@@ -153,6 +153,8 @@ export function openDb(file) {
   if (!db.prepare('PRAGMA table_info(user_versions)').all().some((c) => c.name === 'source_sha')) db.exec('ALTER TABLE user_versions ADD COLUMN source_sha TEXT');
   // A note made while reading two versions side by side: the second version and its words, kept apart from the first's.
   if (!db.prepare('PRAGMA table_info(notes)').all().some((c) => c.name === 'alt_version')) db.exec('ALTER TABLE notes ADD COLUMN alt_version TEXT; ALTER TABLE notes ADD COLUMN alt_quote TEXT');
+  // A note on two versions: each version's words verse by verse ({ main: [[verse, text]…], alt: […] }), to show them interleaved.
+  if (!db.prepare('PRAGMA table_info(notes)').all().some((c) => c.name === 'parts')) db.exec('ALTER TABLE notes ADD COLUMN parts TEXT');
   if (!db.prepare('PRAGMA table_info(notes)').all().some((c) => c.name === 'alt_range')) db.exec('ALTER TABLE notes ADD COLUMN alt_range TEXT');
   if (!db.prepare('PRAGMA table_info(notes)').all().some((c) => c.name === 'version')) db.exec("ALTER TABLE notes ADD COLUMN version TEXT NOT NULL DEFAULT 'web'");
   return db;
