@@ -489,7 +489,8 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
       needLibrary();
       const b = myBook(me, id), f = await library.read(me.id, id);
       if (!f) throw new HttpError(404, 'The book file is missing');
-      return { file: f.file, size: f.size, headers: { 'Content-Type': BOOK_TYPES[b.format], 'Cache-Control': 'private, no-store' } };
+      // (In parts when asked: a PDF's cover or one page can be read without downloading the whole book.)
+      return { file: f.file, size: f.size, ranges: true, headers: { 'Content-Type': BOOK_TYPES[b.format], 'Cache-Control': 'private, no-store' } };
     }, true],
     ['POST', /^\/api\/library\/([\w-]{16})\/link$/, ({ me, params: [id] }) => {
       needLibrary(); myBook(me, id);

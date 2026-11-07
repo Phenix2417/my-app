@@ -3511,6 +3511,7 @@ async function addChatFileToShelf(f, { quiet = false } = {}) {
   try {
     const { book, duplicate } = await api('POST', '/api/library/from-chat', { file: f.id, title: cleanBookTitle(f.book?.title || '') || cleanBookTitle(f.name.replace(/\.[^.]+$/, '')), author: f.book?.author || '' });
     if (!quiet) toast(duplicate ? `“${book.title}” is already on your shelf` : `Added “${book.title}”`);
+    if (!duplicate && book.format === 'pdf' && !book.hasCover) await addPdfCover(book);
     if (state.tab === 'books') renderLibrary();
   } catch (e) { toast(e instanceof OfflineError ? "You're offline. Try again when connected." : e.message); }
 }
@@ -3599,11 +3600,58 @@ async function previewChatFile(f) {
 }
 const chapterLabel = (i) => (LANG === 'zh' ? `第 ${i + 1} 章` : `Chapter ${i + 1}`);
 // A PDF's pages, drawn as they scroll into view (Mozilla's PDF.js, loaded only when a PDF is shown).
+const pageLabel = (n) => (LANG === 'zh' ? `第 ${n} 页` : `Page ${n}`);
+let pdfjsLib = null;
+async function loadPdfjs() {
+  if (!pdfjsLib) { pdfjsLib = await import('/vendor/pdfjs/pdf.min.mjs'); pdfjsLib.GlobalWorkerOptions.workerSrc = '/vendor/pdfjs/pdf.worker.min.mjs'; }
+  return pdfjsLib;
+}
+const PDF_OPTIONS = { cMapUrl: '/vendor/pdfjs/cmaps/', cMapPacked: true, standardFontDataUrl: '/vendor/pdfjs/standard_fonts/', isEvalSupported: false };
+// A PDF from its bytes (a copy is handed over: PDF.js takes the buffer it's given).
+async function openPdfBytes(buf) { return (await loadPdfjs()).getDocument({ data: new Uint8Array(buf.slice(0)), ...PDF_OPTIONS }).promise; }
+// A PDF on the shelf, read in parts (only what's shown is downloaded); one kept on this phone, from its storage.
+async function openShelfPdf(b) {
+  if (b.local) return openPdfBytes(await (await authFetch(`/api/library/${b.id}/file`)).arrayBuffer());
+  return (await loadPdfjs()).getDocument({ url: `/api/library/${b.id}/file`, httpHeaders: authHeaders(), disableAutoFetch: true, disableStream: true,
+    rangeChunkSize: 262144, ...PDF_OPTIONS }).promise;
+}
+// One page as a cover-sized JPEG.
+async function pdfPageCover(doc, n = 1, width = 360) {
+  const page = await doc.getPage(n), vp1 = page.getViewport({ scale: 1 }), vp = page.getViewport({ scale: width / vp1.width });
+  const c = document.createElement('canvas'); c.width = Math.round(vp.width); c.height = Math.min(Math.round(vp.height), Math.round(width * 2));
+  const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height);
+  await page.render({ canvasContext: g, viewport: vp }).promise;
+  return new Promise((r) => c.toBlob(r, 'image/jpeg', 0.85));
+}
+// The pictures in a PDF's first pages (photos and drawings it holds, not its text), as JPEGs; tiny ones are skipped.
+async function pdfPictures(doc, pages = 12, max = 24) {
+  const { OPS } = await loadPdfjs(), out = [], seen = new Set();
+  for (let n = 1; n <= Math.min(doc.numPages, pages) && out.length < max; n++) {
+    let page, ops;
+    try { page = await doc.getPage(n); ops = await page.getOperatorList(); } catch { continue; }
+    for (let i = 0; i < ops.fnArray.length && out.length < max; i++) {
+      if (ops.fnArray[i] !== OPS.paintImageXObject) continue;
+      const name = ops.argsArray[i][0];
+      if (seen.has(name)) continue; seen.add(name);
+      const store = String(name).startsWith('g_') ? page.commonObjs : page.objs;
+      const img = await new Promise((r) => { try { store.get(name, r); } catch { r(null); } setTimeout(() => r(null), 3000); });
+      if (!img || img.width < 160 || img.height < 160) continue;
+      const c = document.createElement('canvas'); c.width = img.width; c.height = img.height;
+      const g = c.getContext('2d');
+      if (img.bitmap) g.drawImage(img.bitmap, 0, 0);
+      else if (img.data && (img.kind === 2 || img.kind === 3)) { // RGB or RGBA pixels
+        const px = g.createImageData(img.width, img.height), src = img.data, rgb = img.kind === 2;
+        for (let p = 0, q = 0; q < px.data.length; q += 4) { px.data[q] = src[p++]; px.data[q + 1] = src[p++]; px.data[q + 2] = src[p++]; px.data[q + 3] = rgb ? 255 : src[p++]; }
+        g.putImageData(px, 0, 0);
+      } else continue;
+      const blob = await new Promise((r) => c.toBlob(r, 'image/jpeg', 0.88));
+      if (blob) out.push({ label: pageLabel(n), blob });
+    }
+  }
+  return out;
+}
 async function previewPdf(buf, body, cleanups) {
-  const pdfjs = await import('/vendor/pdfjs/pdf.min.mjs');
-  pdfjs.GlobalWorkerOptions.workerSrc = '/vendor/pdfjs/pdf.worker.min.mjs';
-  const doc = await pdfjs.getDocument({ data: new Uint8Array(buf), cMapUrl: '/vendor/pdfjs/cmaps/', cMapPacked: true,
-    standardFontDataUrl: '/vendor/pdfjs/standard_fonts/', isEvalSupported: false }).promise;
+  const doc = await openPdfBytes(buf);
   cleanups.push(() => doc.destroy());
   const pages = h('div', { class: 'fp-pdf' });
   const count = h('div', { class: 'fp-count' }, `1 / ${doc.numPages}`);
@@ -4554,6 +4602,23 @@ async function renderLibrary() {
   };
   draw(lib.books || store.get(`library.${uid()}`, null));
   try { draw(await loadLibrary()); } catch { if (state.tab === 'books') draw(lib.books || store.get(`library.${uid()}`, null), true); }
+  // PDFs added before they got covers: their first page becomes the cover (one at a time, each tried once).
+  for (const b of (lib.books || []).filter((x) => x.format === 'pdf' && !x.hasCover && !pdfCoverTried.has(x.id))) {
+    pdfCoverTried.add(b.id);
+    if (await addPdfCover(b) && state.tab === 'books') draw(lib.books);
+  }
+}
+const pdfCoverTried = new Set();
+// A PDF's first page as its cover on the shelf (read in parts: the whole book isn't downloaded).
+async function addPdfCover(b) {
+  try {
+    const doc = await openShelfPdf(b), cover = await pdfPageCover(doc);
+    doc.destroy();
+    if (!cover) return false;
+    await authFetch(`/api/library/${b.id}/cover`, { method: 'PUT', body: cover });
+    b.hasCover = true; lib.covers.delete(b.id);
+    return true;
+  } catch { return false; }
 }
 
 // A file's fingerprint (SHA-256), to recognise a book already in the library whatever its name.
@@ -4573,6 +4638,7 @@ async function addBooks(files) {
     // (A real File has its own bytes() method, so the already-read copy goes under `data`.)
     try { bytes = file instanceof Blob ? await file.arrayBuffer() : file.data; } catch { toast(`${file.name} couldn't be read. Try choosing it again.`); continue; }
     let title = cleanBookTitle(file.name.replace(/\.[^.]+$/, '')) || file.name, author = '', cover = null;
+    if (format === 'pdf') { try { const doc = await openPdfBytes(bytes); cover = await pdfPageCover(doc); doc.destroy(); } catch { /* no cover then */ } }
     if (format === 'epub') {
       try {
         const book = await openEpub(bytes);
@@ -4652,6 +4718,21 @@ async function coverPicker(b, { setCover, fromPhone, onOpen }) {
     h('div', { class: 'option-rows' }, h('button', { class: 'option-row', type: 'button', onclick: fromPhone }, svg(ICONS.addBook), h('span', {}, 'A photo from your phone'))),
   ], { label: 'Change cover' });
   onOpen?.(close);
+  if (b.format === 'pdf') {
+    // A PDF: the pictures in its first pages, and its first pages themselves.
+    const tile = (label, blob) => h('button', { class: 'cover-tile', type: 'button', 'aria-label': label, title: label, onclick: async (e) => {
+      e.currentTarget.classList.add('loading'); await setCover(await makeCover(await blob.arrayBuffer())); } }, h('img', { src: URL.createObjectURL(blob), alt: '' }), h('span', {}, label));
+    let doc;
+    try { doc = await openShelfPdf(b); } catch (e) { pics.replaceChildren(h('p', { class: 'error' }, e.message || "This PDF couldn't be read.")); return; }
+    pages.replaceChildren(h('p', { class: 'empty-inline' }, 'Opening…'));
+    const found = await pdfPictures(doc).catch(() => []);
+    pics.replaceChildren(...(found.length ? found.map((p) => tile(p.label, p.blob)) : [h('p', { class: 'empty-inline' }, 'No pictures in this book.')]));
+    const tiles = [];
+    for (let n = 1; n <= Math.min(doc.numPages, 12); n++) { try { tiles.push(tile(pageLabel(n), await pdfPageCover(doc, n, 240))); } catch { /* skip it */ } }
+    pages.replaceChildren(...(tiles.length ? tiles : [h('p', { class: 'empty-inline' }, 'No pages to use.')]));
+    doc.destroy();
+    return;
+  }
   let book;
   try {
     book = lib.opened.get(b.id);
@@ -4743,7 +4824,7 @@ function bookOptions(b, { onSaved = renderLibrary, onDeleted = renderLibrary } =
       h('div', { class: 'option-rows' },
         b.format === 'epub' ? bibleRow : null,
         b.format === 'epub' ? h('button', { class: 'option-row', type: 'button', onclick: () => { close(); openLibraryBook(b, { asEbook: true }); } }, svg(ICONS.books), h('span', {}, 'Open as ebook')) : null,
-        h('button', { class: 'option-row', type: 'button', onclick: () => (b.format === 'epub' ? chooseCover() : coverInput.click()) }, svg(ICONS.image), h('span', {}, 'Change cover')),
+        h('button', { class: 'option-row', type: 'button', onclick: () => (b.format === 'epub' || b.format === 'pdf' ? chooseCover() : coverInput.click()) }, svg(ICONS.image), h('span', {}, 'Change cover')),
         coverInput),
       h('div', { class: 'sheet-actions' },
         h('button', { class: 'text-btn danger', type: 'button', onclick: async () => {
