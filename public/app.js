@@ -665,6 +665,7 @@ async function renderReader() {
     const to = dir > 0 ? next : prev;
     if (!to) { toast(dir > 0 ? 'This is the last chapter of the Bible.' : 'This is the first chapter of the Bible.'); return; }
     reader.slideFrom = dir;
+    reader.keepBars = true; // turning the page leaves the title bar and toolbar as they are
     goTo(to);
   };
   const screen = h('main', { class: 'screen reader-page' },
@@ -694,13 +695,16 @@ async function renderReader() {
   reader.scroller = scroller;
   const back = backButton();
   if (back) screen.append(back);
-  setBars(true);
-  // Reading further down slides the bars away; a tap brings them back.
-  let lastTop = 0;
+  const keep = reader.keepBars; reader.keepBars = false;
+  if (!keep) setBars(true);
+  // Reading further down slides the bars away; a tap brings them back. (The scrolling done when a chapter opens —
+  // to its top, or to a verse — isn't reading, so it leaves them alone.)
+  let lastTop = 0, settling = true;
+  setTimeout(() => { settling = false; lastTop = scroller.scrollTop; }, 400);
   scroller.addEventListener('scroll', () => {
     if (state.selection) { positionHandles(); positionToolbar(); }
     const top = scroller.scrollTop;
-    if (top > lastTop + 6 && top > 60 && !state.selection) setBars(false);
+    if (!settling && top > lastTop + 6 && top > 60 && !state.selection) setBars(false);
     lastTop = top;
   }, { passive: true });
 
@@ -1217,13 +1221,15 @@ function attachReaderGestures(body) {
       clearTimeout(lastMarkTap?.timer);
       lastMarkTap = { v, time: now, timer: setTimeout(() => {
         lastMarkTap = null;
-        if (state.selection) clearSelection(); else setBars(document.body.classList.contains('bars-hidden'));
+        if (state.selection) clearSelection();
+        else if (!(reader.scroller && sideOfTap(reader.scroller, p.x))) setBars(document.body.classList.contains('bars-hidden')); // (a side tap turns the page)
       }, 300) };
       return;
     }
     const single = () => {
       if (state.selection) { clearSelection(); return; }
       if (target.closest('a, .bk-link')) return; // a link in a book: it does its own thing
+      if (reader.scroller && sideOfTap(reader.scroller, p.x)) return; // a tap near a side turns the page, and only that
       // A tap on a word with notes opens them; any other tap shows or hides the top and bottom bars.
       const here = p.word ? notesAt(p.word) : { mine: [], friends: [] };
       if (here.mine.length || here.friends.length) showNotesAt(p.word);
@@ -5288,7 +5294,9 @@ async function renderBookReader() {
   Object.assign(reader, { mode: 'book', body, scroller, words: [], gaps: [], verseEls: [], handles: null, toolbar: null });
   body.addEventListener('pointerdown', (e) => { const blk = bookBlockAt(e.target); if (blk) wrapBookBlock(blk); }, { capture: true });
   attachReaderGestures(body);
+  let settlingUntil = 0; // (the scrolling done when a chapter opens isn't reading: it leaves the bars as they are)
   const show = async (i, { frac = 0, anchor = '', slide = 0, block = 0 } = {}) => {
+    settlingUntil = Date.now() + 400;
     chapter = Math.max(0, Math.min(book.chapters.length - 1, i));
     clearSelection();
     const content = await book.render(chapter);
@@ -5378,7 +5386,7 @@ async function renderBookReader() {
   scroller.addEventListener('scroll', () => {
     const top = scroller.scrollTop;
     if (state.selection) { positionHandles(); positionToolbar(); }
-    if (touched && top > lastTop + 6 && top > 60 && !state.selection) { setBars(false); sizePanel.hidden = true; sizeBtn.setAttribute('aria-expanded', 'false'); }
+    if (touched && Date.now() > settlingUntil && top > lastTop + 6 && top > 60 && !state.selection) { setBars(false); sizePanel.hidden = true; sizeBtn.setAttribute('aria-expanded', 'false'); }
     lastTop = top;
     saveBookPosition();
   }, { passive: true });
