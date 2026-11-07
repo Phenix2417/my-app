@@ -829,3 +829,9 @@ span.verse-card-text { display: block; }
 .video-embed.post.fb { height: 560px; background: #fff; }
 .weibo-head .card-title { font-size: 15px; line-height: 1.4; }
 .weibo-brand.card-site { color: var(--muted); white-space: nowrap; }
+.bubble-text.deleted { font-style: italic; opacity: .7; }
+.edited-mark { align-self: flex-end; font-size: 11px; opacity: .7; margin-top: -4px; }
+.chat-bubble { -webkit-user-select: text; user-select: text; -webkit-touch-callout: none; }
+.option-row.danger-row, .option-row.danger-row .line-icon { color: var(--error); }
+.edit-bar .chat-attach-main { border-left-color: var(--primary); }
+.chat-bubble.held { filter: brightness(.9); transition: filter .15s; }

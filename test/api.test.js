@@ -298,3 +298,4 @@ test('a page that only names its site gives no preview (the plain card instead)'
     assert.equal((await api('GET', `/api/link-card?url=${encodeURIComponent('https://www.amazon.com/dp/B000123456')}`, { token: u.token })).status, 404);
   } finally { globalThis.fetch = real; }
 });
+

@@ -148,6 +148,12 @@ export function openDb(file) {
   // Notes made before Bible versions existed are on the World English Bible.
   // Which ebook a Bible version was imported from (its SHA-256), so opening that ebook on the shelf opens the Bible reader.
   // A shared verse in a message: { book, chapter, start, end, version, text }.
+  // Edited / deleted messages (the sender's own): when, so they show as "edited" or "deleted".
+  for (const t of ['messages', 'chat_group_messages']) {
+    const cols = db.prepare(`PRAGMA table_info(${t})`).all().map((c) => c.name);
+    if (!cols.includes('edited_at')) db.exec(`ALTER TABLE ${t} ADD COLUMN edited_at INTEGER`);
+    if (!cols.includes('deleted_at')) db.exec(`ALTER TABLE ${t} ADD COLUMN deleted_at INTEGER`);
+  }
   if (!db.prepare('PRAGMA table_info(messages)').all().some((c) => c.name === 'ref')) db.exec('ALTER TABLE messages ADD COLUMN ref TEXT');
   if (!db.prepare('PRAGMA table_info(user_versions)').all().some((c) => c.name === 'year')) db.exec('ALTER TABLE user_versions ADD COLUMN year INTEGER');
   if (!db.prepare('PRAGMA table_info(user_versions)').all().some((c) => c.name === 'source_sha')) db.exec('ALTER TABLE user_versions ADD COLUMN source_sha TEXT');

@@ -107,6 +107,12 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
     conversation: q(`SELECT * FROM (SELECT * FROM messages WHERE (from_id = :me AND to_id = :other) OR (from_id = :other AND to_id = :me)
       ORDER BY id DESC LIMIT 200) ORDER BY id`),
     markRead: q('UPDATE messages SET read_at = ? WHERE from_id = ? AND to_id = ? AND read_at IS NULL'),
+    messageById: q('SELECT * FROM messages WHERE id = ?'),
+    groupMessageById: q('SELECT * FROM chat_group_messages WHERE id = ?'),
+    editMessage: q('UPDATE messages SET body = ?, edited_at = ? WHERE id = ?'),
+    editGroupMessage: q('UPDATE chat_group_messages SET body = ?, edited_at = ? WHERE id = ?'),
+    deleteMessage: q("UPDATE messages SET deleted_at = ?, body = '', ref = NULL WHERE id = ?"),
+    deleteGroupMessage: q("UPDATE chat_group_messages SET deleted_at = ?, body = '', ref = NULL WHERE id = ?"),
     addMessage: q('INSERT INTO messages (from_id, to_id, body, created_at, ref) VALUES (?, ?, ?, ?, ?)'),
     lastMessage: q(`SELECT * FROM messages WHERE (from_id = :me AND to_id = :other) OR (from_id = :other AND to_id = :me) ORDER BY id DESC LIMIT 1`),
     // Group chats
@@ -302,10 +308,18 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
     return { book, chapter, start, end, ...(parts ? { parts: JSON.parse(parts) } : {}), ...(ref.kind === 'note' ? { kind: 'note' } : {}), version: version(ref), ...(label(ref) ? { label: label(ref) } : {}), text,
       ...(altText ? { alt: { version: version(ref.alt), ...(label(ref.alt) ? { label: label(ref.alt) } : {}), text: altText } } : {}) };
   }
-  const messageOut = (m, me) => ({ id: m.id, mine: m.from_id === me, body: m.body, createdAt: m.created_at,
-    ...(m.ref ? { ref: JSON.parse(m.ref) } : {}),
+  const messageOut = (m, me) => ({ id: m.id, mine: m.from_id === me, body: m.deleted_at ? '' : m.body, createdAt: m.created_at,
+    ...(m.deleted_at ? { deleted: true } : m.edited_at ? { editedAt: m.edited_at } : {}),
+    ...(m.ref && !m.deleted_at ? { ref: JSON.parse(m.ref) } : {}),
     ...(m.username !== undefined && m.from_id !== me ? { from: m.username ? userOut(m.from_id, m.username, m.display_name) : null } : {}) });
   const messageText = (body) => String(body ?? '').replace(/\r\n?/g, '\n').trim().slice(0, 2000);
+  // A message this person sent, still in a conversation they're in.
+  function ownMessage(kind, id, me) {
+    const m = (kind === 'dm' ? stmt.messageById : stmt.groupMessageById).get(Number(id));
+    if (!m || m.from_id !== me) throw new HttpError(404, 'Message not found');
+    if (kind === 'group' && !stmt.member.get(m.group_id, me)) throw new HttpError(404, 'Message not found');
+    return m;
+  }
   function groupFor(me, id) {
     const g = stmt.group.get(Number(id));
     if (!g || !stmt.member.get(g.id, me)) throw new HttpError(404, 'Group not found');
@@ -835,10 +849,26 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
       if (body.length > 8 * 1024 * 1024) throw new HttpError(413, 'Picture too large');
       return { status: 200, body, headers: { 'Content-Type': type, 'Cache-Control': 'private, max-age=86400' } };
     }, false], // loaded by <img>, which sends no sign-in; only sinaimg.cn pictures are passed through
+    // Edit or delete a message you sent (in a private chat: kind 'dm'; in a group: 'group'). A deleted message stays
+    // in the conversation as "deleted"; an edited one is marked "edited".
+    ['PUT', /^\/api\/(dm|group)-messages\/(\d+)$/, ({ me, params: [kind, id], body }) => {
+      const m = ownMessage(kind, id, me.id);
+      if (m.deleted_at) throw new HttpError(400, 'That message was deleted');
+      const text = messageText(body.body);
+      if (!text && !m.ref) throw new HttpError(400, 'Write a message first');
+      const at = now();
+      (kind === 'dm' ? stmt.editMessage : stmt.editGroupMessage).run(text || ' ', at, m.id);
+      return { message: messageOut({ ...m, body: text || ' ', edited_at: at }, me.id) };
+    }, true],
+    ['DELETE', /^\/api\/(dm|group)-messages\/(\d+)$/, ({ me, params: [kind, id] }) => {
+      const m = ownMessage(kind, id, me.id);
+      (kind === 'dm' ? stmt.deleteMessage : stmt.deleteGroupMessage).run(now(), m.id);
+      return { ok: true };
+    }, true],
     // All conversations, newest first: friends (private chats) and groups, with the last message and unread count.
     ['GET', /^\/api\/chats$/, ({ me }) => {
       const f = friendsPayload(me.id);
-      const preview = (m) => (m ? { body: m.body, verse: m.ref ? JSON.parse(m.ref) : null, mine: m.from_id === me.id, at: m.created_at,
+      const preview = (m) => (m ? { body: m.deleted_at ? '' : m.body, deleted: !!m.deleted_at, verse: m.ref && !m.deleted_at ? JSON.parse(m.ref) : null, mine: m.from_id === me.id, at: m.created_at,
         from: m.username && m.from_id !== me.id ? userOut(m.from_id, m.username, m.display_name) : null } : null);
       const chats = [
         ...f.friends.map((u) => ({ kind: 'friend', id: u.id, user: u, name: u.displayName, unread: u.unread, last: preview(stmt.lastMessage.get({ me: me.id, other: u.id })) })),

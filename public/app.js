@@ -3461,9 +3461,14 @@ async function renderChatPage() {
         kids.push(h('div', { class: 'chat-day' }, `${today ? (LANG === 'zh' ? '今天' : 'Today') : chatTime(m.createdAt)} ${t.toLocaleTimeString(LANG === 'zh' ? 'zh-CN' : undefined, { hour: '2-digit', minute: '2-digit', hour12: false })}`));
       }
       // A shared verse first, then any words with it (a shared note's text).
-      const content = [m.ref ? verseCard(m.ref) : null, m.body.trim() ? h('div', { class: 'bubble-text note-body' }, ...linkified(m.body)) : null,
-        ...videoEmbeds(m.body)].filter(Boolean);
-      if (m.mine) kids.push(h('div', { class: 'chat-line mine' }, h('div', { class: 'chat-bubble' }, ...content)));
+      const content = m.deleted ? [h('div', { class: 'bubble-text deleted' }, tr('This message was deleted'))]
+        : [m.ref ? verseCard(m.ref) : null, m.body.trim() ? h('div', { class: 'bubble-text note-body' }, ...linkified(m.body)) : null,
+          ...videoEmbeds(m.body), m.editedAt ? h('span', { class: 'edited-mark' }, tr('Edited')) : null].filter(Boolean);
+      if (m.mine) {
+        const bubble = h('div', { class: 'chat-bubble' }, ...content);
+        if (!m.deleted) messageActions(bubble, m);
+        kids.push(h('div', { class: 'chat-line mine' }, bubble));
+      }
       else {
         const from = m.from || chat.user;
         kids.push(h('div', { class: 'chat-line' }, from ? avatar(from) : h('span', { class: 'avatar' }, '?'),
@@ -3480,11 +3485,70 @@ async function renderChatPage() {
     try {
       const { messages } = await api('GET', path);
       if (state.tab !== 'chat' || state.chat !== chat) return clearInterval(chatPoll);
-      if (messages.length !== shown.length || messages.at(-1)?.id !== shown.at(-1)?.id) draw(messages);
+      const sig = (list) => list.map((m) => `${m.id}:${m.editedAt || ''}:${m.deleted ? 1 : 0}`).join(',');
+      if (sig(messages) !== sig(shown)) draw(messages);
     } catch (e) { if (!shown.length) list.replaceChildren(h('p', { class: 'error' }, e instanceof OfflineError ? "You're offline. Try again when connected." : e.message)); }
   };
+  // Editing one of my messages: the box holds its text; Send saves it.
+  let editing = null;
+  const editBar = h('div', { class: 'chat-attach edit-bar', hidden: true });
+  const stopEditing = () => { editing = null; editBar.hidden = true; input.value = ''; input.style.height = ''; showAttach(); };
+  function messageActions(bubble, m) {
+    let timer = null;
+    const open = () => {
+      openSheet((close) => [
+        h('div', { class: 'option-rows' },
+          h('button', { class: 'option-row', type: 'button', onclick: () => {
+            close();
+            editing = m;
+            editBar.hidden = false;
+            editBar.replaceChildren(h('div', { class: 'chat-attach-main' }, h('div', { class: 'chat-attach-head' }, tr('Edit message')), h('div', { class: 'chat-attach-text' }, m.body)),
+              h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Cancel', title: 'Cancel', onclick: stopEditing }, svg(ICONS.close)));
+            input.value = m.body.trim(); input.placeholder = ''; input.focus();
+            input.style.height = 'auto'; input.style.height = `${Math.min(input.scrollHeight, 140)}px`;
+          } }, svg(ICONS.pencil), h('span', {}, 'Edit')),
+          h('button', { class: 'option-row danger-row', type: 'button', onclick: async () => {
+            close();
+            if (!await confirmSheet({ title: 'Delete this message?', message: tr('Everyone in the chat will see “This message was deleted”.') })) return;
+            try {
+              await api('DELETE', `/api/${chat.kind === 'group' ? 'group' : 'dm'}-messages/${m.id}`);
+              draw(shown.map((x) => (x.id === m.id ? { ...x, deleted: true, body: '', ref: null } : x)));
+            } catch (e) { toast(e.message); }
+          } }, svg(ICONS.close), h('span', {}, 'Delete'))),
+      ], { label: 'Message' });
+    };
+    bubble.addEventListener('contextmenu', (e) => { if (e.target.closest('a, iframe, button')) return; e.preventDefault(); open(); });
+    // A long press: after half a second the bubble is marked (and the phone buzzes); the menu opens when the finger
+    // lifts, so the lift doesn't land on the menu's background and close it at once.
+    bubble.addEventListener('pointerdown', (e) => {
+      if (e.pointerType === 'mouse' || e.target.closest('a, iframe, button')) return;
+      const x = e.clientX, y = e.clientY;
+      let held = false;
+      timer = setTimeout(() => { held = true; bubble.classList.add('held'); navigator.vibrate?.(10); }, 500);
+      const done = () => {
+        clearTimeout(timer); bubble.removeEventListener('pointermove', moved); bubble.classList.remove('held');
+        bubble.removeEventListener('pointerup', up); bubble.removeEventListener('pointercancel', done);
+      };
+      const moved = (ev) => { if (Math.hypot(ev.clientX - x, ev.clientY - y) > 10) done(); };
+      const up = () => { const wasHeld = held; done(); if (wasHeld) setTimeout(open, 80); };
+      bubble.addEventListener('pointermove', moved);
+      bubble.addEventListener('pointerup', up);
+      bubble.addEventListener('pointercancel', done);
+    });
+  }
   const send = async () => {
     const text = input.value.trim();
+    if (editing) {
+      if (!text && !editing.ref) return;
+      sendBtn.disabled = true;
+      try {
+        const { message } = await api('PUT', `/api/${chat.kind === 'group' ? 'group' : 'dm'}-messages/${editing.id}`, { body: text });
+        draw(shown.map((x) => (x.id === editing.id ? { ...x, ...message } : x)));
+        stopEditing();
+      } catch (e) { toast(e.message); }
+      sendBtn.disabled = false;
+      return;
+    }
     if (!text && !attached) return;
     sendBtn.disabled = true;
     const m = await sendToChat(chat, { ...(text ? { body: text } : {}), ...(attached ? { ref: attached } : {}) });
@@ -3517,6 +3581,7 @@ async function renderChatPage() {
       menu),
     list,
     attachBox,
+    editBar,
     h('div', { class: 'chat-bar' }, verseBtn, input, sendBtn)));
   showAttach();
   if (attached) input.focus();
@@ -3619,7 +3684,7 @@ async function renderFriends() {
     const q = search.value.trim().toLowerCase();
     const rows = c.chats.filter((x) => (filter === 'all' || x.kind === filter) && (!q || x.name.toLowerCase().includes(q) || x.user?.username.toLowerCase().includes(q)));
     for (const x of rows) {
-      const last = x.last ? `${x.kind === 'group' && x.last.from ? `${dn(x.last.from)}：` : x.last.mine ? (LANG === 'zh' ? '我：' : 'You: ') : ''}${x.last.verse ? `${tr(x.last.verse.kind === 'note' ? 'Shared a note' : 'Shared')} ${verseRef(x.last.verse)}${x.last.body.trim() ? `：${x.last.body}` : ''}` : x.last.body}` : '';
+      const last = x.last?.deleted ? tr('This message was deleted') : x.last ? `${x.kind === 'group' && x.last.from ? `${dn(x.last.from)}：` : x.last.mine ? (LANG === 'zh' ? '我：' : 'You: ') : ''}${x.last.verse ? `${tr(x.last.verse.kind === 'note' ? 'Shared a note' : 'Shared')} ${verseRef(x.last.verse)}${x.last.body.trim() ? `：${x.last.body}` : ''}` : x.last.body}` : '';
       kids.push(h('button', { class: 'chat-row', type: 'button', onclick: () => openChatPage(x) },
         x.kind === 'group' ? avatar(null, x.name) : avatar(x.user),
         h('div', { class: 'chat-main' },
