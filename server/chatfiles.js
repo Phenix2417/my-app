@@ -85,6 +85,14 @@ export function createChatFileStore({ dir, blobs = null }) {
       return n;
     },
     async remove(id) { await fs.promises.rm(fileOf(id), { force: true }); },
+    // A new chat file that is the same stored copy as a file already on the server (nothing is uploaded again).
+    async linkFrom(from) {
+      const id = crypto.randomBytes(16).toString('hex');
+      await fs.promises.mkdir(path.dirname(fileOf(id)), { recursive: true });
+      if (blobs) await blobs.share(from, fileOf(id)); else await fs.promises.copyFile(from, fileOf(id));
+      const fd = await fs.promises.open(fileOf(id)); const head = Buffer.alloc(4096); const { bytesRead } = await fd.read(head, 0, 4096, 0); await fd.close();
+      return { id, head: head.subarray(0, bytesRead) };
+    },
     async read(id) {
       try { const st = await fs.promises.stat(fileOf(id)); return { file: fileOf(id), size: st.size }; } catch { return null; }
     },

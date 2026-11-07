@@ -131,3 +131,32 @@ test('uploads in pieces carry on from where they stopped, then go to their place
   assert.equal((await fetch(`${b2}/api/uploads/${id}`, { headers: H })).status, 404); // used up
   srv.close();
 });
+
+test('a file you already have on the server is sent again without uploading it', async () => {
+  const { mkdtempSync } = await import('node:fs');
+  const os = await import('node:os'), path = await import('node:path'), crypto = await import('node:crypto');
+  const { createChatFileStore } = await import('../server/chatfiles.js');
+  const { createLibraryStore } = await import('../server/library.js');
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'same-'));
+  const srv = createServer(openDb(':memory:'), { chatFiles: createChatFileStore({ dir: path.join(dir, 'chat') }), library: createLibraryStore({ dir: path.join(dir, 'lib') }) });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  const b2 = `http://127.0.0.1:${srv.address().port}`;
+  const reg = async (n) => (await fetch(`${b2}/api/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: n, password: 'password1' }) })).json();
+  const a = await reg('same_a'), b = await reg('same_b');
+  const J = (t) => ({ Authorization: `Bearer ${t}`, 'Content-Type': 'application/json' });
+  const pdf = Buffer.concat([Buffer.from('%PDF-1.4 '), crypto.randomBytes(100000)]);
+  const sha = crypto.createHash('sha256').update(pdf).digest('hex');
+  const same = (t, url, body) => fetch(`${b2}${url}`, { method: 'POST', headers: J(t), body: JSON.stringify(body) });
+  assert.equal((await same(a.token, '/api/chat-files/same?name=x.pdf', { sha256: sha, size: pdf.length })).status, 404); // not yet
+  await fetch(`${b2}/api/chat-files?name=x.pdf`, { method: 'POST', headers: { Authorization: `Bearer ${a.token}` }, body: pdf });
+  const r = await same(a.token, '/api/chat-files/same?name=again.pdf', { sha256: sha, size: pdf.length });
+  assert.equal(r.status, 201);
+  const f = (await r.json()).file;
+  assert.equal(Buffer.from(await (await fetch(`${b2}/api/chat-file/${f.id}`)).arrayBuffer()).equals(pdf), true);
+  assert.equal((await same(b.token, '/api/chat-files/same?name=x.pdf', { sha256: sha, size: pdf.length })).status, 404); // not someone else's
+  // On the shelf, from the file already sent in chat.
+  const sh = await same(a.token, '/api/library/same', { sha256: sha, size: pdf.length, format: 'pdf', title: 'X' });
+  assert.equal(sh.status, 201);
+  assert.equal((await (await same(a.token, '/api/library/same', { sha256: sha, size: pdf.length, format: 'pdf', title: 'X' })).json()).duplicate, true);
+  srv.close();
+});

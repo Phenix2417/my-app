@@ -3537,9 +3537,90 @@ const fileLabel = (f) => (f.kind === 'image' ? tr('[Photo]') : f.kind === 'video
 // Send a file (or bytes) to the server, with progress (0–1); resolves to the server's answer. abort() stops it.
 // Anything over 2 MB goes in 1 MB pieces that survive the app being paused or the connection dropping: a piece that
 // stops moving for 15 seconds (or fails) is sent again from what the server has, as soon as the app is back and online.
-function xhrUpload(url, body, { onProgress, method = 'POST' } = {}) {
+function xhrUpload(url, body, { onProgress, method = 'POST', bg = null } = {}) {
   const blob = body instanceof Blob ? body : new Blob([body]);
   if (blob.size <= 2 * 1024 * 1024 || method !== 'POST') return xhrSend(url, blob, { onProgress, method });
+  // In the background when possible (bg: { key, name, label, then }): it carries on when you leave the page or the app.
+  if (bg && navigator.serviceWorker?.controller && state.auth) return swUpload(url, blob, { onProgress, ...bg });
+  return pageUpload(url, blob, { onProgress });
+}
+// Sent by the service worker. If the phone stops it (it then no longer knows the upload), the page sends it instead.
+const swJobs = new Map(); // jobId -> { onProgress, resolve, reject, last }
+function swUpload(url, blob, { onProgress, key, name, label, then }) {
+  const jobId = newId();
+  let fallback = null, settled = false;
+  const promise = new Promise((resolve, reject) => {
+    const job = { onProgress, resolve: (v) => { settled = true; resolve(v); }, reject: (e) => { settled = true; reject(e); }, last: Date.now() };
+    swJobs.set(jobId, job);
+    navigator.serviceWorker.controller.postMessage({ type: 'upload', jobId, url, blob, token: state.auth.token, key, name, label, then });
+    // Every 20 seconds in view without news: is it still being sent? If not, the page sends it.
+    const check = setInterval(async () => {
+      if (settled) return clearInterval(check);
+      if (document.visibilityState !== 'visible' || Date.now() - job.last < 20000) return;
+      const known = await swList().catch(() => null);
+      if (settled || !known || known.some((j) => j.jobId === jobId)) return;
+      clearInterval(check); swJobs.delete(jobId);
+      fallback = pageUpload(url, blob, { onProgress });
+      fallback.promise.then(async (d) => {
+        if (then?.url && d.file?.id) d = { ...d, message: (await api('POST', then.url, { file: { id: d.file.id } }).catch(() => ({}))).message };
+        job.resolve(d);
+      }, job.reject);
+    }, 5000);
+  });
+  return { promise, abort: () => { navigator.serviceWorker.controller?.postMessage({ type: 'upload-cancel', jobId }); fallback?.abort(); } };
+}
+function swList() {
+  return new Promise((resolve, reject) => {
+    const sw = navigator.serviceWorker?.controller;
+    if (!sw) return reject(new Error('no service worker'));
+    const on = (e) => { if (e.data?.type === 'upload-list') { navigator.serviceWorker.removeEventListener('message', on); resolve(e.data.jobs); } };
+    navigator.serviceWorker.addEventListener('message', on);
+    sw.postMessage({ type: 'upload-list' });
+    setTimeout(() => { navigator.serviceWorker.removeEventListener('message', on); reject(new Error('no answer')); }, 3000);
+  });
+}
+// News from the service worker: progress and results for this page's uploads; and uploads still being sent from
+// before the page was opened (or reloaded) get their rows back, and their notice when done.
+const swOrphans = new Map(); // jobId -> tracked row
+if (navigator.serviceWorker) {
+  navigator.serviceWorker.addEventListener('message', (e) => {
+    const m = e.data || {};
+    if (!/^upload-(progress|done|failed)$/.test(m.type)) return;
+    const job = swJobs.get(m.jobId);
+    if (job) {
+      job.last = Date.now();
+      if (m.type === 'upload-progress') job.onProgress?.(m.progress);
+      else { swJobs.delete(m.jobId); if (m.type === 'upload-done') job.resolve(m.result); else job.reject(Object.assign(new Error(m.error), { cancelled: m.cancelled })); }
+      return;
+    }
+    adoptOrphan(m);
+  });
+  const reattach = () => swList().then((list) => list.filter((j) => !j.finished && !swJobs.has(j.jobId)).forEach((j) => adoptOrphan({ type: 'upload-progress', ...j }))).catch(() => {});
+  navigator.serviceWorker.ready?.then(() => setTimeout(reattach, 500));
+}
+function adoptOrphan(m) {
+  if (!state.auth) return;
+  let j = swOrphans.get(m.jobId);
+  if (!j && m.type === 'upload-progress') {
+    j = trackUpload(m.key, m.name);
+    j.jobId = m.jobId;
+    j.abort = () => navigator.serviceWorker.controller?.postMessage({ type: 'upload-cancel', jobId: m.jobId });
+    swOrphans.set(m.jobId, j);
+  }
+  if (!j) return;
+  if (m.type === 'upload-progress') j.setProgress(m.progress || 0);
+  else {
+    swOrphans.delete(m.jobId); j.remove();
+    if (m.type === 'upload-done') {
+      const msg = m.result?.message, book = m.result?.book;
+      if (msg && uploadsView?.key === m.key && uploadsView.el.isConnected) uploadsView.onSent(msg);
+      if (book) { notifyTop({ title: book.title, body: LANG === 'zh' ? '已加入书架' : 'Added to your shelf', icon: ICONS.books, onTap: () => { state.tab = 'books'; render(); } }); if (state.tab === 'books') renderLibrary(); }
+      else notifyTop({ title: m.name, body: LANG === 'zh' ? `已发送给${m.label || ''}` : `Sent to ${m.label || ''}`, icon: ICONS.send });
+    } else if (!m.cancelled) toast(`${m.name}: ${m.error}`);
+  }
+}
+// Sent from the page itself, in pieces (see above).
+function pageUpload(url, blob, { onProgress } = {}) {
   let stopped = false, current = null, id = null;
   const promise = (async () => {
     ({ id } = await api('POST', '/api/uploads', { size: blob.size }));
@@ -3612,10 +3693,28 @@ function xhrSend(url, body, { onProgress, method = 'POST', stallMs = 0 } = {}) {
   return { promise, abort: () => x.abort() };
 }
 // A file sent to chat; resolves to { id, name, type, kind, size, duration… }.
-function uploadChatFile(blob, { name, duration, onProgress, extra = {} } = {}) {
+// sendTo: the chat (when sent in the background, the message with the file is sent from there too). Resolves to
+// { file, message? }.
+// A file you've sent before (or have on your shelf) isn't uploaded again: the server uses the copy it has.
+function uploadChatFile(blob, { name, duration, onProgress, extra = {}, sendTo = null } = {}) {
   const q = new URLSearchParams({ name: name || blob.name || 'file', type: blob.type || '', ...(duration ? { duration: String(duration) } : {}), ...extra });
-  const job = xhrUpload(`/api/chat-files?${q}`, blob, { onProgress });
-  return { promise: job.promise.then((d) => d.file), abort: job.abort };
+  const bg = sendTo ? { key: chatKeyOf(sendTo), name: name || blob.name || 'file', label: sendTo.name,
+    then: { url: sendTo.kind === 'group' ? `/api/groups/${sendTo.id}/messages` : `/api/messages/${sendTo.id}` } } : null;
+  let stopped = false, job = null;
+  const promise = (async () => {
+    if (blob.size > 64 * 1024) {
+      // (Read once, and the bytes read are what's sent: a phone may not let a file from the cloud be read twice.)
+      const buf = await blob.arrayBuffer();
+      blob = new Blob([buf], { type: blob.type });
+      const sha = await fingerprint(buf).catch(() => null);
+      if (stopped) throw Object.assign(new Error('Cancelled'), { cancelled: true });
+      if (sha) { try { const r = await api('POST', `/api/chat-files/same?${q}`, { sha256: sha, size: blob.size }); onProgress?.(1); return r; } catch (e) { if (e.status !== 404) console.warn(e); } }
+    }
+    if (stopped) throw Object.assign(new Error('Cancelled'), { cancelled: true });
+    job = xhrUpload(`/api/chat-files?${q}`, blob, { onProgress, bg });
+    return job.promise;
+  })();
+  return { promise, abort: () => { stopped = true; job?.abort(); } };
 }
 const isEpubFile = (f) => f.type === 'application/epub+zip' || /\.epub$/i.test(f.name || '');
 const isBookFile = (f) => isEpubFile(f) || /\.(pdf|txt)$/i.test(f.name || '') || f.type === 'application/pdf';
@@ -3631,7 +3730,7 @@ async function chatBookDetails(bytes) {
   const book = await openEpub(bytes);
   const out = { title: cleanBookTitle(book.title || ''), author: book.author || '', bible: looksLikeBible(book) };
   const cover = book.coverPath ? await coverOf(book) : null;
-  if (cover) { try { out.cover = (await uploadChatFile(cover, { name: 'cover.jpg' }).promise).id; } catch { /* no cover then */ } }
+  if (cover) { try { out.cover = (await uploadChatFile(cover, { name: 'cover.jpg' }).promise).file.id; } catch { /* no cover then */ } }
   return out;
 }
 // Put a book sent in chat on my shelf: the server keeps it as the same file (nothing is downloaded or sent again).
@@ -4244,7 +4343,13 @@ async function uploadToChat(chat, file, duration = null) {
   if (!file.size) return toast(`${file.name}: ${tr('empty file')}`);
   // A book's file name keeps just its title, author and year (no download-site tags, ISBNs, file codes…).
   if (isBookName(file.name)) file = new File([file], cleanBookName(file.name), { type: file.type });
+  // The same file already on its way to this chat isn't sent again.
+  const sig = `${chatKeyOf(chat)}|${file.name}|${file.size}`;
+  if (chatUploads.some((x) => x.sig === sig || (x.key === chatKeyOf(chat) && x.name === file.name && swOrphans.has(x.jobId)))) {
+    return toast(LANG === 'zh' ? `“${file.name}”已在发送中` : `“${file.name}” is already being sent`);
+  }
   const j = trackUpload(chatKeyOf(chat), file.name), remove = j.remove;
+  j.sig = sig;
   await uploadTurn();
   try {
     if (j.cancelled) return;
@@ -4255,10 +4360,10 @@ async function uploadToChat(chat, file, duration = null) {
       catch { /* sent as a plain file */ }
     }
     if (j.cancelled) return;
-    const job = uploadChatFile(file, { name: file.name, duration, extra, onProgress: j.setProgress });
+    const job = uploadChatFile(file, { name: file.name, duration, extra, onProgress: j.setProgress, sendTo: chat });
     j.abort = job.abort;
-    const f = await job.promise;
-    const m = await sendToChat(chat, { file: { id: f.id } });
+    const done = await job.promise;
+    const m = done.message || await sendToChat(chat, { file: { id: done.file.id } });
     if (m) {
       if (uploadsView?.key === j.key && uploadsView.el.isConnected) uploadsView.onSent(m);
       notifyTop({ title: j.name, body: LANG === 'zh' ? `已发送给${chat.name}` : `Sent to ${chat.name}`, icon: ICONS.send,
@@ -5045,7 +5150,14 @@ async function fingerprint(buf) {
 // from the cloud be read twice).
 async function addBooks(files, { onProgress } = {}) {
   // Each book gets its row (name, progress, ✕) on the shelf at once; they're added one after another.
-  const jobs = files.map((file) => trackUpload('shelf', cleanBookName(file.name || 'book')));
+  // The same file picked twice (or already being added) is added once.
+  const sigOf = (f) => `shelf|${f.name}|${f.size ?? f.data?.byteLength}`;
+  files = files.filter((f, i) => {
+    const dup = files.findIndex((g) => sigOf(g) === sigOf(f)) !== i || chatUploads.some((x) => x.sig === sigOf(f));
+    if (dup) toast(LANG === 'zh' ? `“${f.name}”已在添加中` : `“${f.name}” is already being added`);
+    return !dup;
+  });
+  const jobs = files.map((file) => Object.assign(trackUpload('shelf', cleanBookName(file.name || 'book')), { sig: sigOf(file) }));
   for (const [k, file] of files.entries()) {
     const j = jobs[k];
     try { await addOneBook(file, j, onProgress); } finally { j.remove(); }
@@ -5087,10 +5199,20 @@ async function addOneBook(file, j, onProgress) {
       const sha = await fingerprint(bytes);
       const { book: same } = sha ? await api('GET', `/api/library/find?sha=${sha}&size=${bytes.byteLength}`) : { book: null };
       if (same) { toast(`“${same.title}” is already on your shelf`); return; }
+      // Sent in chat before: the same file goes on the shelf without being uploaded again.
+      if (sha) {
+        const r = await api('POST', '/api/library/same', { sha256: sha, size: bytes.byteLength, format, title, author }).catch(() => null);
+        if (r?.book) {
+          if (cover && !r.duplicate) await authFetch(`/api/library/${r.book.id}/cover`, { method: 'PUT', body: cover }).catch(() => {});
+          j.setProgress(1);
+          notifyTop({ title: r.book.title, body: LANG === 'zh' ? '已加入书架' : 'Added to your shelf', icon: ICONS.books, onTap: () => { if (state.tab !== 'books') { state.tab = 'books'; render(); } } });
+          return;
+        }
+      }
     } catch { /* couldn't check: the server still spots a duplicate on upload */ }
     try {
       const q = new URLSearchParams({ format, title, author });
-      const job = xhrUpload(`/api/library?${q}`, bytes, { onProgress: (p) => { j.setProgress(p); onProgress?.(p); } });
+      const job = xhrUpload(`/api/library?${q}`, bytes, { onProgress: (p) => { j.setProgress(p); onProgress?.(p); }, bg: { key: 'shelf', name: title, label: '' } });
       j.abort = job.abort;
       if (j.cancelled) { job.abort(); return; }
       const { book, duplicate } = await job.promise;

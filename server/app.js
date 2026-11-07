@@ -123,6 +123,8 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
     oldChatFiles: q('SELECT id FROM chat_files WHERE created_at < ? LIMIT 500'),
     deleteChatFile: q('DELETE FROM chat_files WHERE id = ?'),
     setChatFileMeta: q('UPDATE chat_files SET meta = ? WHERE id = ?'),
+    myChatFileBySha: q('SELECT * FROM chat_files WHERE user_id = ? AND sha256 = ? AND size = ? ORDER BY created_at DESC LIMIT 1'),
+    myBookBySha: q('SELECT * FROM library_books WHERE user_id = ? AND sha256 = ? AND size = ? LIMIT 1'),
     // Chat files no message carries (never sent, or every message with it deleted) and that aren't a sent book's cover.
     unusedChatFiles: q(`SELECT id FROM chat_files cf WHERE created_at < ?
       AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.file IS NOT NULL AND json_extract(m.file, '$.id') = cf.id)
@@ -503,6 +505,21 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
       stmt.addLibraryBook.run({ id, user_id: me.id, title, author, format, size: up.size, sha256: up.sha256, now: now() });
       return { status: 201, body: { book: libraryOut(stmt.libraryBook.get(id, me.id)) } };
     }, true, { raw: true }],
+    // A book this person already sent in chat (the same file), put on their shelf without uploading it again. 404: upload it.
+    ['POST', /^\/api\/library\/same$/, async ({ me, body }) => {
+      needLibrary();
+      const sha = String(body.sha256 || ''), size = Number(body.size), format = BOOK_TYPES[body.format] ? body.format : null;
+      if (!/^[0-9a-f]{64}$/.test(sha) || !Number.isInteger(size) || !format) throw new HttpError(400, 'Invalid book');
+      const same = await findSameBook(me.id, sha, size);
+      if (same) return { status: 200, body: { book: libraryOut(same), duplicate: true } };
+      const own = stmt.myChatFileBySha.get(me.id, sha, size), disk = own && chatFiles && await chatFiles.read(own.id);
+      if (!disk) throw new HttpError(404, 'Not on the server yet');
+      if (stmt.libraryBytes.get(me.id).total + size > MAX_LIBRARY_BYTES) throw new HttpError(413, 'Your library is full. Delete a book to make room.');
+      const id = crypto.randomBytes(12).toString('base64url');
+      await library.keepShared(disk.file, me.id, id);
+      stmt.addLibraryBook.run({ id, user_id: me.id, title: cleanText(body.title, 200) || 'Untitled', author: cleanText(body.author, 120), format, size, sha256: sha, now: now() });
+      return { status: 201, body: { book: libraryOut(stmt.libraryBook.get(id, me.id)), same: true } };
+    }, true],
     // A book sent in chat, put on my shelf: the server links the same stored file (and its cover); nothing is uploaded again.
     ['POST', /^\/api\/library\/from-chat$/, async ({ me, body }) => {
       needLibrary();
@@ -1007,6 +1024,26 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
       if (type === 'application/epub+zip') stmt.setChatFileMeta.run(bookMeta(me.id, { title: query.get('title'), author: query.get('author'), cover: query.get('cover'), bible: query.get('bible') ?? undefined }), up.id);
       return { status: 201, body: { file: fileOut(stmt.chatFile.get(up.id)) } };
     }, true, { raw: true }],
+    // Sending a file this person already has on the server (sent before, or on their shelf): the new chat file is the
+    // same stored copy, so nothing is uploaded again. Only their own files are looked at (so this can't be used to
+    // find out what anyone else has uploaded). 404: not found, upload it.
+    ['POST', /^\/api\/chat-files\/same$/, async ({ me, body, query }) => {
+      if (!chatFiles) throw new HttpError(503, 'Sending files is not set up on this server');
+      const sha = String(body.sha256 || ''), size = Number(body.size);
+      if (!/^[0-9a-f]{64}$/.test(sha) || !Number.isInteger(size)) throw new HttpError(400, 'Invalid file');
+      const own = stmt.myChatFileBySha.get(me.id, sha, size);
+      let from = own && (await chatFiles.read(own.id))?.file;
+      if (!from && library) { const bk = stmt.myBookBySha.get(me.id, sha, size); from = bk && (await library.read(me.id, bk.id))?.file; }
+      if (!from) throw new HttpError(404, 'Not on the server yet');
+      const { id, head } = await chatFiles.linkFrom(from);
+      const { kind, type } = sniffChatFile(head, String(query.get('type') || ''));
+      const name = cleanText(query.get('name'), 120).replace(/[\\/\u0000-\u001f]/g, '_') || 'file';
+      const d = Number(query.get('duration'));
+      const duration = (kind === 'audio' || kind === 'video') && d > 0 && d < 86400 ? Math.round(d * 10) / 10 : null;
+      stmt.addChatFile.run(id, me.id, name, type, kind, size, duration, now(), sha);
+      if (type === 'application/epub+zip') stmt.setChatFileMeta.run(bookMeta(me.id, { title: query.get('title'), author: query.get('author'), cover: query.get('cover'), bible: query.get('bible') ?? undefined }), id);
+      return { status: 201, body: { file: fileOut(stmt.chatFile.get(id)), same: true } };
+    }, true],
     // A book sent before its details were read (title, author, cover): the person who sent it fills them in.
     ['PUT', /^\/api\/chat-files\/([0-9a-f]{32})\/book$/, ({ me, params: [id], body }) => {
       const f = stmt.chatFile.get(id);
