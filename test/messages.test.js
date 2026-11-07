@@ -107,3 +107,27 @@ test('files sent in chat: uploaded, recognised by their bytes, served in parts, 
   assert.equal((await call('GET', `/api/messages/${a.user.id}`, b.token)).data.messages[0].file, undefined);
   srv.close();
 });
+
+test('uploads in pieces carry on from where they stopped, then go to their place', async () => {
+  const { mkdtempSync } = await import('node:fs');
+  const os = await import('node:os'), path = await import('node:path');
+  const { createChatFileStore } = await import('../server/chatfiles.js');
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'pieces-'));
+  const srv = createServer(openDb(':memory:'), { chatFiles: createChatFileStore({ dir: path.join(dir, 'chat') }), uploadsDir: path.join(dir, 'up') });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  const b2 = `http://127.0.0.1:${srv.address().port}`;
+  const a = await (await fetch(`${b2}/api/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'piece_a', password: 'password1' }) })).json();
+  const H = { Authorization: `Bearer ${a.token}` };
+  const data = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(3000, 5)]);
+  const { id } = await (await fetch(`${b2}/api/uploads`, { method: 'POST', headers: { ...H, 'Content-Type': 'application/json' }, body: JSON.stringify({ size: data.length }) })).json();
+  const put = (offset, bytes) => fetch(`${b2}/api/uploads/${id}?offset=${offset}`, { method: 'PUT', headers: H, body: bytes });
+  assert.equal((await (await put(0, data.subarray(0, 1000))).json()).received, 1000);
+  // Out of step (e.g. a piece sent again): told where to go on from.
+  const r = await put(0, data.subarray(0, 1000));
+  assert.equal(r.status, 409); assert.equal((await r.json()).received, 1000);
+  assert.equal((await (await put(1000, data.subarray(1000))).json()).received, data.length);
+  const done = await (await fetch(`${b2}/api/chat-files?name=p.jpg&upload=${id}`, { method: 'POST', headers: H })).json();
+  assert.deepEqual([done.file.kind, done.file.size], ['image', data.length]);
+  assert.equal((await fetch(`${b2}/api/uploads/${id}`, { headers: H })).status, 404); // used up
+  srv.close();
+});

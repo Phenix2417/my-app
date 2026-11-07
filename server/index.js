@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openDb } from './db.js';
@@ -46,7 +47,7 @@ const server = createServer(db, { publicDir: path.join(root, 'public'), trustPro
   library: createLibraryStore({ dir: libraryDir, blobs }), freeDict,
   versions: createVersionService({ cacheDir: path.join(dataDir, 'bible-cache') }),
   wiki: createWikiService({ cacheDir: path.join(dataDir, 'wiki-cache') }), encyclopedias: createEncyclopedias(),
-  chatFiles: createChatFileStore({ dir: chatDir, blobs }) }).listen(port, host, () => {
+  chatFiles: createChatFileStore({ dir: chatDir, blobs }), uploadsDir: path.join(dataDir, 'uploads') }).listen(port, host, () => {
   console.log(`Bible Study running at http://localhost:${port}`);
 });
 
@@ -57,6 +58,12 @@ async function tidyFiles() {
     await server.purgeChatFiles();
     const unused = await server.sweepOrphans();
     const freed = await blobs.sweep();
+    // Uploads sent in pieces and never finished (e.g. from before a restart).
+    const upDir = path.join(dataDir, 'uploads');
+    for (const f of await fs.promises.readdir(upDir).catch(() => [])) {
+      const p = path.join(upDir, f), st = await fs.promises.stat(p).catch(() => null);
+      if (st && Date.now() - st.mtimeMs > 86400000) await fs.promises.rm(p, { force: true });
+    }
     if (unused || freed) console.log(`Files tidied: ${unused} unused removed, ${freed} stored copies freed`);
   } catch (e) { console.warn('file clean-up:', e.message); }
 }

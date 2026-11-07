@@ -3133,7 +3133,11 @@ async function checkBibleEpub(bufPromise, fileName, file = null, repair = null, 
               while (next < ids.length) {
                 stopped();
                 const id = ids[next++];
-                await authFetch(`/api/my-versions/${version.id}/${id}`, { method: 'PUT', body: JSON.stringify(part.data[id].map((c) => c || [])) });
+                // (Sent again if it's cut off — the app paused, the connection dropped — once the app is back and online.)
+                for (let tries = 0; ; tries++) {
+                  try { await authFetch(`/api/my-versions/${version.id}/${id}`, { method: 'PUT', body: JSON.stringify(part.data[id].map((c) => c || [])) }); break; }
+                  catch (err) { if (tries >= 6 || (err.status && err.status < 500)) throw err; stopped(); await backAndOnline(); await new Promise((r) => setTimeout(r, 1000 * (tries + 1))); }
+                }
                 btn.textContent = tr(`Saving ${version.short} ${++done} / ${ids.length}…`);
                 setBar((++savedBooks / totalBooks) * (1 - shelfShare));
               }
@@ -3531,23 +3535,80 @@ setInterval(() => {
 }, 1000);
 const fileLabel = (f) => (f.kind === 'image' ? tr('[Photo]') : f.kind === 'video' ? tr('[Video]') : f.kind === 'audio' ? `${tr('[Voice]')}${f.duration ? ` ${clock(f.duration)}` : ''}` : `${tr('[File]')} ${f.name}`);
 // Send a file (or bytes) to the server, with progress (0–1); resolves to the server's answer. abort() stops it.
+// Anything over 2 MB goes in 1 MB pieces that survive the app being paused or the connection dropping: a piece that
+// stops moving for 15 seconds (or fails) is sent again from what the server has, as soon as the app is back and online.
 function xhrUpload(url, body, { onProgress, method = 'POST' } = {}) {
+  const blob = body instanceof Blob ? body : new Blob([body]);
+  if (blob.size <= 2 * 1024 * 1024 || method !== 'POST') return xhrSend(url, blob, { onProgress, method });
+  let stopped = false, current = null, id = null;
+  const promise = (async () => {
+    ({ id } = await api('POST', '/api/uploads', { size: blob.size }));
+    let received = 0, tries = 0;
+    while (received < blob.size) {
+      if (stopped) throw Object.assign(new Error('Cancelled'), { cancelled: true });
+      if (!navigator.onLine || document.visibilityState === 'hidden') { await backAndOnline(); continue; }
+      const piece = blob.slice(received, Math.min(blob.size, received + 1024 * 1024));
+      current = xhrSend(`/api/uploads/${id}?offset=${received}`, piece, { method: 'PUT', stallMs: 15000,
+        onProgress: (p) => onProgress?.((received + p * piece.size) / blob.size) });
+      try {
+        ({ received } = await current.promise); tries = 0;
+      } catch (e) {
+        if (stopped || e.cancelled && stopped) throw Object.assign(new Error('Cancelled'), { cancelled: true });
+        if (e.status === 404 || e.status === 413) throw e; // the upload is gone, or too large: no use retrying
+        if (e.status === 409 && Number.isInteger(e.data?.received)) { received = e.data.received; continue; }
+        // Cut short or stalled: ask how much arrived, wait a moment (longer each time), and go on from there.
+        await new Promise((r) => setTimeout(r, Math.min(10000, 1000 * 2 ** Math.min(tries++, 4))));
+        try { ({ received } = await api('GET', `/api/uploads/${id}`)); } catch (err) { if (err.status === 404) throw err; }
+      }
+      onProgress?.(received / blob.size);
+    }
+    current = null;
+    const sep = url.includes('?') ? '&' : '?';
+    return api('POST', `${url}${sep}upload=${id}`);
+  })();
+  promise.catch(() => { if (id && stopped) api('DELETE', `/api/uploads/${id}`).catch(() => {}); });
+  return { promise, abort: () => { stopped = true; current?.abort(); } };
+}
+// Resolves once the app is in view and online again.
+function backAndOnline() {
+  return new Promise((resolve) => {
+    const check = () => { if (navigator.onLine && document.visibilityState !== 'hidden') { removeEventListener('online', check); document.removeEventListener('visibilitychange', check); resolve(); } };
+    addEventListener('online', check); document.addEventListener('visibilitychange', check);
+    setTimeout(check, 1000);
+  });
+}
+// Pieces being sent that can be sent again: coming back to the app, one that hasn't moved for a few seconds (the
+// phone likely cut it off while the app was away) is dropped at once and sent again, rather than after its 15 seconds.
+const watchedSends = new Set();
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible') return;
+  setTimeout(() => { for (const w of watchedSends) if (Date.now() - w.last > 3000) w.restart(); }, 3000);
+});
+// One request with a body and upload progress. stallMs: give up (so it can be sent again) when nothing moves for that long.
+function xhrSend(url, body, { onProgress, method = 'POST', stallMs = 0 } = {}) {
   const x = new XMLHttpRequest();
+  let stall = null;
+  const w = { last: Date.now(), restart: () => { x.stalled = true; x.abort(); } };
+  if (stallMs) watchedSends.add(w);
   const promise = new Promise((resolve, reject) => {
+    const watch = () => { w.last = Date.now(); if (!stallMs) return; clearTimeout(stall); stall = setTimeout(w.restart, stallMs); };
     x.open(method, url);
     for (const [k, v] of Object.entries(authHeaders())) x.setRequestHeader(k, v);
     x.setRequestHeader('Content-Type', 'application/octet-stream');
-    x.upload.onprogress = (e) => { if (e.lengthComputable) onProgress?.(e.loaded / e.total); };
+    x.upload.onprogress = (e) => { watch(); if (e.lengthComputable) onProgress?.(e.loaded / e.total); };
     x.onload = () => {
+      clearTimeout(stall);
       let d = {}; try { d = JSON.parse(x.responseText); } catch { /* not JSON */ }
       if (x.status >= 200 && x.status < 300) return resolve(d);
       if (x.status === 401 && state.auth) signOut(true);
-      reject(Object.assign(new Error(d.error || `Upload failed (${x.status})`), { status: x.status }));
+      reject(Object.assign(new Error(d.error || `Upload failed (${x.status})`), { status: x.status, data: d }));
     };
-    x.onerror = () => reject(new OfflineError("You're offline. Try again when connected."));
-    x.onabort = () => reject(Object.assign(new Error('Cancelled'), { cancelled: true }));
+    x.onerror = () => { clearTimeout(stall); reject(new OfflineError("You're offline. Try again when connected.")); };
+    x.onabort = () => { clearTimeout(stall); reject(Object.assign(new Error(x.stalled ? 'Stalled' : 'Cancelled'), { cancelled: !x.stalled, stalled: !!x.stalled })); };
     x.send(body);
+    watch();
   });
+  promise.finally(() => watchedSends.delete(w)).catch(() => {});
   return { promise, abort: () => x.abort() };
 }
 // A file sent to chat; resolves to { id, name, type, kind, size, duration… }.
@@ -4147,6 +4208,7 @@ async function keepAwakeWhileUploading() {
   // The screen stays on while files are being sent (a phone may pause a page whose screen has gone off).
   if (chatUploads.length && !uploadWake) uploadWake = await navigator.wakeLock?.request('screen').catch(() => null) || null;
   if (!chatUploads.length && uploadWake) { uploadWake.release().catch(() => {}); uploadWake = null; }
+  if (!chatUploads.length) document.dispatchEvent(new Event('uploads-done')); // (an app update waiting to load can now)
 }
 addEventListener('beforeunload', (e) => { if (chatUploads.length) { e.preventDefault(); e.returnValue = ''; } });
 // A file being sent, shown (name, progress bar, ✕) wherever its `key` is open: a chat ('friend:3'), or 'shelf'.
@@ -5594,15 +5656,17 @@ const ICON_BUTTONS = '.swatch, .icon-btn, .to-top, .size-btn, .bubble-btn';
 
 if ('serviceWorker' in navigator && window.isSecureContext) {
   // When a new version of the app is deployed, its service worker takes over; reload to show it,
-  // but never while a sheet (like an unsaved note) is open.
+  // but never while a sheet (like an unsaved note) is open, or while files are being sent (a reload would cut them off:
+  // it waits until the last one is done).
   const hadController = !!navigator.serviceWorker.controller;
   let pendingReload = false;
-  const reloadIfIdle = () => { if (pendingReload && !document.querySelector('.scrim') && !state.selection) location.reload(); };
+  const reloadIfIdle = () => { if (pendingReload && !document.querySelector('.scrim') && !state.selection && !chatUploads.length) location.reload(); };
+  document.addEventListener('uploads-done', () => setTimeout(reloadIfIdle, 1500));
   navigator.serviceWorker.addEventListener('controllerchange', () => { if (hadController) { pendingReload = true; reloadIfIdle(); } });
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') reloadIfIdle(); });
   document.addEventListener('click', () => setTimeout(reloadIfIdle, 0));
   navigator.serviceWorker.register('/sw.js').then((reg) => {
-    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') reg.update().catch(() => {}); });
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') reg?.update?.().catch(() => {}); });
   }).catch(() => {});
 }
 if (state.auth) start(); else renderAuth();

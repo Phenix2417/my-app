@@ -1,5 +1,7 @@
 import http from 'node:http';
 import fs from 'node:fs';
+import os from 'node:os';
+import { pipeline } from 'node:stream/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { BOOKS, BOOK_IDS } from './books.js';
@@ -79,7 +81,7 @@ export function seedTestUsers(db, users) {
   return created;
 }
 
-export function createApp(db, { publicDir, trustProxy = false, commentary = null, pronounce = null, phonetics = null, translate = null, bibleDict = null, library = null, freeDict = null, versions = null, wiki = null, encyclopedias = null, chatFiles = null } = {}) {
+export function createApp(db, { publicDir, trustProxy = false, commentary = null, pronounce = null, phonetics = null, translate = null, bibleDict = null, library = null, freeDict = null, versions = null, wiki = null, encyclopedias = null, chatFiles = null, uploadsDir = path.join(os.tmpdir(), 'bible-study-uploads') } = {}) {
   const q = (sql) => db.prepare(sql);
   const stmt = {
     userByName: q('SELECT * FROM users WHERE username = ?'),
@@ -405,8 +407,63 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
     return u;
   }
 
+  // Uploads sent in pieces, so one cut short (a phone pausing the app, a dropped connection) carries on from where it
+  // stopped. The pieces are put together here; the finished file is then handed to the place it's for (a shelf, a
+  // chat) with ?upload=<id> instead of a body. Unfinished ones are cleared after a day.
+  const uploads = new Map(); // id -> { user, size, received, file, at }
+  const MAX_UPLOAD = 100 * 1024 * 1024;
+  async function takeUpload(me, query) {
+    const id = query.get('upload');
+    if (!id) return null;
+    const u = uploads.get(id);
+    if (!u || u.user !== me) throw new HttpError(404, 'That upload has expired. Try again.');
+    if (u.received !== u.size) throw new HttpError(409, 'That upload is not finished.');
+    uploads.delete(id);
+    const stream = fs.createReadStream(u.file);
+    stream.on('close', () => fs.promises.rm(u.file, { force: true }).catch(() => {}));
+    return stream;
+  }
+  setInterval(() => {
+    for (const [id, u] of uploads) if (Date.now() - u.at > 86400000) { uploads.delete(id); fs.promises.rm(u.file, { force: true }).catch(() => {}); }
+  }, 3600000).unref();
+
   const routes = [
     ['GET', /^\/api\/health$/, () => ({ ok: true })],
+
+    ['POST', /^\/api\/uploads$/, async ({ me, body }) => {
+      const size = Number(body.size);
+      if (!Number.isInteger(size) || size <= 0 || size > MAX_UPLOAD) throw new HttpError(413, 'That file is too large.');
+      const id = crypto.randomBytes(16).toString('hex');
+      await fs.promises.mkdir(uploadsDir, { recursive: true });
+      const file = path.join(uploadsDir, `${id}.part`);
+      await fs.promises.writeFile(file, '');
+      uploads.set(id, { user: me.id, size, received: 0, file, at: Date.now() });
+      return { status: 201, body: { id, received: 0 } };
+    }, true],
+    ['GET', /^\/api\/uploads\/([0-9a-f]{32})$/, ({ me, params: [id] }) => {
+      const u = uploads.get(id);
+      if (!u || u.user !== me.id) throw new HttpError(404, 'That upload has expired. Try again.');
+      return { received: u.received, size: u.size };
+    }, true],
+    // A piece, from `offset` (which must be what has arrived so far). What arrives of a piece cut short is kept.
+    ['PUT', /^\/api\/uploads\/([0-9a-f]{32})$/, async ({ me, params: [id], query, req }) => {
+      const u = uploads.get(id);
+      if (!u || u.user !== me.id) throw new HttpError(404, 'That upload has expired. Try again.');
+      if (Number(query.get('offset')) !== u.received) return { status: 409, body: { error: 'Out of step', received: u.received } };
+      let n = 0;
+      try {
+        await pipeline(req, async function* (src) { for await (const c of src) { n += c.length; if (u.received + n > u.size) throw new Error('too much'); yield c; } },
+          fs.createWriteStream(u.file, { flags: 'a' }));
+      } catch { /* cut short: keep what came */ }
+      u.received = (await fs.promises.stat(u.file)).size; u.at = Date.now();
+      if (u.received > u.size) { uploads.delete(id); await fs.promises.rm(u.file, { force: true }); throw new HttpError(400, 'Too much data'); }
+      return { received: u.received };
+    }, true, { raw: true }],
+    ['DELETE', /^\/api\/uploads\/([0-9a-f]{32})$/, async ({ me, params: [id] }) => {
+      const u = uploads.get(id);
+      if (u && u.user === me.id) { uploads.delete(id); await fs.promises.rm(u.file, { force: true }); }
+      return { ok: true };
+    }, true],
 
     // English definitions from the Free Dictionary API (Wiktionary). The app falls back to its built-in WordNet.
     ['GET', /^\/api\/define\/([a-z-]{1,40})$/, async ({ params: [word] }) => {
@@ -434,7 +491,7 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
       const used = stmt.libraryBytes.get(me.id).total;
       const room = Math.min(MAX_BOOK_BYTES, MAX_LIBRARY_BYTES - used);
       if (room <= 0) throw new HttpError(413, 'Your library is full. Delete a book to make room.');
-      const up = await library.receive(req, me.id, room).catch(libraryErr);
+      const up = await library.receive(await takeUpload(me.id, query) || req, me.id, room).catch(libraryErr);
       const format = up.size ? sniffFormat(up.head, declared) : null;
       if (!format) { await library.discard(up.tmp); throw new HttpError(415, 'Only EPUB, PDF and text files can be added.'); }
       // The same book (byte for byte, whatever its name) is kept only once.
@@ -941,7 +998,7 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
       if (!chatFiles) throw new HttpError(503, 'Sending files is not set up on this server');
       const room = Math.min(MAX_CHAT_FILE_BYTES, MAX_CHAT_BYTES_PER_USER - stmt.chatBytes.get(me.id).total);
       if (room <= 0) throw new HttpError(413, "You've sent too many files. Delete some messages with files to make room.");
-      const up = await chatFiles.receive(req, room).catch((e) => { if (e instanceof ChatFileError) throw new HttpError(e.status, e.message); throw e; });
+      const up = await chatFiles.receive(await takeUpload(me.id, query) || req, room).catch((e) => { if (e instanceof ChatFileError) throw new HttpError(e.status, e.message); throw e; });
       const { kind, type } = sniffChatFile(up.head, String(query.get('type') || ''));
       const name = cleanText(query.get('name'), 120).replace(/[\\/\u0000-\u001f]/g, '_') || 'file';
       const d = Number(query.get('duration'));
