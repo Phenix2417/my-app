@@ -2,7 +2,7 @@
 // (desktop web, mobile web, the mobile app's Share button, a TV/embed link…); all of them map to one player.
 
 // Links in text: with a scheme, or bare (youtu.be/…, www.youtube.com/…, b23.tv/…) as people often type or paste them.
-export const LINK_RE = /(?:https?:\/\/|\b(?=(?:www\.|m\.|music\.)?(?:youtube\.com|youtu\.be|youtube-nocookie\.com|vimeo\.com|player\.vimeo\.com|bilibili\.com|b23\.tv)\/))[^\s<>"'\u3000-\u303f\u3400-\u9fff\uff00-\uffef]+/gi; // a link ends at a space or Chinese text/punctuation
+export const LINK_RE = /(?:https?:\/\/|\b(?=(?:www\.|m\.|music\.|mobile\.|vm\.|vt\.|v\.)?(?:youtube\.com|youtu\.be|youtube-nocookie\.com|vimeo\.com|player\.vimeo\.com|bilibili\.com|b23\.tv|x\.com|twitter\.com|instagram\.com|instagr\.am|tiktok\.com|douyin\.com|iesdouyin\.com)\/))[^\s<>"'\u3000-\u303f\u3400-\u9fff\uff00-\uffef]+/gi; // a link ends at a space or Chinese text/punctuation
 
 // "1h2m3s", "90s", "90", "1:30" → seconds.
 export function seconds(t) {
@@ -17,7 +17,7 @@ export function seconds(t) {
 const YT_ID = /^[\w-]{11}$/;
 
 // A link → { kind: 'youtube' | 'vimeo' | 'bilibili', id, start?, hash?, page?, aid? } or null.
-// kind 'bilibili-short' means a b23.tv short link, which has to be followed (the server does it) to find the video.
+// kind 'short' is an app's short link (b23.tv, vm.tiktok.com, v.douyin.com…), which the server follows to find the post.
 export function videoOf(raw) {
   let text = String(raw || '').trim().replace(/[.,;:!?。，；：！？)\]]+$/, '');
   if (/^vnd\.youtube:/i.test(text)) { const id = text.split(':')[1]?.split(/[?&]/)[0]; return YT_ID.test(id) ? { kind: 'youtube', id, start: 0 } : null; }
@@ -59,10 +59,35 @@ export function videoOf(raw) {
     if (/^\d+$/.test(q.get('aid') || '')) return { kind: 'bilibili', aid: q.get('aid'), id: `av${q.get('aid')}`, page, start };
     return null;
   }
+  // X / Twitter posts: x.com|twitter.com/user/status/ID (also /statuses/, /i/web/status/, mobile., fx/vx mirrors).
+  if (/^(x|twitter|fxtwitter|vxtwitter|fixupx|nitter\.net)\.com$|^nitter\.net$/.test(host) || host === 'x.com' || host === 'twitter.com') {
+    if ((m = path.match(/\/status(?:es)?\/(\d{5,25})/))) return { kind: 'x', id: m[1] };
+    return null;
+  }
+  // Instagram: posts, reels and IGTV (/p/, /reel/, /reels/, /tv/, also /user/p/…), instagr.am.
+  if (host === 'instagram.com' || host === 'instagr.am') {
+    if ((m = path.match(/\/(p|reels?|tv)\/([\w-]{5,40})/))) return { kind: 'instagram', id: m[2], type: m[1] === 'p' ? 'p' : m[1] === 'tv' ? 'tv' : 'reel' };
+    return null;
+  }
+  // TikTok: tiktok.com/@user/video/ID, m.tiktok.com/v/ID.html, /embed/…; app short links vm./vt.tiktok.com/CODE and tiktok.com/t/CODE.
+  if (host === 'tiktok.com' || host === 'vm.tiktok.com' || host === 'vt.tiktok.com') {
+    if ((m = path.match(/\/(?:video|v|embed(?:\/v2)?|player\/v1)\/(\d{10,25})/))) return { kind: 'tiktok', id: m[1] };
+    if (host !== 'tiktok.com' && (m = path.match(/^\/([\w-]{4,20})/))) return { kind: 'short', id: m[1], url: `https://${host}/${m[1]}` };
+    if ((m = path.match(/^\/t\/([\w-]{4,20})/))) return { kind: 'short', id: m[1], url: `https://www.tiktok.com/t/${m[1]}` };
+    return null;
+  }
+  // 抖音: douyin.com/video/ID, iesdouyin.com/share/video/ID, ?modal_id=ID; app short links v.douyin.com/CODE.
+  if (host === 'douyin.com' || host === 'iesdouyin.com' || host === 'v.douyin.com') {
+    if ((m = path.match(/\/(?:share\/)?(?:video|note)\/(\d{10,25})/))) return { kind: 'douyin', id: m[1] };
+    if (/^\d{10,25}$/.test(q.get('modal_id') || '')) return { kind: 'douyin', id: q.get('modal_id') };
+    if (host === 'v.douyin.com' && (m = path.match(/^\/([\w-]{4,20})/))) return { kind: 'short', id: m[1], url: `https://v.douyin.com/${m[1]}/` };
+    return null;
+  }
+
   if (host === 'b23.tv') {
     const code = path.split('/')[1];
     if (/^BV[0-9A-Za-z]{10}$/.test(code || '')) return { kind: 'bilibili', id: code, page: 1, start: 0 };
-    return code && /^[\w-]{4,20}$/.test(code) ? { kind: 'bilibili-short', id: code, url: `https://b23.tv/${code}` } : null;
+    return code && /^[\w-]{4,20}$/.test(code) ? { kind: 'short', id: code, url: `https://b23.tv/${code}` } : null;
   }
   return null;
 }
@@ -75,5 +100,9 @@ export function embedUrl(v) {
     const ref = v.aid ? `aid=${v.aid}` : `bvid=${v.id}`;
     return `https://player.bilibili.com/player.html?${ref}&page=${v.page || 1}&autoplay=0&high_quality=1${v.start ? `&t=${v.start}` : ''}`;
   }
+  if (v.kind === 'x') return `https://platform.twitter.com/embed/Tweet.html?id=${v.id}&dnt=true`;
+  if (v.kind === 'instagram') return `https://www.instagram.com/${v.type}/${v.id}/embed/captioned/`;
+  if (v.kind === 'tiktok') return `https://www.tiktok.com/player/v1/${v.id}?autoplay=0&rel=0`;
+  if (v.kind === 'douyin') return `https://open.douyin.com/player/video?vid=${v.id}&autoplay=0`;
   return null;
 }

@@ -3202,7 +3202,8 @@ function openNoteInReader(n) {
   goTo({ book: n.book, chapter: n.chapter }, n.start.verse);
 }
 
-// Video links in a message (YouTube, Vimeo, Bilibili — any of their web, mobile or app link forms) play inside the chat.
+// Video and post links in a message (YouTube, Vimeo, Bilibili, X, Instagram, TikTok, 抖音 — any of their web, mobile
+// or app link forms) show inside the chat.
 const URL_RE = VIDEO_LINK_RE;
 function videoEmbeds(text) {
   const seen = new Set(), out = [];
@@ -3212,10 +3213,16 @@ function videoEmbeds(text) {
     seen.add(v.id);
     const frame = (src) => h('iframe', { src, title: 'Video', loading: 'lazy', allowfullscreen: true, referrerpolicy: 'strict-origin-when-cross-origin',
       allow: 'accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen' });
-    const box = h('div', { class: 'video-embed' + (v.kind === 'youtube' && /\/shorts\//.test(x[0]) ? ' tall' : '') });
-    if (v.kind === 'bilibili-short') {
-      // The app's short link: ask the server where it leads, then show that video.
-      api('GET', `/api/video-link?b23=${encodeURIComponent(v.id)}`).then(({ url }) => { const r = videoOf(url); if (r) box.append(frame(embedUrl(r))); else box.remove(); }).catch(() => box.remove());
+    // Shape by platform: wide players; tall for Shorts, TikTok and 抖音; posts (X, Instagram) as cards.
+    const shape = (r, link) => (['tiktok', 'douyin'].includes(r.kind) || (r.kind === 'youtube' && /\/shorts\//.test(link)) ? ' tall'
+      : r.kind === 'x' ? ' post' : r.kind === 'instagram' ? ' post insta' : '');
+    const box = h('div', { class: 'video-embed' + shape(v, x[0]) });
+    if (v.kind === 'short') {
+      // An app's short link: ask the server where it leads, then show that post.
+      api('GET', `/api/video-link?url=${encodeURIComponent(v.url)}`).then(({ url }) => {
+        const r = videoOf(url);
+        if (r && r.kind !== 'short') { box.className = 'video-embed' + shape(r, url); box.append(frame(embedUrl(r))); } else box.remove();
+      }).catch(() => box.remove());
     } else box.append(frame(embedUrl(v)));
     out.push(box);
   }
@@ -3223,7 +3230,7 @@ function videoEmbeds(text) {
 }
 function linkified(text) {
   const out = []; let last = 0;
-  for (const m of String(text).matchAll(/(?:https?:\/\/|\bwww\.|\b(?:youtu\.be|b23\.tv|vimeo\.com|youtube\.com|bilibili\.com)\/)[^\s<>"'\u3000-\u303f\u3400-\u9fff\uff00-\uffef]+/gi)) {
+  for (const m of String(text).matchAll(/(?:https?:\/\/|\bwww\.|\b(?:youtu\.be|b23\.tv|vimeo\.com|youtube\.com|bilibili\.com|x\.com|twitter\.com|instagram\.com|tiktok\.com|vm\.tiktok\.com|vt\.tiktok\.com|douyin\.com|v\.douyin\.com)\/)[^\s<>"'\u3000-\u303f\u3400-\u9fff\uff00-\uffef]+/gi)) {
     const link = m[0].replace(/[.,;:!?)\]]+$/, ''); // trailing punctuation isn't part of the link
     const href = /^https?:/i.test(link) ? link : `https://${link}`;
     out.push(text.slice(last, m.index), h('a', { href, target: '_blank', rel: 'noopener noreferrer', class: 'chat-link' }, link));

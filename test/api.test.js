@@ -224,3 +224,18 @@ test('a note on two versions read side by side keeps both versions’ words', as
   await api('PUT', '/api/notes/note-twover-1', { token: u.token, body: { ...note, alt: { version: 'nope', quote: 'x' } } });
   assert.equal((await api('GET', '/api/notes', { token: u.token })).data.notes[0].alt, undefined);
 });
+
+test('app short links are followed only to the video sites', async () => {
+  const u = (await api('POST', '/api/register', { body: { username: 'shortlinks', password: 'password1' } })).data;
+  const real = globalThis.fetch;
+  const hops = { 'https://v.douyin.com/iRNBho6u/': 'https://www.iesdouyin.com/share/video/7300000000000000002/?region=CN',
+    'https://vm.tiktok.com/ZMabc123/': 'https://www.tiktok.com/@someone/video/7300000000000000001?_r=1', 'https://b23.tv/evil12': 'https://evil.example/x' };
+  globalThis.fetch = (url, opts) => (hops[url] ? Promise.resolve(new Response(null, { status: 301, headers: { location: hops[url] } })) : real(url, opts));
+  try {
+    const get = (url) => api('GET', `/api/video-link?url=${encodeURIComponent(url)}`, { token: u.token });
+    assert.match((await get('https://v.douyin.com/iRNBho6u/')).data.url, /iesdouyin\.com\/share\/video\/7300000000000000002/);
+    assert.match((await get('https://vm.tiktok.com/ZMabc123/')).data.url, /tiktok\.com\/@someone\/video\/7300000000000000001/);
+    assert.equal((await get('https://b23.tv/evil12')).status, 404); // leads off the video sites
+    assert.equal((await get('https://example.com/abc123')).status, 400); // not a short-link host
+  } finally { globalThis.fetch = real; }
+});

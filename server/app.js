@@ -685,18 +685,30 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
       return { status: 201, body: { message: { id: Number(r.lastInsertRowid), mine: true, body: text, createdAt: at, ...(ref ? { ref } : {}) } } };
     }, true],
 
-    // A Bilibili app short link (b23.tv/xxxx) → where it leads (only b23.tv; only the address, nothing else fetched).
+    // An app's short link (b23.tv, vm./vt.tiktok.com, tiktok.com/t/, v.douyin.com) → where it leads. Only those hosts are
+    // asked, only their redirects are followed (to the same sites), and only the address is returned.
     ['GET', /^\/api\/video-link$/, async ({ query }) => {
-      const code = String(query.get('b23') || '');
-      if (!/^[\w-]{4,20}$/.test(code)) throw new HttpError(400, 'Invalid link');
-      if (videoLinks.has(code)) return { url: videoLinks.get(code) };
-      let res;
-      try { res = await fetch(`https://b23.tv/${code}`, { redirect: 'manual', signal: AbortSignal.timeout(8000) }); } catch { throw new HttpError(503, "Couldn't open that link."); }
-      const to = res.headers.get('location');
-      if (!to || !/^https:\/\/(www\.|m\.)?bilibili\.com\//.test(to)) throw new HttpError(404, 'Not a video link');
-      const url = to.split('?')[0] + (new URL(to).searchParams.get('p') ? `?p=${new URL(to).searchParams.get('p')}` : '');
-      videoLinks.set(code, url); if (videoLinks.size > 2000) videoLinks.delete(videoLinks.keys().next().value);
-      return { url };
+      const SHORT = /^https:\/\/(b23\.tv|vm\.tiktok\.com|vt\.tiktok\.com|www\.tiktok\.com\/t|v\.douyin\.com)\/[\w-]{4,20}\/?$/;
+      const DEST = /^https:\/\/([\w-]+\.)*(bilibili\.com|b23\.tv|tiktok\.com|douyin\.com|iesdouyin\.com)\//;
+      let url = String(query.get('url') || (query.get('b23') ? `https://b23.tv/${query.get('b23')}` : ''));
+      if (!SHORT.test(url)) throw new HttpError(400, 'Invalid link');
+      if (videoLinks.has(url)) return { url: videoLinks.get(url) };
+      const start = url;
+      for (let i = 0; i < 4; i++) {
+        let res;
+        try { res = await fetch(url, { redirect: 'manual', headers: { 'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148' }, signal: AbortSignal.timeout(8000) }); }
+        catch { throw new HttpError(503, "Couldn't open that link."); }
+        const to = res.headers.get('location');
+        if (!to) break;
+        const next = new URL(to, url).href;
+        if (!DEST.test(next)) throw new HttpError(404, 'Not a video link');
+        url = next;
+        if (!SHORT.test(url)) break;
+      }
+      if (url === start) throw new HttpError(404, 'Not a video link');
+      const clean = url.split('#')[0];
+      videoLinks.set(start, clean); if (videoLinks.size > 2000) videoLinks.delete(videoLinks.keys().next().value);
+      return { url: clean };
     }, true],
     // All conversations, newest first: friends (private chats) and groups, with the last message and unread count.
     ['GET', /^\/api\/chats$/, ({ me }) => {
@@ -856,7 +868,7 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
         'Content-Type': MIME[ext] || 'application/octet-stream',
         'Cache-Control': rel.startsWith('/bible/') ? 'public, max-age=604800' : 'no-cache',
         ...(ext === '.html' ? {
-          'Content-Security-Policy': "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; frame-src https://www.youtube-nocookie.com https://player.vimeo.com https://player.bilibili.com; base-uri 'none'; frame-ancestors 'none'",
+          'Content-Security-Policy': "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; frame-src https://www.youtube-nocookie.com https://player.vimeo.com https://player.bilibili.com https://platform.twitter.com https://www.instagram.com https://www.tiktok.com https://open.douyin.com; base-uri 'none'; frame-ancestors 'none'",
         } : {}),
       });
     });

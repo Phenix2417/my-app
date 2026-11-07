@@ -156,3 +156,12 @@ sign-in page. The first time, it follows the phone's language. Text is translate
 book titles, people's names — never is. Bible book names follow the language (约翰福音 / John). In the dictionary panel, a
 source in both languages shows only the interface language's version (圣经辞典 or Bible Dictionary; 圣经wiki or Bible Wiki,
 falling back to the other when Wikipedia has only that one); a source in one language (Easton, ISBE) shows in both.
+
+### Videos and posts in chat
+
+Links to YouTube, Vimeo, Bilibili, X (Twitter), Instagram, TikTok and 抖音 show an embedded player or post in the message,
+whichever form the link takes (desktop, mobile web, an app's Share link, links without https://). `public/video.js` maps
+every form to the platform's official embed (youtube-nocookie, player.vimeo, player.bilibili, platform.twitter,
+instagram …/embed, tiktok player/v1, open.douyin player). Apps' short links (b23.tv, vm./vt.tiktok.com, tiktok.com/t/,
+v.douyin.com) are followed by the server (`/api/video-link`), only to those sites. The page's CSP allows frames from
+those players only.
