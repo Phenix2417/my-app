@@ -64,6 +64,9 @@ const ICONS = {
   contents: '<path d="M3 12h.01"/><path d="M3 18h.01"/><path d="M3 6h.01"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M8 6h13"/>',
   back: '<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>',
   close: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  forward: '<polyline points="15 17 20 12 15 7"/><path d="M4 18v-2a4 4 0 0 1 4-4h12"/>',
+  quote: '<path d="M16 3a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2 1 1 0 0 1 1 1v1a2 2 0 0 1-2 2 1 1 0 0 0-1 1v2a1 1 0 0 0 1 1 6 6 0 0 0 6-6V5a2 2 0 0 0-2-2z"/><path d="M5 3a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2 1 1 0 0 1 1 1v1a2 2 0 0 1-2 2 1 1 0 0 0-1 1v2a1 1 0 0 0 1 1 6 6 0 0 0 6-6V5a2 2 0 0 0-2-2z"/>',
+  trash: '<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>',
   more: '<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>',
   sliders: '<line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/>',
   serifAa: '<path d="M21 14h-5"/><path d="M16 16v-3.5a2.5 2.5 0 0 1 5 0V16"/><path d="M4.5 13h6"/><path d="m3 16 4.5-9 4.5 9"/>',
@@ -2342,9 +2345,9 @@ function textSizeControl() {
 // The ⋯ button in a page's top-right corner: a menu of that page's options (this replaced the side bar).
 // Items: { id, label, icon } plus one of: action (run it), toggle { get, set } (ticked when on), popover (a control shown in the menu).
 let closeMenu = () => {};
-document.addEventListener('pointerdown', (e) => { if (!e.target.closest?.('.more-menu, .more-btn')) closeMenu(); }, true);
+document.addEventListener('pointerdown', (e) => { if (!e.target.closest?.('.more-menu, .more-btn, .msg-pop')) closeMenu(); }, true);
 // A menu belongs to where it was opened: scrolling (outside it) or resizing closes it.
-document.addEventListener('scroll', (e) => { if (!e.target.closest?.('.more-menu')) closeMenu(); }, true);
+document.addEventListener('scroll', (e) => { if (!e.target.closest?.('.more-menu, .msg-pop')) closeMenu(); }, true);
 addEventListener('resize', () => closeMenu());
 // Switch the interface between English and Chinese, and draw the current page again.
 function switchLanguage(lang = LANG === 'zh' ? 'en' : 'zh') {
@@ -3284,6 +3287,12 @@ addEventListener('message', (e) => {
 });
 
 const TEXT_LINK_RE = new RegExp(`${VIDEO_LINK_RE.source}|(?:https?:\\/\\/|\\bwww\\.)[^\\s<>"'\\u3000-\\u303f\\u3400-\\u9fff\\uff00-\\uffef]+`, 'gi');
+// A message that quotes another starts with a line "> Name: words".
+function splitQuote(body) {
+  const b = String(body || '');
+  const m = b.match(/^> ([^\n]{1,200})\n/);
+  return m ? { quote: m[1], rest: b.slice(m[0].length) } : { quote: '', rest: b };
+}
 function linkified(text) {
   const out = []; let last = 0;
   // Links: the video/post links (Wikipedia titles may be in Chinese), then any other web address.
@@ -3462,7 +3471,8 @@ async function renderChatPage() {
       }
       // A shared verse first, then any words with it (a shared note's text).
       const content = m.deleted ? [h('div', { class: 'bubble-text deleted' }, tr('This message was deleted'))]
-        : [m.ref ? verseCard(m.ref) : null, m.body.trim() ? h('div', { class: 'bubble-text note-body' }, ...linkified(m.body)) : null,
+        : [splitQuote(m.body).quote ? h('div', { class: 'bubble-quote' }, splitQuote(m.body).quote) : null,
+          m.ref ? verseCard(m.ref) : null, splitQuote(m.body).rest.trim() ? h('div', { class: 'bubble-text note-body' }, ...linkified(splitQuote(m.body).rest)) : null,
           ...videoEmbeds(m.body), m.editedAt ? h('span', { class: 'edited-mark' }, tr('Edited')) : null].filter(Boolean);
       if (m.mine) {
         const bubble = h('div', { class: 'chat-bubble' }, ...content);
@@ -3473,7 +3483,7 @@ async function renderChatPage() {
         const from = m.from || chat.user;
         kids.push(h('div', { class: 'chat-line' }, from ? avatar(from) : h('span', { class: 'avatar' }, '?'),
           h('div', { class: 'chat-col' }, chat.kind === 'group' ? h('div', { class: 'chat-from' }, from ? dn(from) : '—') : null,
-            h('div', { class: 'chat-bubble' }, ...content))));
+            (() => { const bubble = h('div', { class: 'chat-bubble' }, ...content); if (!m.deleted) messageActions(bubble, m); return bubble; })())));
       }
       prev = m;
     }
@@ -3493,44 +3503,117 @@ async function renderChatPage() {
   let editing = null;
   const editBar = h('div', { class: 'chat-attach edit-bar', hidden: true });
   const stopEditing = () => { editing = null; editBar.hidden = true; input.value = ''; input.style.height = ''; showAttach(); };
+  // Quoting a message: shown above the box; sent as a first line "> Name: words".
+  let quoting = null, popClosedAt = 0;
+  const quoteBar = h('div', { class: 'chat-attach quote-bar', hidden: true });
+  const stopQuoting = () => { quoting = null; quoteBar.hidden = true; quoteBar.replaceChildren(); };
+  const plainText = (m) => [m.ref ? `${verseRef(m.ref)} ${m.ref.text || ''}${m.ref.alt?.text ? `\n${m.ref.alt.text}` : ''}` : '', splitQuote(m.body).rest].filter((x) => x.trim()).join('\n');
+  const whoWrote = (m) => dn(m.mine ? state.auth?.user : m.from || chat.user);
+  function startEdit(m) {
+    stopQuoting();
+    editing = m;
+    editBar.hidden = false;
+    const { rest } = splitQuote(m.body);
+    editBar.replaceChildren(h('div', { class: 'chat-attach-main' }, h('div', { class: 'chat-attach-head' }, tr('Edit message')), h('div', { class: 'chat-attach-text' }, rest)),
+      h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Cancel', title: 'Cancel', onclick: stopEditing }, svg(ICONS.close)));
+    input.value = rest.trim(); input.placeholder = ''; input.focus();
+    input.style.height = 'auto'; input.style.height = `${Math.min(input.scrollHeight, 140)}px`;
+  }
+  function startQuote(m) {
+    if (editing) stopEditing();
+    const words = plainText(m).replace(/\s+/g, ' ').trim();
+    quoting = `${whoWrote(m)}: ${words.length > 80 ? `${words.slice(0, 80)}…` : words}`;
+    quoteBar.hidden = false;
+    quoteBar.replaceChildren(h('div', { class: 'chat-attach-main' }, h('div', { class: 'chat-attach-text' }, quoting)),
+      h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Cancel', title: 'Cancel', onclick: stopQuoting }, svg(ICONS.close)));
+    input.focus();
+  }
+  async function forward(m) {
+    await refreshChats();
+    const chats = state.chats?.chats || [];
+    const body = splitQuote(m.body).rest.trim();
+    openSheet((close) => [
+      h('h2', {}, 'Forward to'),
+      chats.length ? h('div', { class: 'chat-rows' }, ...chats.map((x) => h('button', { class: 'chat-row', type: 'button', onclick: async () => {
+        close();
+        if (await sendToChat(x, { ...(body ? { body } : {}), ...(m.ref ? { ref: m.ref } : {}) })) {
+          toast(`Sent to ${x.name}`);
+          if (x.kind === chat.kind && x.id === chat.id) load();
+        }
+      } }, x.kind === 'group' ? avatar(null, x.name) : avatar(x.user), h('div', { class: 'chat-main' }, h('div', { class: 'chat-name' }, x.name)))))
+        : h('p', { class: 'empty-inline' }, 'No chats yet. Add a friend in Chat first.'),
+    ], { label: 'Forward to' });
+  }
+  async function removeMessage(m) {
+    if (!await confirmSheet({ title: 'Delete this message?', message: tr('Everyone in the chat will see “This message was deleted”.') })) return;
+    try {
+      await api('DELETE', `/api/${chat.kind === 'group' ? 'group' : 'dm'}-messages/${m.id}`);
+      draw(shown.map((x) => (x.id === m.id ? { ...x, deleted: true, body: '', ref: null } : x)));
+    } catch (e) { toast(e.message); }
+  }
+  // The menu for a message: a dark bar of buttons just above it (below it when there's no room), as in WeChat.
+  function messageMenu(bubble, m) {
+    closeMenu();
+    const items = [
+      { label: 'Copy', icon: ICONS.copy, run: async () => {
+        try { await navigator.clipboard.writeText(plainText(m)); toast('Copied'); } catch { toast("Couldn't copy"); }
+      } },
+      { label: 'Forward', icon: ICONS.forward, run: () => forward(m) },
+      { label: 'Quote', icon: ICONS.quote, run: () => startQuote(m) },
+      m.mine && splitQuote(m.body).rest.trim() ? { label: 'Edit', icon: ICONS.pencil, run: () => startEdit(m) } : null,
+      m.mine ? { label: 'Delete', icon: ICONS.trash, run: () => removeMessage(m) } : null,
+    ].filter(Boolean);
+    const pop = h('div', { class: 'msg-pop', role: 'menu', 'aria-label': tr('Message') },
+      ...items.map((it) => h('button', { class: 'msg-pop-item', type: 'button', role: 'menuitem', onclick: () => { close(); it.run(); } },
+        svg(it.icon), h('span', {}, it.label))));
+    const close = (outside = false) => { pop.remove(); if (outside) popClosedAt = Date.now(); bubble.classList.remove('held'); document.removeEventListener('keydown', onKey); if (closeMenu === closeOutside) closeMenu = () => {}; };
+    const closeOutside = () => close(true);
+    const onKey = (e) => { if (e.key === 'Escape') close(); };
+    closeMenu = closeOutside;
+    document.addEventListener('keydown', onKey);
+    bubble.classList.add('held');
+    document.body.append(pop);
+    const b = bubble.getBoundingClientRect(), w = pop.offsetWidth, ph = pop.offsetHeight;
+    const top = list.getBoundingClientRect().top;
+    const above = b.top - ph - 10 >= Math.max(top, 8);
+    const x = Math.min(Math.max(b.left + b.width / 2 - w / 2, 8), innerWidth - w - 8);
+    pop.style.left = `${x}px`;
+    pop.style.top = `${above ? b.top - ph - 10 : Math.min(b.bottom + 10, innerHeight - ph - 8)}px`;
+    pop.classList.toggle('below', !above);
+    pop.style.setProperty('--arrow-x', `${Math.min(Math.max(b.left + b.width / 2 - x, 16), w - 16)}px`);
+    pop.querySelector('button')?.focus({ preventScroll: true });
+  }
+  // A tap anywhere on a message opens its menu, except on a link, a button or a player (those do their own thing);
+  // a long press opens it anywhere, links and cards included. Right-click does the same with a mouse.
   function messageActions(bubble, m) {
-    let timer = null;
-    const open = () => {
-      openSheet((close) => [
-        h('div', { class: 'option-rows' },
-          h('button', { class: 'option-row', type: 'button', onclick: () => {
-            close();
-            editing = m;
-            editBar.hidden = false;
-            editBar.replaceChildren(h('div', { class: 'chat-attach-main' }, h('div', { class: 'chat-attach-head' }, tr('Edit message')), h('div', { class: 'chat-attach-text' }, m.body)),
-              h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Cancel', title: 'Cancel', onclick: stopEditing }, svg(ICONS.close)));
-            input.value = m.body.trim(); input.placeholder = ''; input.focus();
-            input.style.height = 'auto'; input.style.height = `${Math.min(input.scrollHeight, 140)}px`;
-          } }, svg(ICONS.pencil), h('span', {}, 'Edit')),
-          h('button', { class: 'option-row danger-row', type: 'button', onclick: async () => {
-            close();
-            if (!await confirmSheet({ title: 'Delete this message?', message: tr('Everyone in the chat will see “This message was deleted”.') })) return;
-            try {
-              await api('DELETE', `/api/${chat.kind === 'group' ? 'group' : 'dm'}-messages/${m.id}`);
-              draw(shown.map((x) => (x.id === m.id ? { ...x, deleted: true, body: '', ref: null } : x)));
-            } catch (e) { toast(e.message); }
-          } }, svg(ICONS.close), h('span', {}, 'Delete'))),
-      ], { label: 'Message' });
-    };
-    bubble.addEventListener('contextmenu', (e) => { if (e.target.closest('a, iframe, button')) return; e.preventDefault(); open(); });
-    // A long press: after half a second the bubble is marked (and the phone buzzes); the menu opens when the finger
-    // lifts, so the lift doesn't land on the menu's background and close it at once.
+    const interactive = (t) => t.closest('a, button, iframe, input, video, audio');
+    let suppressClick = false;
+    bubble.addEventListener('click', (e) => {
+      if (suppressClick) { suppressClick = false; e.preventDefault(); e.stopPropagation(); return; }
+      // (A tap while a menu is open only closes it.)
+      if (interactive(e.target) || Date.now() - popClosedAt < 500 || String(getSelection?.() || '').trim()) return;
+      messageMenu(bubble, m);
+    }, true);
+    bubble.addEventListener('contextmenu', (e) => { e.preventDefault(); messageMenu(bubble, m); });
+    // After half a second the bubble darkens (and the phone buzzes); the menu opens when the finger lifts, and the
+    // click that follows is swallowed, so it neither follows a link nor closes the menu at once.
     bubble.addEventListener('pointerdown', (e) => {
-      if (e.pointerType === 'mouse' || e.target.closest('a, iframe, button')) return;
+      if (e.pointerType === 'mouse') return;
       const x = e.clientX, y = e.clientY;
       let held = false;
-      timer = setTimeout(() => { held = true; bubble.classList.add('held'); navigator.vibrate?.(10); }, 500);
+      const timer = setTimeout(() => { held = true; bubble.classList.add('held'); navigator.vibrate?.(10); }, 500);
       const done = () => {
-        clearTimeout(timer); bubble.removeEventListener('pointermove', moved); bubble.classList.remove('held');
+        clearTimeout(timer); bubble.removeEventListener('pointermove', moved);
         bubble.removeEventListener('pointerup', up); bubble.removeEventListener('pointercancel', done);
+        if (!held) bubble.classList.remove('held');
       };
-      const moved = (ev) => { if (Math.hypot(ev.clientX - x, ev.clientY - y) > 10) done(); };
-      const up = () => { const wasHeld = held; done(); if (wasHeld) setTimeout(open, 80); };
+      const moved = (ev) => { if (Math.hypot(ev.clientX - x, ev.clientY - y) > 10) { held = false; bubble.classList.remove('held'); done(); } };
+      const up = () => {
+        const wasHeld = held; done();
+        if (!wasHeld) return;
+        suppressClick = true; setTimeout(() => { suppressClick = false; }, 600);
+        messageMenu(bubble, m);
+      };
       bubble.addEventListener('pointermove', moved);
       bubble.addEventListener('pointerup', up);
       bubble.addEventListener('pointercancel', done);
@@ -3542,7 +3625,8 @@ async function renderChatPage() {
       if (!text && !editing.ref) return;
       sendBtn.disabled = true;
       try {
-        const { message } = await api('PUT', `/api/${chat.kind === 'group' ? 'group' : 'dm'}-messages/${editing.id}`, { body: text });
+        const { quote } = splitQuote(editing.body);
+        const { message } = await api('PUT', `/api/${chat.kind === 'group' ? 'group' : 'dm'}-messages/${editing.id}`, { body: quote ? `> ${quote}\n${text}` : text });
         draw(shown.map((x) => (x.id === editing.id ? { ...x, ...message } : x)));
         stopEditing();
       } catch (e) { toast(e.message); }
@@ -3551,8 +3635,9 @@ async function renderChatPage() {
     }
     if (!text && !attached) return;
     sendBtn.disabled = true;
-    const m = await sendToChat(chat, { ...(text ? { body: text } : {}), ...(attached ? { ref: attached } : {}) });
-    if (m) { input.value = ''; input.style.height = ''; attached = null; showAttach(); draw([...shown, m]); list.scrollTop = list.scrollHeight; }
+    const body = text && quoting ? `> ${quoting.replace(/\n/g, ' ')}\n${text}` : text;
+    const m = await sendToChat(chat, { ...(body ? { body } : {}), ...(attached ? { ref: attached } : {}) });
+    if (m) { input.value = ''; input.style.height = ''; attached = null; showAttach(); stopQuoting(); draw([...shown, m]); list.scrollTop = list.scrollHeight; }
     sendBtn.disabled = false;
   };
   const sendBtn = h('button', { class: 'chat-send', type: 'button', 'aria-label': 'Send', title: 'Send', onclick: send }, svg(ICONS.send));
@@ -3581,6 +3666,7 @@ async function renderChatPage() {
       menu),
     list,
     attachBox,
+    quoteBar,
     editBar,
     h('div', { class: 'chat-bar' }, verseBtn, input, sendBtn)));
   showAttach();
