@@ -3070,12 +3070,15 @@ async function checkBibleEpub(bufPromise, fileName, file = null, repair = null, 
         const added = [];
         // Saving takes a while: keep the screen on, and ask for the app to stay open.
         const wake = await navigator.wakeLock?.request('screen').catch(() => null);
-        const keepOpen = h('p', { class: 'handle-sub' }, 'Keep the app open until saving finishes.');
+        // As with files sent in chat: this can be closed, and saving carries on (shown on the shelf, with ✕ to stop it).
+        const keepOpen = h('p', { class: 'handle-sub' }, 'You can close this: saving carries on, and shows on your shelf.');
+        const j = trackUpload('shelf', `${chosen.map((x) => x.shortIn.value || x.short).join(' + ')} · ${tr(repair ? 'Repair' : 'Bible')}`);
+        const stopped = () => { if (j.cancelled) throw Object.assign(new Error(tr('Stopped')), { cancelled: true }); };
         // Progress over everything being saved: each version's books, then the ebook going on the shelf.
         const bar = h('span', { class: 'upload-bar' }), track = h('div', { class: 'upload-track sheet-progress' }, bar);
         const totalBooks = chosen.reduce((n, part) => n + Object.keys(part.data).filter((id) => !repair?.missing || repair.missing.includes(id)).length, 0) || 1;
         const shelfShare = file ? 0.2 : 0; let savedBooks = 0;
-        const setBar = (p) => { bar.style.width = `${Math.round(Math.min(1, p) * 100)}%`; };
+        const setBar = (p) => { bar.style.width = `${Math.round(Math.min(1, p) * 100)}%`; j.setProgress(p); };
         btn.closest('.sheet-actions')?.before(track, keepOpen);
         try {
           for (const part of chosen) {
@@ -3088,6 +3091,7 @@ async function checkBibleEpub(bufPromise, fileName, file = null, repair = null, 
             let next = 0, done = 0;
             await Promise.all(Array.from({ length: 6 }, async () => {
               while (next < ids.length) {
+                stopped();
                 const id = ids[next++];
                 await authFetch(`/api/my-versions/${version.id}/${id}`, { method: 'PUT', body: JSON.stringify(part.data[id].map((c) => c || [])) });
                 btn.textContent = tr(`Saving ${version.short} ${++done} / ${ids.length}…`);
@@ -3097,14 +3101,17 @@ async function checkBibleEpub(bufPromise, fileName, file = null, repair = null, 
           }
           // Also keep the ebook on the shelf (unless it's already there) — before the sheet closes, while the screen is
           // kept on, so leaving the app right after can't cut the upload short.
+          stopped();
           if (file) {
             btn.textContent = tr('Putting it on your shelf…');
             await (typeof file === 'function' ? file() : addBooks([{ ...file, data: await file.data }], { onProgress: (p) => setBar(1 - shelfShare + p * shelfShare) }));
           }
           setBar(1);
+          const stillOpen = btn.isConnected; // (closed: you've moved on, so it isn't opened over what you're doing)
           close();
           await loadVersions();
           if (repair) { chapterCacheClear(repair.id); toast(`${repair.short} repaired`); if (state.tab === 'read') renderReader(); }
+          else if (!stillOpen) toast(LANG === 'zh' ? `已添加圣经：${added.map((v) => v.short).join(' + ')}` : `Added ${added.map((v) => v.short).join(' + ')} to your Bibles`);
           else if (onAdded) onAdded(added);
           else {
             // Open what was just added: its first two translations side by side, in the book's order.
@@ -3115,8 +3122,9 @@ async function checkBibleEpub(bufPromise, fileName, file = null, repair = null, 
         } catch (err) {
           // Don't leave half-saved versions behind (a repair keeps its version: try again).
           for (const v of added) await api('DELETE', `/api/my-versions/${v.id}`).catch(() => {});
-          btn.disabled = false; btn.textContent = tr(repair ? 'Repair' : 'Add'); toast(err.message);
-        } finally { wake?.release().catch(() => {}); keepOpen.remove(); }
+          btn.disabled = false; btn.textContent = tr(repair ? 'Repair' : 'Add'); track.remove();
+          toast(err.cancelled ? tr('Stopped adding the Bible') : err.message);
+        } finally { wake?.release().catch(() => {}); keepOpen.remove(); j.remove(); }
       } }, repair ? 'Repair' : both ? 'Add' : 'Add version') : null),
   ].filter((x) => x != null && x !== false));
 }
