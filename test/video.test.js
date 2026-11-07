@@ -72,3 +72,14 @@ test('TikTok and 抖音: web, mobile, embed and app short links', () => {
   assert.deepEqual([...share.matchAll(LINK_RE)].map((m) => videoOf(m[0])?.url), ['https://v.douyin.com/iRNBho6u/']);
   assert.match(embedUrl(videoOf('https://www.douyin.com/video/7300000000000000002')), /open\.douyin\.com\/player\/video\?vid=7300000000000000002/);
 });
+
+test('Facebook: watch, page videos, video.php, reels, live, mobile and web hosts, app short links', () => {
+  for (const u of ['https://www.facebook.com/watch/?v=1234567890123456', 'https://m.facebook.com/watch/?v=1234567890123456&mibextid=abc',
+    'https://www.facebook.com/somepage/videos/1234567890123456/', 'https://www.facebook.com/somepage/videos/some-title/1234567890123456/',
+    'https://web.facebook.com/video.php?v=1234567890123456', 'https://www.facebook.com/watch/live/?v=1234567890123456', 'facebook.com/watch?v=1234567890123456'])
+    assert.deepEqual(id(u), ['facebook', '1234567890123456', 0], u);
+  assert.equal(videoOf('https://www.facebook.com/reel/1234567890123456?s=yWDuG2').reel, true);
+  for (const u of ['https://fb.watch/abcDEF123/', 'https://www.facebook.com/share/v/1AbCdEfGh/', 'https://www.facebook.com/share/r/1AbCdEfGh/']) assert.equal(videoOf(u).kind, 'short', u);
+  assert.equal(videoOf('https://www.facebook.com/somepage'), null);
+  assert.match(embedUrl(videoOf('https://www.facebook.com/watch/?v=1234567890123456')), /facebook\.com\/plugins\/video\.php\?href=https%3A%2F%2Fwww\.facebook\.com%2Fwatch%2F%3Fv%3D1234567890123456/);
+});

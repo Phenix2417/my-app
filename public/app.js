@@ -3202,7 +3202,7 @@ function openNoteInReader(n) {
   goTo({ book: n.book, chapter: n.chapter }, n.start.verse);
 }
 
-// Video and post links in a message (YouTube, Vimeo, Bilibili, X, Instagram, TikTok, 抖音 — any of their web, mobile
+// Video and post links in a message (YouTube, Vimeo, Bilibili, X, Instagram, TikTok, 抖音, Facebook — any of their web, mobile
 // or app link forms) show inside the chat.
 const URL_RE = VIDEO_LINK_RE;
 function videoEmbeds(text) {
@@ -3214,7 +3214,7 @@ function videoEmbeds(text) {
     const frame = (src) => h('iframe', { src, title: 'Video', loading: 'lazy', allowfullscreen: true, referrerpolicy: 'strict-origin-when-cross-origin',
       allow: 'accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen' });
     // Shape by platform: wide players; tall for Shorts, TikTok and 抖音; posts (X, Instagram) as cards.
-    const shape = (r, link) => (['tiktok', 'douyin'].includes(r.kind) || (r.kind === 'youtube' && /\/shorts\//.test(link)) ? ' tall'
+    const shape = (r, link) => (['tiktok', 'douyin'].includes(r.kind) || r.reel || (r.kind === 'youtube' && /\/shorts\//.test(link)) ? ' tall'
       : r.kind === 'x' ? ' post' : r.kind === 'instagram' ? ' post insta' : '');
     const box = h('div', { class: 'video-embed' + shape(v, x[0]) });
     if (v.kind === 'short') {
@@ -3243,7 +3243,7 @@ addEventListener('message', (e) => {
 
 function linkified(text) {
   const out = []; let last = 0;
-  for (const m of String(text).matchAll(/(?:https?:\/\/|\bwww\.|\b(?:youtu\.be|b23\.tv|vimeo\.com|youtube\.com|bilibili\.com|x\.com|twitter\.com|instagram\.com|tiktok\.com|vm\.tiktok\.com|vt\.tiktok\.com|douyin\.com|v\.douyin\.com)\/)[^\s<>"'\u3000-\u303f\u3400-\u9fff\uff00-\uffef]+/gi)) {
+  for (const m of String(text).matchAll(/(?:https?:\/\/|\bwww\.|\b(?:youtu\.be|b23\.tv|vimeo\.com|youtube\.com|bilibili\.com|x\.com|twitter\.com|instagram\.com|tiktok\.com|vm\.tiktok\.com|vt\.tiktok\.com|douyin\.com|v\.douyin\.com|facebook\.com|fb\.watch)\/)[^\s<>"'\u3000-\u303f\u3400-\u9fff\uff00-\uffef]+/gi)) {
     const link = m[0].replace(/[.,;:!?)\]]+$/, ''); // trailing punctuation isn't part of the link
     const href = /^https?:/i.test(link) ? link : `https://${link}`;
     out.push(text.slice(last, m.index), h('a', { href, target: '_blank', rel: 'noopener noreferrer', class: 'chat-link' }, link));

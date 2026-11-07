@@ -2,7 +2,7 @@
 // (desktop web, mobile web, the mobile app's Share button, a TV/embed link…); all of them map to one player.
 
 // Links in text: with a scheme, or bare (youtu.be/…, www.youtube.com/…, b23.tv/…) as people often type or paste them.
-export const LINK_RE = /(?:https?:\/\/|\b(?=(?:www\.|m\.|music\.|mobile\.|vm\.|vt\.|v\.)?(?:youtube\.com|youtu\.be|youtube-nocookie\.com|vimeo\.com|player\.vimeo\.com|bilibili\.com|b23\.tv|x\.com|twitter\.com|instagram\.com|instagr\.am|tiktok\.com|douyin\.com|iesdouyin\.com)\/))[^\s<>"'\u3000-\u303f\u3400-\u9fff\uff00-\uffef]+/gi; // a link ends at a space or Chinese text/punctuation
+export const LINK_RE = /(?:https?:\/\/|\b(?=(?:www\.|m\.|music\.|mobile\.|vm\.|vt\.|v\.|web\.|mbasic\.)?(?:youtube\.com|youtu\.be|youtube-nocookie\.com|vimeo\.com|player\.vimeo\.com|bilibili\.com|b23\.tv|x\.com|twitter\.com|instagram\.com|instagr\.am|tiktok\.com|douyin\.com|iesdouyin\.com|facebook\.com|fb\.watch|fb\.com)\/))[^\s<>"'\u3000-\u303f\u3400-\u9fff\uff00-\uffef]+/gi; // a link ends at a space or Chinese text/punctuation
 
 // "1h2m3s", "90s", "90", "1:30" → seconds.
 export function seconds(t) {
@@ -23,7 +23,7 @@ export function videoOf(raw) {
   if (/^vnd\.youtube:/i.test(text)) { const id = text.split(':')[1]?.split(/[?&]/)[0]; return YT_ID.test(id) ? { kind: 'youtube', id, start: 0 } : null; }
   if (!/^https?:\/\//i.test(text)) text = `https://${text}`;
   let u; try { u = new URL(text); } catch { return null; }
-  const host = u.hostname.toLowerCase().replace(/^(www|m|mobile|music|gaming)\./, '');
+  const host = u.hostname.toLowerCase().replace(/^(www|m|mobile|music|gaming|web|mbasic|touch)\./, '');
   const q = u.searchParams, path = u.pathname;
   let m;
 
@@ -84,6 +84,18 @@ export function videoOf(raw) {
     return null;
   }
 
+  // Facebook videos and reels: /watch/?v=ID, /PAGE/videos/(TITLE/)ID, /video.php?v=ID, /reel/ID, /watch/live/?v=ID, story links;
+  // the app's short links fb.watch/CODE and /share/v/ or /share/r/CODE need following.
+  if (host === 'facebook.com' || host === 'fb.com' || host === 'fb.watch') {
+    if (host === 'fb.watch' && (m = path.match(/^\/([\w-]{4,20})/))) return { kind: 'short', id: m[1], url: `https://fb.watch/${m[1]}/` };
+    if ((m = path.match(/^\/share\/([vr])\/([\w-]{4,30})/))) return { kind: 'short', id: m[2], url: `https://www.facebook.com/share/${m[1]}/${m[2]}/` };
+    if ((m = path.match(/^\/reels?\/(\d{6,25})/))) return { kind: 'facebook', id: m[1], reel: true };
+    const v = q.get('v') || q.get('video_id');
+    if (/^\d{6,25}$/.test(v || '') && /^\/(watch|video\.php|watch\/live)?\/?/.test(path)) return { kind: 'facebook', id: v };
+    if ((m = path.match(/\/videos\/(?:[^/]+\/)?(\d{6,25})/))) return { kind: 'facebook', id: m[1] };
+    return null;
+  }
+
   if (host === 'b23.tv') {
     const code = path.split('/')[1];
     if (/^BV[0-9A-Za-z]{10}$/.test(code || '')) return { kind: 'bilibili', id: code, page: 1, start: 0 };
@@ -100,6 +112,7 @@ export function embedUrl(v) {
     const ref = v.aid ? `aid=${v.aid}` : `bvid=${v.id}`;
     return `https://player.bilibili.com/player.html?${ref}&page=${v.page || 1}&autoplay=0&high_quality=1${v.start ? `&t=${v.start}` : ''}`;
   }
+  if (v.kind === 'facebook') return `https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(v.reel ? `https://www.facebook.com/reel/${v.id}` : `https://www.facebook.com/watch/?v=${v.id}`)}&show_text=false&width=560`;
   if (v.kind === 'x') return `https://platform.twitter.com/embed/Tweet.html?id=${v.id}&dnt=true`;
   if (v.kind === 'instagram') return `https://www.instagram.com/${v.type}/${v.id}/embed/captioned/`;
   if (v.kind === 'tiktok') return `https://www.tiktok.com/player/v1/${v.id}?autoplay=0&rel=0`;

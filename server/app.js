@@ -685,11 +685,11 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
       return { status: 201, body: { message: { id: Number(r.lastInsertRowid), mine: true, body: text, createdAt: at, ...(ref ? { ref } : {}) } } };
     }, true],
 
-    // An app's short link (b23.tv, vm./vt.tiktok.com, tiktok.com/t/, v.douyin.com) → where it leads. Only those hosts are
+    // An app's short link (b23.tv, vm./vt.tiktok.com, tiktok.com/t/, v.douyin.com, fb.watch, facebook.com/share/v|r) → where it leads. Only those hosts are
     // asked, only their redirects are followed (to the same sites), and only the address is returned.
     ['GET', /^\/api\/video-link$/, async ({ query }) => {
-      const SHORT = /^https:\/\/(b23\.tv|vm\.tiktok\.com|vt\.tiktok\.com|www\.tiktok\.com\/t|v\.douyin\.com)\/[\w-]{4,20}\/?$/;
-      const DEST = /^https:\/\/([\w-]+\.)*(bilibili\.com|b23\.tv|tiktok\.com|douyin\.com|iesdouyin\.com)\//;
+      const SHORT = /^https:\/\/(b23\.tv|vm\.tiktok\.com|vt\.tiktok\.com|www\.tiktok\.com\/t|v\.douyin\.com|fb\.watch|www\.facebook\.com\/share\/[vr])\/[\w-]{4,30}\/?$/;
+      const DEST = /^https:\/\/([\w-]+\.)*(bilibili\.com|b23\.tv|tiktok\.com|douyin\.com|iesdouyin\.com|facebook\.com)\//;
       let url = String(query.get('url') || (query.get('b23') ? `https://b23.tv/${query.get('b23')}` : ''));
       if (!SHORT.test(url)) throw new HttpError(400, 'Invalid link');
       if (videoLinks.has(url)) return { url: videoLinks.get(url) };
@@ -868,7 +868,7 @@ export function createApp(db, { publicDir, trustProxy = false, commentary = null
         'Content-Type': MIME[ext] || 'application/octet-stream',
         'Cache-Control': rel.startsWith('/bible/') ? 'public, max-age=604800' : 'no-cache',
         ...(ext === '.html' ? {
-          'Content-Security-Policy': "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; frame-src https://www.youtube-nocookie.com https://player.vimeo.com https://player.bilibili.com https://platform.twitter.com https://www.instagram.com https://www.tiktok.com https://open.douyin.com; base-uri 'none'; frame-ancestors 'none'",
+          'Content-Security-Policy': "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; frame-src https://www.youtube-nocookie.com https://player.vimeo.com https://player.bilibili.com https://platform.twitter.com https://www.instagram.com https://www.tiktok.com https://open.douyin.com https://www.facebook.com; base-uri 'none'; frame-ancestors 'none'",
         } : {}),
       });
     });
